@@ -14,7 +14,7 @@ import { parseKeyString } from '@shared/music'
 import { renderExportStem, resolveCollision } from '@shared/template'
 import { buildAudioEvidence } from '@shared/metadata'
 import { verifyMetadata } from '@shared/verification'
-import { JsonStore, storageDiagnostic } from '../lib/jsonStore'
+import { JsonStore, storageDiagnostic, storageStatus } from '../lib/jsonStore'
 import { fileExists, fileSize, pathExists, sha256File } from '../lib/fsx'
 import { libraryFile } from './paths'
 import { settingsService } from './settings'
@@ -571,6 +571,7 @@ class LibraryService extends EventEmitter {
     let linked = false
     let createdSidecar = false
     let committed = false
+    let pendingRename = false
     try {
       await link(previous.filePath, nextAudio)
       linked = true
@@ -588,10 +589,21 @@ class LibraryService extends EventEmitter {
       updated.fileName = candidate
       updated.sidecarPath = nextSidecar
       updated.namingTemplate = template
-      this.store.write(this.store.read().map(entry => entry.id === updated.id ? updated : entry))
+      const storeKey = path.resolve(this.store.path).toLowerCase()
+      const beforeRevision = storageStatus().find(state => path.resolve(state.file).toLowerCase() === storeKey)?.revision ?? 0
+      try {
+        this.store.write(this.store.read().map(entry => entry.id === updated.id ? updated : entry))
+      } catch (error) {
+        const afterRevision = storageStatus().find(state => path.resolve(state.file).toLowerCase() === storeKey)?.revision ?? 0
+        pendingRename = afterRevision > beforeRevision
+        storageDiagnostic(libraryFile(), { operation: 'rename-library-write-failed', id: previous.id,
+          previousPath: previous.filePath, nextAudio, nextSidecar, beforeRevision, afterRevision,
+          pendingRename, error: String(error) })
+        throw error
+      }
       committed = true
     } catch (error) {
-      if (!committed) {
+      if (!committed && !pendingRename) {
         if (createdSidecar && nextSidecar) await unlink(nextSidecar).catch(() => undefined)
         if (linked) await unlink(nextAudio).catch(() => undefined)
       }

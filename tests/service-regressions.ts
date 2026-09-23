@@ -67,6 +67,27 @@ app.whenReady().then(async () => {
       altBpm: null, key: 'F# minor', camelot: '11A', detune: null, tuning: null, genre: null },
       presetId: after.presetId, sourceKind: after.sourceKind }), 'DAW Ready [136 BPM] [F# minor]')
   })
+  await check('failed rename commit retains both audio paths until storage retry', async () => {
+    const before = libraryService.get('fixture-0')!
+    const libraryPath = path.join(app.getPath('userData'), 'library.json')
+    await rename(libraryPath, `${libraryPath}.rename-saved`)
+    await mkdir(libraryPath)
+    try {
+      await assert.rejects(libraryService.updateMetadata(before.id, { title: 'Pending Rename' }))
+    } finally {
+      await rmdir(libraryPath)
+      await rename(`${libraryPath}.rename-saved`, libraryPath)
+    }
+    assert.equal(libraryService.get(before.id)?.filePath, before.filePath)
+    assert.ok(await fs.stat(before.filePath))
+    const candidates = (await fs.readdir(path.dirname(before.filePath))).filter(name => name.startsWith('Pending Rename') && name.endsWith('.wav'))
+    assert.equal(candidates.length, 1, `Audio candidates: ${JSON.stringify(await fs.readdir(path.dirname(before.filePath)))}`)
+    const pendingPath = path.join(path.dirname(before.filePath), candidates[0])
+    assert.ok(await fs.stat(pendingPath))
+    retryStorage()
+    assert.equal(libraryService.get(before.id)?.filePath, pendingPath)
+    assert.equal(JSON.parse(await readFile(libraryPath, 'utf8')).find((entry: { id: string }) => entry.id === before.id).filePath, pendingPath)
+  })
   await check('changed input rejects stale analysis', async () => {
     const beat = libraryService.get('fixture-1')!
     await appendFile(beat.filePath, 'external change')
