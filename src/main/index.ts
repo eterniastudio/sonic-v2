@@ -12,6 +12,7 @@ import { retryStorage, storageDiagnostic } from './lib/jsonStore'
 import { queueFile } from './services/paths'
 import { settleChildren } from './lib/child'
 import { stopReexports } from './services/reexport'
+import { localImportService } from './services/localImport'
 
 let readyToQuit = false
 let closing: Promise<void> | null = null
@@ -24,7 +25,7 @@ function requestShutdown(): void {
   closing = new Promise<void>(resolve => setImmediate(resolve)).then(async () => {
     storageDiagnostic(queueFile(), { operation: 'shutdown-start' })
     shutdownWork ??= (async () => {
-      await Promise.all([queueService.stopAll(), libraryAnalysis.shutdown(), analysisService.shutdown(), stopReexports()])
+      await Promise.all([queueService.stopAll(), libraryAnalysis.shutdown(), analysisService.shutdown(), stopReexports(), localImportService.shutdown()])
       await settleOperations()
       await libraryService.shutdown()
       await settleChildren()

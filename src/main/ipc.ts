@@ -12,6 +12,7 @@ import { fileExists } from './lib/fsx'
 import { libraryAnalysis } from './analysis/libraryAnalysis'
 import { engineService } from './services/engine'
 import { libraryService } from './services/library'
+import { localImportService } from './services/localImport'
 import { defaultDownloadDir } from './services/paths'
 import { probeUrl } from './services/probe'
 import { queueService } from './services/queue'
@@ -116,14 +117,19 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
     case 'storage:status': case 'storage:retry': case 'app:readClipboard': case 'app:info':
     case 'window:minimize': case 'window:toggleMaximize': case 'window:close': case 'window:isMaximized':
     case 'engine:status': case 'engine:setup': case 'settings:get': case 'settings:chooseDir': case 'queue:snapshot':
-    case 'queue:clearFinished': case 'library:list': case 'library:rescan':
+    case 'queue:clearFinished': case 'library:list': case 'library:rescan': case 'import:chooseFiles':
     case 'analysis:queueMissing': case 'analysis:clearCache': case 'analysis:status':
       valid = args.length === 0; break
     case 'library:retrySidecar': case 'queue:remove': case 'queue:cancel': case 'queue:retry':
     case 'queue:revealOutput': case 'queue:openOutput': case 'library:openSource':
     case 'library:refreshSource': case 'library:revealFile': case 'library:openFile':
     case 'library:openSidecarFile': case 'analysis:cancel':
+    case 'import:status': case 'import:cancel':
       valid = args.length === 1 && isId(a); break
+    case 'import:chooseFolder':
+      valid = args.length === 1 && typeof a === 'boolean'; break
+    case 'import:confirm':
+      valid = args.length === 2 && isId(a) && isStringArray(b, 5000); break
     case 'app:openDirectory':
       valid = args.length === 1 && ['userData', 'downloads', 'engine'].includes(a as string); break
     case 'engine:pickTool':
@@ -325,6 +331,24 @@ export function registerIpcHandlers(): void {
 
   // -------------------------------------------------------------- library
   handle('library:list', () => libraryService.list())
+  handle('import:chooseFiles', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose audio to import into Sonic',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Audio files', extensions: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'opus', 'aif', 'aiff', 'wma'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+    return { sessionId: result.canceled || !result.filePaths.length ? null : localImportService.begin(result.filePaths, 'files', false) }
+  })
+  handle('import:chooseFolder', async (recursive) => {
+    const result = await dialog.showOpenDialog({ title: 'Choose an audio folder to import', properties: ['openDirectory'] })
+    return { sessionId: result.canceled || !result.filePaths.length ? null : localImportService.begin(result.filePaths, 'folder', recursive) }
+  })
+  handle('import:status', (sessionId) => localImportService.status(sessionId))
+  handle('import:confirm', (sessionId, selectedIds) => localImportService.confirm(sessionId, selectedIds))
+  handle('import:cancel', (sessionId) => localImportService.cancel(sessionId))
   handle('library:openSource', async (id) => {
     const url = libraryService.get(id)?.sourceUrl
     if (!url) return false

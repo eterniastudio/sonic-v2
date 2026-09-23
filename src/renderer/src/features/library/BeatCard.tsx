@@ -26,6 +26,7 @@ export interface BeatCardProps {
 
 export function BeatCard({ beat, layout, selected, onSelect, onContextMenu }: BeatCardProps): ReactNode {
   const cover = coverArtFor(beat.sourceUrl)
+  const credit = beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')
 
   if (layout === 'list') {
     return (
@@ -57,7 +58,7 @@ export function BeatCard({ beat, layout, selected, onSelect, onContextMenu }: Be
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-medium text-fg">{beat.title}</span>
           <span className="block truncate text-[11.5px] text-fg-muted">
-            {beat.producer || beat.sourceChannel || 'Unknown channel'}
+            {credit}
           </span>
         </span>
 
@@ -127,6 +128,11 @@ export function BeatCard({ beat, layout, selected, onSelect, onContextMenu }: Be
               MISSING
             </span>
           ) : null}
+          {beat.fileOwnership === 'external' ? (
+            <span className="absolute top-2 right-2 rounded-[5px] bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white/90">
+              LOCAL
+            </span>
+          ) : null}
 
           {/* Play affordance appears on hover and stays put when selected. */}
           <span
@@ -148,8 +154,8 @@ export function BeatCard({ beat, layout, selected, onSelect, onContextMenu }: Be
           <div className="truncate text-[12.5px] font-medium text-fg" title={beat.title}>
             {beat.title}
           </div>
-          <div className="truncate text-[11px] text-fg-muted" title={beat.producer || beat.sourceChannel || undefined}>
-            {beat.producer || beat.sourceChannel || 'Unknown channel'}
+          <div className="truncate text-[11px] text-fg-muted" title={credit}>
+            {credit}
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-1">

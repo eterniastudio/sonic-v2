@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import {
+  Copy,
   ExternalLink,
   FileJson,
   FolderOpen,
@@ -40,11 +41,13 @@ import { toast } from '@/components/ui/Toaster'
 export function PreviewTransport({
   beat,
   onClose,
-  onRequestDelete
+  onRequestDelete,
+  onRequestExport
 }: {
   beat: LibraryBeat
   onClose: () => void
   onRequestDelete: () => void
+  onRequestExport: () => void
 }): ReactNode {
   const theme = useResolvedTheme()
   const updateBeatMetadata = useApp((state) => state.updateBeatMetadata)
@@ -312,7 +315,7 @@ export function PreviewTransport({
 
           <span className="mx-0.5 h-7 w-px bg-line" />
 
-          <Tooltip label="Reveal, open or delete this beat">
+          <Tooltip label={beat.fileOwnership === 'external' ? 'Open, export or remove from library' : 'Reveal, open or delete this beat'}>
             <span>
               <CircleMenu
                 label="Beat actions"
@@ -339,9 +342,16 @@ export function PreviewTransport({
                       if (!opened) toast({ kind: 'error', title: 'No sidecar is recorded for this beat.' })
                     })
                   },
+                  ...(beat.fileOwnership === 'external' ? [{
+                    id: 'export',
+                    label: 'Export prepared copy',
+                    icon: <Copy />,
+                    disabled: beat.missing,
+                    onSelect: onRequestExport
+                  }] : []),
                   {
                     id: 'delete',
-                    label: 'Delete this beat',
+                    label: beat.fileOwnership === 'external' ? 'Remove from library' : 'Delete this beat',
                     icon: <Trash2 />,
                     tone: 'danger',
                     onSelect: onRequestDelete
@@ -381,6 +391,7 @@ export function PreviewTransport({
         <Badge size="sm" tone="outline">
           {beat.presetId}
         </Badge>
+        {beat.fileOwnership === 'external' ? <Badge size="sm" tone="outline">local original</Badge> : null}
 
         <AnalysisStatusBadge beat={beat} />
         {beat.overrides.length > 0 ? (

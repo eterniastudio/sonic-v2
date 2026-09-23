@@ -12,6 +12,7 @@ import type {
   EngineStatus,
   Job,
   LibraryBeat,
+  LocalImportReview,
   MetadataDraft,
   MetadataField,
   PresetId,
@@ -77,6 +78,11 @@ export interface IpcMap {
   'queue:openOutput': { args: [id: string]; result: boolean }
 
   'library:list': { args: []; result: LibraryBeat[] }
+  'import:chooseFiles': { args: []; result: { sessionId: string | null } }
+  'import:chooseFolder': { args: [recursive: boolean]; result: { sessionId: string | null } }
+  'import:status': { args: [sessionId: string]; result: LocalImportReview | null }
+  'import:confirm': { args: [sessionId: string, selectedIds: string[]]; result: LocalImportReview }
+  'import:cancel': { args: [sessionId: string]; result: LocalImportReview | null }
   'library:openSource': { args: [id: string]; result: boolean }
   'library:refreshSource': { args: [id: string]; result: LibraryBeat[] }
   'library:revealFile': { args: [id: string]; result: boolean }
@@ -187,6 +193,11 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'queue:revealOutput',
   'queue:openOutput',
   'library:list',
+  'import:chooseFiles',
+  'import:chooseFolder',
+  'import:status',
+  'import:confirm',
+  'import:cancel',
   'library:openSource',
   'library:refreshSource',
   'library:revealFile',

@@ -157,6 +157,7 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
     format: extension,
     filePath,
     fileName,
+    fileOwnership: 'sonic-export',
     sidecarPath,
     publishedTags: input.tagReadback ?? null,
     sizeBytes: input.output.sizeBytes,
