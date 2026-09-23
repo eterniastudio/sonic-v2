@@ -4,6 +4,7 @@ import { chmodSync, existsSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { EngineComponent, EngineProgress, EngineStatus } from '@shared/domain'
 import { downloadToFile, fetchText } from '../lib/net'
+import { run } from '../lib/child'
 import { ensureDir, removeDir, removeFile, sha256File, moveFile } from '../lib/fsx'
 import { engineDir, stagingDir } from './paths'
 import { settingsService } from './settings'
@@ -55,17 +56,13 @@ function which(binary: string): string | null {
   return null
 }
 
-/** Reads a tool's self-reported version. Cheap: short timeout, output discarded. */
-function probeVersion(binary: string): string | null {
+/** Reads a tool's self-reported version without blocking the main process. */
+async function probeVersion(binary: string, signal?: AbortSignal): Promise<string | null> {
   const args = binary.toLowerCase().includes('yt-dlp') ? ['--version'] : ['-version']
   try {
-    const result = spawnSync(binary, args, {
-      timeout: 12_000,
-      windowsHide: true,
-      encoding: 'utf8'
-    })
-    if (result.error || result.status !== 0) return null
-    const firstLine = (result.stdout ?? '').split(/\r?\n/)[0]?.trim() ?? ''
+    const result = await run(binary, args, { signal, timeoutMs: 12_000, maxCaptureBytes: 4096 })
+    if (result.aborted || result.timedOut || result.code !== 0) return null
+    const firstLine = result.stdout.split(/\r?\n/)[0]?.trim() ?? ''
     if (firstLine.length === 0) return null
     // `ffmpeg version 8.0-essentials_build ...` → `8.0-essentials_build`
     const versioned = /\bversion\s+(\S+)/i.exec(firstLine)
@@ -91,7 +88,7 @@ class EngineService extends EventEmitter {
     return settings.ffprobePath
   }
 
-  async resolve(name: ToolName, force = false): Promise<ResolvedTool> {
+  async resolve(name: ToolName, force = false, signal?: AbortSignal): Promise<ResolvedTool> {
     if (!force) {
       const cached = this.cached?.status.components.find((component) => component.name === name)
       if (cached && this.cached && Date.now() - this.cached.at < 20_000) {
@@ -101,17 +98,17 @@ class EngineService extends EventEmitter {
 
     const explicit = this.explicitPath(name)
     if (explicit && existsSync(explicit)) {
-      return { name, path: explicit, version: probeVersion(explicit), origin: 'system' }
+      return { name, path: explicit, version: await probeVersion(explicit, signal), origin: 'system' }
     }
 
     const managed = path.join(engineDir(), TOOL_BINARY[name])
     if (existsSync(managed)) {
-      return { name, path: managed, version: probeVersion(managed), origin: 'managed' }
+      return { name, path: managed, version: await probeVersion(managed, signal), origin: 'managed' }
     }
 
     const system = which(TOOL_BINARY[name])
     if (system) {
-      return { name, path: system, version: probeVersion(system), origin: 'system' }
+      return { name, path: system, version: await probeVersion(system, signal), origin: 'system' }
     }
 
     return { name, path: null, version: null, origin: null }

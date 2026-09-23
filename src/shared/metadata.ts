@@ -589,6 +589,64 @@ function present(value: unknown): boolean {
   return value != null && value !== ''
 }
 
+export type FieldOrigin = 'manual' | 'title' | 'description' | 'filename' | 'embedded' | 'audio' | 'legacy' | 'none'
+
+export interface FieldDecision {
+  value: MetadataValues[MetadataField] | null
+  origin: FieldOrigin
+  resetValue: MetadataValues[MetadataField] | null
+  resetOrigin: FieldOrigin
+  measuredValue: MetadataValues[MetadataField] | null
+}
+
+/** Compares effective metadata with tags actually read back at publication. */
+export function publishedTagStatus(current: Partial<BeatMetadata>, readback: MetadataValues | null | undefined):
+  'unknown' | 'absent' | 'current' | 'out-of-sync' {
+  if (readback == null) return 'unknown'
+  const fields: Array<keyof Pick<BeatMetadata, 'title' | 'producer' | 'bpm' | 'key'>> = ['title', 'producer', 'bpm', 'key']
+  if (fields.every(field => !present(readback[field]))) return 'absent'
+  return fields.every(field => {
+    const actual = readback[field]
+    const expected = current[field]
+    if (!present(expected) && !present(actual)) return true
+    if (field === 'bpm') return typeof expected === 'number' && typeof actual === 'number' && Math.abs(expected - actual) < 0.01
+    return String(actual ?? '').trim().toLowerCase() === String(expected ?? '').trim().toLowerCase()
+  }) ? 'current' : 'out-of-sync'
+}
+
+/** The same evidence priority used by library reset and the preview label. */
+export function decideMetadataField(field: MetadataField, input: {
+  current: Partial<BeatMetadata>
+  overrides: MetadataField[]
+  sources: SourceValues
+  embedded: MetadataValues
+  analyzed: MetadataValues
+}): FieldDecision {
+  const layers: Array<{ origin: FieldOrigin; values: MetadataValues }> = [
+    { origin: 'title', values: input.sources.title },
+    { origin: 'description', values: input.sources.description },
+    { origin: 'filename', values: input.sources.filename },
+    { origin: 'embedded', values: input.embedded },
+    { origin: 'audio', values: input.analyzed }
+  ]
+  const evidence = layers.find(layer => present(layer.values[field]))
+  const resetValue = evidence?.values[field] ?? null
+  const measuredValue = input.analyzed[field] ?? null
+  const current = input.current[field] ?? null
+  if (input.overrides.includes(field)) {
+    return { value: current, origin: 'manual', resetValue, resetOrigin: evidence?.origin ?? 'none', measuredValue }
+  }
+  // A pre-provenance library record can retain its effective value. Never
+  // mislabel it as acoustic evidence merely because an analysis also exists.
+  if (present(current) && !evidence) {
+    return { value: current, origin: 'legacy', resetValue: null, resetOrigin: 'none', measuredValue }
+  }
+  if (present(current) && evidence && String(current) !== String(resetValue)) {
+    return { value: current, origin: 'legacy', resetValue, resetOrigin: evidence.origin, measuredValue }
+  }
+  return { value: resetValue, origin: evidence?.origin ?? 'none', resetValue, resetOrigin: evidence?.origin ?? 'none', measuredValue }
+}
+
 /** Picks the effective value for one field under the authority order. */
 function chooseField(field: MetadataField, input: ReconcileInput): MetadataValues[MetadataField] {
   if (input.overrides?.includes(field)) {

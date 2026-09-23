@@ -110,7 +110,7 @@ export function CommandPalette(): ReactNode {
         icon: <FolderOpen />,
         keywords: 'explorer finder destination downloads',
         onSelect: () => {
-          if (settings.downloadDir) void window.sonic.invoke('app:openPath', settings.downloadDir)
+          if (settings.downloadDir) void window.sonic.invoke('app:openDirectory', 'downloads')
         }
       },
       {

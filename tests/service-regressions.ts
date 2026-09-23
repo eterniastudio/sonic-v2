@@ -6,11 +6,13 @@ import { libraryAnalysis } from '../src/main/analysis/libraryAnalysis'
 import { analysisService } from '../src/main/analysis/service'
 import { libraryService } from '../src/main/services/library'
 import { settingsService } from '../src/main/services/settings'
-import { parseDeclared } from '../src/shared/metadata'
+import { decideMetadataField, parseDeclared, publishedTagStatus } from '../src/shared/metadata'
 import { reexportBeat } from '../src/main/services/reexport'
 import { probeMediaFile, tagsToMetadata } from '../src/main/services/ffprobe'
 import { retryStorage } from '../src/main/lib/jsonStore'
 import { queueService } from '../src/main/services/queue'
+import { engineService } from '../src/main/services/engine'
+import { stagingDir } from '../src/main/services/paths'
 import { preferredSourceChannel } from '../src/main/services/probe'
 import { renderExportStem } from '../src/shared/template'
 
@@ -112,10 +114,31 @@ app.whenReady().then(async () => {
     assert.equal(tags.bpm, 133); assert.equal(tags.key, 'F# minor')
     const beat = libraryService.list().find(entry => entry.filePath === result.outputPath)!
     assert.equal(beat.bpm, 133); assert.equal(beat.key, 'F# minor')
-    const sidecar = JSON.parse(await readFile(beat.sidecarPath!, 'utf8'))
-    assert.equal(sidecar.metadata.bpm, 133)
+    assert.deepEqual(beat.publishedTags, tags)
+    assert.equal(publishedTagStatus(beat, beat.publishedTags), 'current')
+    await libraryService.updateMetadata(beat.id, { bpm: 134 })
+    assert.equal(publishedTagStatus(libraryService.get(beat.id)!, beat.publishedTags), 'out-of-sync')
+    const updatedBeat = libraryService.get(beat.id)!
+    const sidecar = JSON.parse(await readFile(updatedBeat.sidecarPath!, 'utf8'))
+    assert.equal(sidecar.metadata.bpm, 134)
     assert.deepEqual(beat.embedded, {}) // Never treat Sonic's own written tags as source evidence.
     assert.equal((await libraryService.remove(beat.id, true)).ok, true)
+  })
+  await check('simultaneous re-exports use independent staging and publish two owned outputs', async () => {
+    const [first, second] = await Promise.all([
+      reexportBeat('fixture-0', 'flac'), reexportBeat('fixture-0', 'flac')
+    ])
+    assert.equal(first.ok, true, first.error ?? '')
+    assert.equal(second.ok, true, second.error ?? '')
+    assert.notEqual(first.outputPath, second.outputPath)
+    for (const result of [first, second]) {
+      const beat = libraryService.list().find(entry => entry.filePath === result.outputPath)!
+      assert.ok(beat)
+      assert.equal((await probeMediaFile(beat.filePath)).audio?.codec, 'flac')
+      assert.equal(JSON.parse(await readFile(beat.sidecarPath!, 'utf8')).output.fingerprint, beat.fingerprint)
+      assert.equal((await libraryService.remove(beat.id, true)).ok, true)
+    }
+    assert.deepEqual((await fs.readdir(stagingDir())).filter(name => name.startsWith('reexport-')), [])
   })
   await check('exclusive publication preserves a concurrent unrelated output', async () => {
     const originalOpen = fs.open
@@ -239,6 +262,31 @@ app.whenReady().then(async () => {
     assert.equal(libraryService.get('fixture-3')?.key, null)
     assert.equal(libraryService.get('fixture-3')?.camelot, null)
   })
+  await check('reset uses declared evidence before tags and audio, while measured remains a separate choice', async () => {
+    const original = libraryService.get('fixture-3')!
+    const sources = { title: { bpm: 140, key: 'C major', camelot: '8B' },
+      description: { bpm: 142 }, filename: {} }
+    libraryService.update(original.id, { sources, embedded: { bpm: 150, key: 'A minor' } })
+    await libraryService.updateMetadata(original.id, { bpm: 180, key: 'E minor' })
+    const manual = libraryService.get(original.id)!
+    const decision = decideMetadataField('bpm', { current: manual, overrides: manual.overrides,
+      sources: manual.sources, embedded: manual.embedded, analyzed: { bpm: 128 } })
+    assert.equal(decision.origin, 'manual')
+    assert.equal(decision.resetOrigin, 'title')
+    assert.equal(decision.resetValue, 140)
+    assert.equal(decision.measuredValue, 128)
+    await libraryService.updateMetadata(original.id, {}, ['bpm', 'altBpm'])
+    let reset = libraryService.get(original.id)!
+    assert.equal(reset.bpm, 140)
+    assert.equal(reset.key, 'E minor')
+    assert.equal(reset.overrides.includes('bpm'), false)
+    await libraryService.updateMetadata(original.id, {}, ['key', 'camelot'])
+    reset = libraryService.get(original.id)!
+    assert.equal(reset.key, 'C major')
+    assert.equal(reset.camelot, '8B')
+    assert.equal(reset.overrides.includes('key'), false)
+    assert.equal(reset.sidecarSync?.status, 'synced')
+  })
   await check('controlled queue debounce failure retains latest order and never escapes the timer', async () => {
     queueService.init()
     queueService.flush()
@@ -265,6 +313,57 @@ app.whenReady().then(async () => {
       queueService.flush()
       assert.deepEqual(JSON.parse(await readFile(queuePath, 'utf8')).jobs.map((job: { id: string }) => job.id), intended)
     } finally { globalThis.setTimeout = original; if (handle) clearTimeout(handle); await queueService.stopAll() }
+  })
+  await check('analysis deadline includes capacity wait and removes its waiter', async () => {
+    const gate = analysisService as unknown as { active: number; waiting: (() => void)[] }
+    const originalActive = gate.active
+    gate.active = 100
+    const beat = libraryService.get('fixture-0')!
+    try {
+      const result = await analysisService.analyze({ requestId: 'deadline-capacity', inputPath: beat.filePath,
+        durationSec: beat.durationSec, force: true, timeoutMs: 50 })
+      assert.equal(result.ok, false)
+      assert.equal(result.cancelled, false)
+      assert.match(result.error ?? '', /timed out after 50 ms/)
+      assert.equal(gate.waiting.length, 0)
+      assert.equal(gate.active, 100)
+      assert.equal(analysisService.isRunning('deadline-capacity'), false)
+    } finally { gate.active = originalActive }
+  })
+  await check('analysis deadline starts before engine resolution completes', async () => {
+    const originalResolve = engineService.resolve
+    engineService.resolve = (async (_name, _force, signal) => new Promise(resolve => {
+      if (signal?.aborted) { resolve({ name: 'ffmpeg', path: null, version: null, origin: null }); return }
+      signal?.addEventListener('abort', () => resolve({ name: 'ffmpeg', path: null,
+        version: null, origin: null }), { once: true })
+    })) as typeof engineService.resolve
+    const beat = libraryService.get('fixture-0')!
+    try {
+      const result = await analysisService.analyze({ requestId: 'deadline-resolution', inputPath: beat.filePath,
+        durationSec: beat.durationSec, force: true, timeoutMs: 25 })
+      assert.equal(result.ok, false)
+      assert.match(result.error ?? '', /timed out after 25 ms/)
+      assert.equal(analysisService.isRunning('deadline-resolution'), false)
+    } finally { engineService.resolve = originalResolve }
+  })
+  await check('cancelling during capacity wait settles without occupying a slot', async () => {
+    const gate = analysisService as unknown as { active: number; waiting: (() => void)[] }
+    const originalActive = gate.active
+    gate.active = 100
+    const beat = libraryService.get('fixture-0')!
+    try {
+      const pending = analysisService.analyze({ requestId: 'cancel-capacity', inputPath: beat.filePath,
+        durationSec: beat.durationSec, force: true })
+      const deadline = Date.now() + 10_000
+      while (!gate.waiting.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5))
+      assert.equal(gate.waiting.length, 1, 'request should reach the controlled capacity gate')
+      analysisService.cancel('cancel-capacity')
+      const result = await pending
+      assert.equal(result.cancelled, true)
+      assert.equal(gate.waiting.length, 0)
+      assert.equal(gate.active, 100)
+      assert.equal(analysisService.isRunning('cancel-capacity'), false)
+    } finally { gate.active = originalActive }
   })
   await writeFile(path.join(app.getPath('userData'), 'service-results.json'), JSON.stringify(checks, null, 2))
   console.log(JSON.stringify(checks, null, 2)); app.exit(checks.every(check => check.ok) ? 0 : 1)

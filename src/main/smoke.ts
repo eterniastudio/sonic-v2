@@ -629,6 +629,21 @@ export function installSmokeTest(window: BrowserWindow): void {
         unknownChannelRejected = true
       }
 
+      let invalidPayloadRejected = false
+      try {
+        await invoke('library:updateMetadata', '${beatId}', { bpm: 'corrupt' })
+      } catch {
+        invalidPayloadRejected = true
+      }
+      const beatAfterInvalidPayload = (await invoke('library:list')).find((entry) => entry.id === '${beatId}')
+
+      let arbitraryPathRejected = false
+      try {
+        await invoke('app:openPath', 'not-an-actual-path')
+      } catch {
+        arbitraryPathRejected = true
+      }
+
       return {
         ok:
           afterBpm.metadata.final.bpm === 145 &&
@@ -640,7 +655,8 @@ export function installSmokeTest(window: BrowserWindow): void {
           preview.rendered === 'KBeats - Midnight Drive [144 BPM] [F# minor]' &&
           beat.bpm === 128 &&
           beat.camelot === '8A' &&
-          unknownChannelRejected,
+          unknownChannelRejected && invalidPayloadRejected &&
+          beatAfterInvalidPayload.bpm === 128 && arbitraryPathRejected,
         editedBpm: afterBpm.metadata.final.bpm,
         revisionBumped: afterBpm.revision > job.revision,
         derivedCamelotFromKey: afterKey.metadata.final.camelot,
@@ -649,10 +665,36 @@ export function installSmokeTest(window: BrowserWindow): void {
         templatePreview: preview.rendered,
         libraryBpmAfterUpdate: beat.bpm,
         libraryCamelotAfterUpdate: beat.camelot,
-        unknownChannelRejected
+        unknownChannelRejected,
+        invalidPayloadRejected,
+        beatUnaffectedByInvalidPayload: beatAfterInvalidPayload.bpm === 128,
+        arbitraryPathRejected
       }
     })()`)
   }
+
+  /** Always runs, including the offline boot smoke without a download fixture. */
+  const checkIpcBoundary = async (): Promise<GroupResult> =>
+    evalInRenderer<GroupResult>(`(async () => {
+      const invoke = window.sonic.invoke
+      const before = await invoke('settings:get')
+      let malformedRejected = false
+      let arbitraryPathRejected = false
+      let unknownEventRejected = false
+      try { await invoke('settings:patch', { theme: { invalid: true } }) }
+      catch { malformedRejected = true }
+      try { await invoke('app:openPath', 'not-an-actual-path') }
+      catch { arbitraryPathRejected = true }
+      try { window.sonic.on('not:a:real:event', () => {}) }
+      catch { unknownEventRejected = true }
+      const after = await invoke('settings:get')
+      return {
+        ok: malformedRejected && arbitraryPathRejected && unknownEventRejected &&
+          after.theme === before.theme,
+        malformedRejected, arbitraryPathRejected, unknownEventRejected,
+        settingsUnchanged: after.theme === before.theme
+      }
+    })()`)
 
   /**
    * Deletion is advertised as conservative: a file that changed on disk since
@@ -808,9 +850,11 @@ export function installSmokeTest(window: BrowserWindow): void {
     let deletion: GroupResult | null = null
     let analysis: GroupResult | null = null
     let probeCheck: GroupResult | null = null
+    let ipcBoundary: GroupResult | null = null
 
     try {
       themes = await checkThemes()
+      ipcBoundary = await checkIpcBoundary()
 
       if (beatId) {
         media = await checkMediaProtocol(beatId, exportedBytes)
@@ -833,6 +877,7 @@ export function installSmokeTest(window: BrowserWindow): void {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       themes = themes ?? { ok: false, error: message }
+      ipcBoundary = ipcBoundary ?? { ok: false, error: message }
       ipcChecks = ipcChecks ?? { ok: false, error: message }
       analysis = analysis ?? { ok: false, error: message }
     }
@@ -850,6 +895,7 @@ export function installSmokeTest(window: BrowserWindow): void {
       namingTemplates: status(namingOk),
       pipeline: status(smokeUrl ? (pipeline?.ok ?? false) : null),
       themes: status(themes ? themedOk : null),
+      ipcBoundary: status(ipcBoundary?.ok),
       mediaProtocol: status(media?.ok),
       previewTransport: status(preview?.ok),
       rendererIpc: status(ipcChecks?.ok),
@@ -872,6 +918,7 @@ export function installSmokeTest(window: BrowserWindow): void {
         templateChecks: naming,
         pipeline,
         themes,
+        ipcBoundary,
         mediaProtocol: media,
         previewTransport: preview,
         rendererIpc: ipcChecks,

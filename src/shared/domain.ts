@@ -233,6 +233,8 @@ export interface LibraryBeat {
   sidecarPath: string | null
   /** Library is authoritative; audio tags are unchanged by correction. */
   sidecarSync?: { status: 'pending' | 'synced' | 'error'; error: string | null }
+  /** Tags read back from this exact published audio file, before library edits. */
+  publishedTags?: MetadataValues | null
   sizeBytes: number
   durationSec: number
   bitrateKbps: number | null

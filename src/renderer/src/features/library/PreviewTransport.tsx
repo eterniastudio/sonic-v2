@@ -13,13 +13,14 @@ import {
   X
 } from 'lucide-react'
 import type { LibraryBeat } from '@shared/domain'
-import { describeAnalysisStatus } from '@shared/analysis'
-import { BPM_MIN as MIN_BPM, BPM_MAX as MAX_BPM } from '@shared/metadata'
+import type { StorageStatus } from '@shared/ipc'
+import { analyzedValuesFrom, describeAnalysisStatus } from '@shared/analysis'
+import { decideMetadataField, publishedTagStatus, BPM_MIN as MIN_BPM, BPM_MAX as MAX_BPM, type FieldOrigin } from '@shared/metadata'
 import { parseKeyString } from '@shared/music'
 import { formatBitrate, formatBpm, formatBytes, formatChannelCount, formatDuration, formatRelativeTime, formatSampleRate } from '@shared/format'
 import { cn } from '@/lib/cn'
 import { ipc } from '@/lib/ipc'
-import { useNow } from '@/lib/hooks'
+import { useIpcEvent, useNow } from '@/lib/hooks'
 import { useApp } from '@/store/app'
 import { useResolvedTheme } from '@/lib/theme'
 import { Badge } from '@/components/ui/Badge'
@@ -48,6 +49,16 @@ export function PreviewTransport({
   const theme = useResolvedTheme()
   const updateBeatMetadata = useApp((state) => state.updateBeatMetadata)
   const now = useNow(30_000)
+  const [storage, setStorage] = useState<StorageStatus[]>([])
+  useIpcEvent('storage:changed', setStorage)
+  useEffect(() => { void ipc.invoke('storage:status').then(setStorage).catch(() => undefined) }, [])
+  const libraryStorage = storage.find(item => /[\\/]library\.json$/i.test(item.file))
+  const librarySaved = libraryStorage != null && !libraryStorage.error && libraryStorage.persisted >= libraryStorage.revision
+  const evidenceInput = { current: beat, overrides: beat.overrides, sources: beat.sources,
+    embedded: beat.embedded, analyzed: beat.analysis ? analyzedValuesFrom(beat.analysis) : {} }
+  const bpmDecision = decideMetadataField('bpm', evidenceInput)
+  const keyDecision = decideMetadataField('key', evidenceInput)
+  const tags = publishedTagStatus(beat, beat.publishedTags)
 
   const waveRef = useRef<HTMLDivElement | null>(null)
   const wsRef = useRef<WaveSurfer | null>(null)
@@ -311,25 +322,22 @@ export function PreviewTransport({
                     id: 'reveal',
                     label: 'Reveal in folder',
                     icon: <FolderOpen />,
-                    onSelect: () => ipc.invoke('app:revealPath', beat.filePath)
+                    onSelect: () => ipc.invoke('library:revealFile', beat.id)
                   },
                   {
                     id: 'open',
                     label: 'Open in default player',
                     icon: <ExternalLink />,
-                    onSelect: () => ipc.invoke('app:openPath', beat.filePath)
+                    onSelect: () => ipc.invoke('library:openFile', beat.id)
                   },
                   {
                     id: 'sidecar',
                     label: 'Show sidecar JSON',
                     icon: <FileJson />,
                     disabled: beat.sidecarPath == null,
-                    onSelect: () => {
-                      return ipc.invoke('library:openSidecar', beat.id).then((sidecarPath) => {
-                        if (sidecarPath) return ipc.invoke('app:openPath', sidecarPath)
-                        else toast({ kind: 'error', title: 'No sidecar is recorded for this beat.' })
-                      })
-                    }
+                    onSelect: () => ipc.invoke('library:openSidecarFile', beat.id).then((opened) => {
+                      if (!opened) toast({ kind: 'error', title: 'No sidecar is recorded for this beat.' })
+                    })
                   },
                   {
                     id: 'delete',
@@ -354,17 +362,13 @@ export function PreviewTransport({
         {beat.bpm != null ? (
           <Badge size="sm" tone="accent">
             {formatBpm(beat.bpm)} BPM
-            {beat.analysis?.tempo.status === 'estimated' && !beat.overrides.includes('bpm') ? (
-              <AudioMark />
-            ) : null}
+            <OriginMark origin={bpmDecision.origin} />
           </Badge>
         ) : null}
         {beat.key ? (
           <Badge size="sm">
             {beat.key}
-            {beat.analysis?.key.status === 'estimated' && !beat.overrides.includes('key') ? (
-              <AudioMark />
-            ) : null}
+            <OriginMark origin={keyDecision.origin} />
           </Badge>
         ) : null}
         {beat.camelot ? <Badge size="sm">{beat.camelot}</Badge> : null}
@@ -384,6 +388,15 @@ export function PreviewTransport({
             {beat.overrides.length} manual
           </Badge>
         ) : null}
+        <Badge size="sm" tone={librarySaved ? 'success' : 'warning'}>
+          {librarySaved ? 'library saved' : libraryStorage ? 'library save pending' : 'library status checking'}
+        </Badge>
+        {beat.sidecarPath ? <Badge size="sm" tone={beat.sidecarSync?.status === 'error' ? 'danger' : beat.sidecarSync?.status === 'synced' ? 'success' : 'warning'}>
+          sidecar {beat.sidecarSync?.status ?? 'pending'}
+        </Badge> : null}
+        <Badge size="sm" tone={tags === 'current' ? 'success' : tags === 'unknown' ? 'neutral' : 'warning'}>
+          {tags === 'current' ? 'audio tags match' : tags === 'absent' ? 'audio tags absent' : tags === 'out-of-sync' ? 'audio tags need re-export' : 'audio tags unverified'}
+        </Badge>
 
         <span className="flex-1" />
 
@@ -417,14 +430,15 @@ export function PreviewTransport({
   )
 }
 
-/** Marks a value that came from the audio rather than text, tags or a person. */
-function AudioMark(): ReactNode {
+/** Show the decision's real origin, including legacy values with no evidence. */
+function OriginMark({ origin }: { origin: FieldOrigin }): ReactNode {
+  const label = origin === 'embedded' ? 'tag' : origin === 'description' ? 'description' : origin === 'filename' ? 'filename' : origin === 'title' ? 'title' : origin === 'legacy' ? 'unknown' : origin
   return (
     <span
-      title="Audio estimate"
+      title={origin === 'legacy' ? 'Origin was not saved for this older record' : `Source: ${label}`}
       className="ml-1 rounded-[3px] bg-[var(--sonic-accent-line)] px-1 text-[9px] font-semibold tracking-wide text-fg uppercase"
     >
-      audio
+      {label}
     </span>
   )
 }
@@ -497,6 +511,10 @@ function AnalyzeButton({ beat }: { beat: LibraryBeat }): ReactNode {
 
 export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
   const update = useApp(state => state.updateBeatMetadata)
+  const evidenceInput = { current: beat, overrides: beat.overrides, sources: beat.sources,
+    embedded: beat.embedded, analyzed: beat.analysis ? analyzedValuesFrom(beat.analysis) : {} }
+  const bpmDecision = decideMetadataField('bpm', evidenceInput)
+  const keyDecision = decideMetadataField('key', evidenceInput)
   // null means untouched; an empty string is an intentional manual clearing.
   // Read untouched values directly from the latest record so an analysis update
   // cannot freeze the other field or accidentally turn it into an override.
@@ -507,10 +525,10 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
   const [pending, setPending] = useState(false)
   const pendingRef = useRef(false)
   const [error, setError] = useState('')
-  const save = async (reset?: 'bpm' | 'key'): Promise<void> => {
+  const save = async (action?: { kind: 'reset' | 'measured'; field: 'bpm' | 'key' }): Promise<void> => {
     if (pendingRef.current) return
     const patch: { bpm?: number | null; key?: string | null } = {}
-    if (!reset && draft.bpm !== null) {
+    if (!action && draft.bpm !== null) {
       const value = draft.bpm.trim()
       if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < MIN_BPM || Number(value) > MAX_BPM)) {
         setError(`Tempo must be ${MIN_BPM}–${MAX_BPM} BPM.`)
@@ -518,7 +536,7 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
       }
       patch.bpm = value === '' ? null : Number(value)
     }
-    if (!reset && draft.key !== null) {
+    if (!action && draft.key !== null) {
       const value = draft.key.trim()
       const parsed = parseKeyString(value)
       if (value !== '' && !parsed) {
@@ -527,11 +545,17 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
       }
       patch.key = parsed?.key ?? null
     }
+    if (action?.kind === 'measured') {
+      const measured = action.field === 'bpm' ? bpmDecision.measuredValue : keyDecision.measuredValue
+      if (measured == null) { setError('No measured value is available for this field.'); return }
+      if (action.field === 'bpm') patch.bpm = Number(measured)
+      else patch.key = String(measured)
+    }
     pendingRef.current = true
     setPending(true); setError('')
     try {
-      await update(beat.id, patch, reset ? reset === 'key' ? ['key', 'camelot'] : ['bpm', 'altBpm'] : undefined)
-      setDraft(current => reset ? { ...current, [reset]: null } : { bpm: null, key: null })
+      await update(beat.id, patch, action?.kind === 'reset' ? action.field === 'key' ? ['key', 'camelot'] : ['bpm', 'altBpm'] : undefined)
+      setDraft(current => action ? { ...current, [action.field]: null } : { bpm: null, key: null })
     } catch (failure) {
       // A rejected operation can still have committed the library before an
       // optional output failed. Keep the submitted draft and explain the error;
@@ -544,8 +568,14 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
       <label>BPM <input aria-label="Manual BPM" className="w-20 rounded border border-line bg-surface px-2 py-1" value={bpm} onChange={event => setDraft(current => ({ ...current, bpm: event.target.value }))} /></label>
       <label>Key <input aria-label="Manual key" className="w-28 rounded border border-line bg-surface px-2 py-1" value={key} onChange={event => setDraft(current => ({ ...current, key: event.target.value }))} /></label>
       <button type="button" disabled={!dirty || pending} onClick={() => void save()} className="rounded bg-accent-soft px-3 py-1 text-accent">{pending ? 'Saving…' : 'Save corrections'}</button>
-      <button type="button" disabled={!beat.overrides.includes('bpm')} onClick={() => void save('bpm')}>Reset BPM</button>
-      <button type="button" disabled={!beat.overrides.includes('key')} onClick={() => void save('key')}>Reset key</button>
+      <button type="button" disabled={!beat.overrides.includes('bpm')} onClick={() => void save({ kind: 'reset', field: 'bpm' })} title={`Evidence priority: ${bpmDecision.resetOrigin}`}>
+        Reset BPM to evidence priority
+      </button>
+      <button type="button" disabled={!beat.overrides.includes('key')} onClick={() => void save({ kind: 'reset', field: 'key' })} title={`Evidence priority: ${keyDecision.resetOrigin}`}>
+        Reset key to evidence priority
+      </button>
+      <button type="button" disabled={bpmDecision.measuredValue == null} onClick={() => void save({ kind: 'measured', field: 'bpm' })} title="Choose the audio estimate as a manual correction">Use measured BPM</button>
+      <button type="button" disabled={keyDecision.measuredValue == null} onClick={() => void save({ kind: 'measured', field: 'key' })} title="Choose the audio estimate as a manual correction">Use measured key</button>
     </fieldset>{error ? <p role="alert" className="mt-1 text-danger">{error}</p> : null}
   </details>
 }

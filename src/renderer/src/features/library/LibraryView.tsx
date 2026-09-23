@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import MiniSearch from 'minisearch'
 import {
   Gauge,
   HardDrive,
@@ -37,10 +36,10 @@ import { NumberPop } from '@/components/ui/NumberPop'
 import { toast } from '@/components/ui/Toaster'
 import { BeatCard } from './BeatCard'
 import { PreviewTransport } from './PreviewTransport'
+import { createLibraryIndex, searchLibrary, type FileFilter, type LibrarySort, type ReviewFilter } from './librarySearch'
 
-type SortKey = 'newest' | 'oldest' | 'bpm-asc' | 'bpm-desc' | 'title' | 'producer'
-
-const SORTS: { key: SortKey; label: string }[] = [
+const SORTS: { key: LibrarySort; label: string }[] = [
+  { key: 'relevance', label: 'Relevance' },
   { key: 'newest', label: 'Newest first' },
   { key: 'oldest', label: 'Oldest first' },
   { key: 'bpm-asc', label: 'Tempo: low → high' },
@@ -49,11 +48,11 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: 'producer', label: 'Producer A → Z' }
 ]
 
-const TEMPO_BANDS: { id: string; label: string; min: number; max: number }[] = [
-  { id: 'slow', label: '< 90', min: 0, max: 90 },
-  { id: 'mid', label: '90–120', min: 90, max: 120 },
-  { id: 'trap', label: '120–150', min: 120, max: 150 },
-  { id: 'fast', label: '150+', min: 150, max: 999 }
+const TEMPO_BANDS: { id: string; label: string }[] = [
+  { id: 'slow', label: '< 90' },
+  { id: 'mid', label: '90–120' },
+  { id: 'trap', label: '120–150' },
+  { id: 'fast', label: '150+' }
 ]
 
 /** Searchable, filterable archive of everything Sonic has exported. */
@@ -68,10 +67,15 @@ export function LibraryView(): ReactNode {
 
   const [query, setQuery] = useState('')
   const [layout, setLayout] = useState<'grid' | 'list'>('grid')
-  const [sort, setSort] = useState<SortKey>('newest')
+  const [sort, setSort] = useState<LibrarySort>('newest')
   const [bands, setBands] = useState<Set<string>>(new Set())
   const [formats, setFormats] = useState<Set<string>>(new Set())
-  const [hideMissing, setHideMissing] = useState(false)
+  const [fileFilter, setFileFilter] = useState<FileFilter>('all')
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all')
+  const [bpmFilter, setBpmFilter] = useState('')
+  const [bpmTolerance, setBpmTolerance] = useState(3)
+  const [includeHalfDouble, setIncludeHalfDouble] = useState(false)
+  const [keyFilter, setKeyFilter] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<LibraryBeat | null>(null)
   const [alsoDeleteFiles, setAlsoDeleteFiles] = useState(true)
@@ -106,67 +110,17 @@ export function LibraryView(): ReactNode {
 
   const cardRefs = useRef(new Map<string, HTMLDivElement>())
 
-  // MiniSearch handles fuzzy + prefix matching far better than a substring scan.
-  const index = useMemo(() => {
-    const search = new MiniSearch<LibraryBeat>({
-      fields: ['title', 'producer', 'sourceChannel', 'fileName', 'key', 'camelot', 'format', 'genre' as never],
-      searchOptions: {
-        boost: { title: 2, producer: 1.6 },
-        fuzzy: 0.2,
-        prefix: true,
-        combineWith: 'AND'
-      }
-    })
-    search.addAll(library)
-    return search
-  }, [library])
+  const index = useMemo(() => createLibraryIndex(library), [library])
 
   const availableFormats = useMemo(
     () => [...new Set(library.map((beat) => beat.format))].sort(),
     [library]
   )
 
-  const visible = useMemo(() => {
-    let rows = library
-
-    if (query.trim().length > 0) {
-      const rank = new Map(index.search(query.trim()).map((hit, position) => [String(hit.id), position]))
-      rows = rows.filter((beat) => rank.has(beat.id))
-      rows = [...rows].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
-    }
-
-    if (bands.size > 0) {
-      rows = rows.filter((beat) => {
-        if (beat.bpm == null) return false
-        return TEMPO_BANDS.some((band) => bands.has(band.id) && beat.bpm! >= band.min && beat.bpm! < band.max)
-      })
-    }
-
-    if (formats.size > 0) rows = rows.filter((beat) => formats.has(beat.format))
-    if (hideMissing) rows = rows.filter((beat) => !beat.missing)
-
-    const sorted = [...rows]
-    switch (sort) {
-      case 'oldest':
-        sorted.sort((a, b) => a.addedAt - b.addedAt)
-        break
-      case 'bpm-asc':
-        sorted.sort((a, b) => (a.bpm ?? Number.POSITIVE_INFINITY) - (b.bpm ?? Number.POSITIVE_INFINITY))
-        break
-      case 'bpm-desc':
-        sorted.sort((a, b) => (b.bpm ?? -1) - (a.bpm ?? -1))
-        break
-      case 'title':
-        sorted.sort((a, b) => a.title.localeCompare(b.title))
-        break
-      case 'producer':
-        sorted.sort((a, b) => (a.producer ?? '').localeCompare(b.producer ?? ''))
-        break
-      default:
-        sorted.sort((a, b) => b.addedAt - a.addedAt)
-    }
-    return sorted
-  }, [library, index, query, bands, formats, hideMissing, sort])
+  const visible = useMemo(() => searchLibrary(library, index, {
+    query, sort, bands, formats, fileFilter, reviewFilter, bpm: bpmFilter,
+    bpmTolerance, includeHalfDouble, key: keyFilter
+  }), [library, index, query, sort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter])
 
   const selected = useMemo(
     () => library.find((beat) => beat.id === selectedId) ?? null,
@@ -209,7 +163,8 @@ export function LibraryView(): ReactNode {
     apply(next)
   }
 
-  const activeFilterCount = bands.size + formats.size + (hideMissing ? 1 : 0)
+  const activeFilterCount = bands.size + formats.size + (fileFilter === 'all' ? 0 : 1) +
+    (reviewFilter === 'all' ? 0 : 1) + (bpmFilter.trim() ? 1 : 0) + (keyFilter.trim() ? 1 : 0)
 
   const needsAnalysis = library.filter(
     (beat) => !beat.missing && (beat.analysisStatus === 'not-analyzed' || beat.analysisStatus === 'failed')
@@ -231,7 +186,10 @@ export function LibraryView(): ReactNode {
           <div className="w-[260px]">
             <Input
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                if (!query.trim() && event.target.value.trim()) setSort('relevance')
+                setQuery(event.target.value)
+              }}
               placeholder="Search title, producer, BPM, key…"
               leading={<Search />}
               trailing={
@@ -331,6 +289,25 @@ export function LibraryView(): ReactNode {
 
         {showFilters ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-[12px] border border-line bg-surface px-3.5 py-3">
+            <label className="flex items-center gap-1.5 text-[11px] font-medium text-fg-subtle">
+              BPM
+              <Input type="number" min="1" max="999" step="any" inputMode="decimal"
+                aria-label="Target BPM" value={bpmFilter} onChange={(event) => setBpmFilter(event.target.value)}
+                placeholder="e.g. 140" className="w-[90px]" />
+              ±
+              <Input type="number" min="0" max="20" step="0.5" aria-label="BPM tolerance"
+                value={bpmTolerance} onChange={(event) => setBpmTolerance(Math.min(20, Math.max(0, Number(event.target.value) || 0)))}
+                className="w-[65px]" />
+            </label>
+            <div className="flex items-center gap-2">
+              <Switch checked={includeHalfDouble} onChange={setIncludeHalfDouble} label="Include half and double time" />
+              <span className="text-[11px] text-fg-muted">Half/double time</span>
+            </div>
+            <label className="flex items-center gap-1.5 text-[11px] font-medium text-fg-subtle">
+              Key / Camelot
+              <Input aria-label="Key or Camelot" value={keyFilter} onChange={(event) => setKeyFilter(event.target.value)}
+                placeholder="e.g. 8A" className="w-[90px]" />
+            </label>
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] font-medium text-fg-subtle">Tempo</span>
               {TEMPO_BANDS.map((band) => (
@@ -369,9 +346,27 @@ export function LibraryView(): ReactNode {
               ))}
             </div>
 
-            <div className="flex items-center gap-2">
-              <Switch checked={hideMissing} onChange={setHideMissing} label="Hide missing files" />
-              <span className="text-[11px] text-fg-muted">Hide missing</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-fg-subtle">Files</span>
+              {(['all', 'present', 'missing'] as const).map((value) => (
+                <button key={value} type="button" onClick={() => setFileFilter(value)}
+                  aria-pressed={fileFilter === value}
+                  className={cn('rounded-full border px-2 py-0.5 text-[11px] capitalize transition-colors',
+                    fileFilter === value ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent' : 'border-line text-fg-muted hover:border-line-strong hover:text-fg')}>
+                  {value}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-fg-subtle">Review</span>
+              {(['all', 'incomplete', 'disagreement'] as const).map((value) => (
+                <button key={value} type="button" onClick={() => setReviewFilter(value)}
+                  aria-pressed={reviewFilter === value}
+                  className={cn('rounded-full border px-2 py-0.5 text-[11px] capitalize transition-colors',
+                    reviewFilter === value ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent' : 'border-line text-fg-muted hover:border-line-strong hover:text-fg')}>
+                  {value}
+                </button>
+              ))}
             </div>
 
             {totals.missing > 0 ? (
@@ -389,7 +384,12 @@ export function LibraryView(): ReactNode {
                 onClick={() => {
                   setBands(new Set())
                   setFormats(new Set())
-                  setHideMissing(false)
+                  setFileFilter('all')
+                  setReviewFilter('all')
+                  setBpmFilter('')
+                  setKeyFilter('')
+                  setIncludeHalfDouble(false)
+                  setBpmTolerance(3)
                 }}
               >
                 Reset filters
@@ -558,7 +558,7 @@ export function LibraryView(): ReactNode {
               {item('Open on YouTube', async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid YouTube link is saved for this beat.') }, !beat.sourceUrl)}
               {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.setState({ library: refreshed }) }, !beat.sourceUrl)}
               {item('Rename beat and file…', () => { setRenameTarget(beat); setRenameTitle(beat.title); setRenameError('') }, beat.missing)}
-              {item('Show file in folder', async () => { if (!await ipc.invoke('app:revealPath', beat.filePath)) throw new Error('File is unavailable.') }, beat.missing)}
+              {item('Show file in folder', async () => { if (!await ipc.invoke('library:revealFile', beat.id)) throw new Error('File is unavailable.') }, beat.missing)}
               <div role="separator" className="my-1 border-t border-line" />
               {item('Delete beat…', () => { setAlsoDeleteFiles(true); setDeleteTarget(beat) })}
             </>

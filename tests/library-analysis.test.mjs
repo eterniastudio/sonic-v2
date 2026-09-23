@@ -78,6 +78,7 @@ function fixture(t, options = {}) {
   let stopping = false
   let concurrency = options.concurrency ?? 1
   const service = new EventEmitter()
+  const storageEvents = options.storageEvents ?? new EventEmitter()
   service.engine = shared.ANALYSIS_ENGINE
   service.analyze = request => {
     started.push(request)
@@ -99,6 +100,20 @@ function fixture(t, options = {}) {
   }
   const library = {
     get: id => records.get(id) ?? null,
+    analysisStatusesSaved: () => options.analysisStatusesSaved?.() ?? true,
+    setAnalysisStatuses(ids, status) {
+      if (options.onBatchStatus) return options.onBatchStatus(ids, status, records)
+      for (const id of ids) this.setAnalysisStatus(id, status)
+    },
+    restoreAnalysisStatuses(ids) {
+      if (options.onRestoreStatuses) return options.onRestoreStatuses(ids, records)
+      for (const id of ids) {
+        const current = records.get(id)
+        if (current) this.setAnalysisStatus(id, current.analysis
+          ? shared.deriveAnalysisStatus(current.analysis.tempo, current.analysis.key)
+          : 'not-analyzed')
+      }
+    },
     setAnalysisStatus(id, status) {
       const current = records.get(id)
       if (current) records.set(id, { ...current, analysisStatus: status })
@@ -121,6 +136,7 @@ function fixture(t, options = {}) {
     '@shared/analysis': shared,
     './service': { analysisService: service },
     './cache': { analysisCache: { size: () => cacheSize, clear: () => { cacheSize = 0 } } },
+    '../lib/jsonStore': { storageEvents },
     '../services/library': { libraryService: library },
     '../services/settings': { settingsService: { get: () => ({ analysisConcurrency: concurrency, analyzeOnDownload: true }) } }
   })
@@ -361,6 +377,108 @@ contract('a real JsonStore save failure preserves the pending revision for expli
   assert.equal(records.get('a').analysisStatus, 'estimated')
   assert.equal(storageStatus()[0].error, null)
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8'))[0].analysisStatus, 'estimated')
+})
+
+contract('failed batch admission resumes only after its whole queued revision is retried', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sonic-analysis-batch-'))
+  const file = path.join(directory, 'library.json')
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  let rejectReplacement = false
+  const storage = loadSource('../src/main/lib/jsonStore.ts', {
+    'node:fs': { ...fs, renameSync(source, destination) {
+      if (rejectReplacement && destination === file) throw new Error('injected batch replacement failure')
+      fs.renameSync(source, destination)
+    } },
+    'node:crypto': { randomUUID },
+    'node:events': { EventEmitter },
+    'node:os': { default: os },
+    'node:path': { default: path }
+  })
+  const store = new storage.JsonStore(file, [beat('a'), beat('b')])
+  store.write([beat('a'), beat('b')])
+  const records = {
+    get: id => store.read().find(entry => entry.id === id),
+    set(id, value) { store.write(store.read().map(entry => entry.id === id ? value : entry)) }
+  }
+  const f = fixture(t, {
+    records,
+    storageEvents: storage.storageEvents,
+    analysisStatusesSaved: () => storage.storageStatus().every(item => item.error === null && item.persisted === item.revision),
+    onBatchStatus(ids, status) {
+      const selected = new Set(ids)
+      store.write(store.read().map(entry => selected.has(entry.id) ? { ...entry, analysisStatus: status } : entry))
+    },
+    onRestoreStatuses(ids) {
+      if (ids.length === 0) return
+      const selected = new Set(ids)
+      store.write(store.read().map(entry => selected.has(entry.id) ? {
+        ...entry,
+        analysisStatus: entry.analysis
+          ? shared.deriveAnalysisStatus(entry.analysis.tempo, entry.analysis.key)
+          : 'not-analyzed'
+      } : entry))
+    }
+  })
+  rejectReplacement = true
+  assert.throws(() => f.coordinator.queue(['a', 'b']), /injected batch replacement failure/)
+  assert.equal(f.started.length, 0)
+  assert.equal(f.coordinator.queuedCount, 2)
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).map(entry => entry.analysisStatus), ['not-analyzed', 'not-analyzed'])
+  assert.throws(() => f.coordinator.queue(['a']), /waiting for a storage retry/)
+  rejectReplacement = false
+  storage.retryStorage()
+  await flush()
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).map(entry => entry.analysisStatus), ['analyzing', 'queued'])
+  assert.equal(f.started.length, 1)
+  f.finish('a'); await flush()
+  assert.equal(f.started.length, 2)
+  f.finish('b'); await flush()
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).map(entry => entry.analysisStatus), ['estimated', 'estimated'])
+})
+
+contract('cancelling a blocked admission restores queued statuses after retry', async t => {
+  const storageEvents = new EventEmitter()
+  let saved = false
+  let fail = true
+  const f = fixture(t, {
+    storageEvents,
+    analysisStatusesSaved: () => saved,
+    onBatchStatus(ids, status, records) {
+      if (fail) throw new Error('injected admission failure')
+      for (const id of ids) records.set(id, { ...records.get(id), analysisStatus: status })
+    }
+  })
+  assert.throws(() => f.coordinator.queue(['a', 'b']), /admission failure/)
+  f.coordinator.cancelAll()
+  assert.equal(f.started.length, 0)
+  fail = false
+  for (const id of ['a', 'b']) f.records.set(id, { ...f.records.get(id), analysisStatus: 'queued' })
+  saved = true
+  storageEvents.emit('changed')
+  await flush()
+  assert.equal(f.coordinator.queuedCount, 0)
+  assert.equal(f.started.length, 0)
+  assert.deepEqual(['a', 'b'].map(id => f.records.get(id).analysisStatus), ['not-analyzed', 'not-analyzed'])
+})
+
+contract('normal close settles a retried blocked admission before reporting saved', async t => {
+  let saved = false
+  let fail = true
+  const f = fixture(t, {
+    analysisStatusesSaved: () => saved,
+    onBatchStatus() { if (fail) throw new Error('injected admission failure') }
+  })
+  assert.throws(() => f.coordinator.queue(['a', 'b']), /admission failure/)
+  await f.coordinator.shutdown()
+  for (const id of ['a', 'b']) f.records.set(id, { ...f.records.get(id), analysisStatus: 'queued' })
+  fail = false
+  saved = true
+  // requestShutdown calls this synchronously after retryStorage and before
+  // logging shutdown-saved or asking Electron to quit.
+  f.coordinator.settlePendingAdmission()
+  assert.equal(f.coordinator.queuedCount, 0)
+  assert.equal(f.started.length, 0)
+  assert.deepEqual(['a', 'b'].map(id => f.records.get(id).analysisStatus), ['not-analyzed', 'not-analyzed'])
 })
 
 contract('analysis failure releases capacity for the next queued beat', async t => {

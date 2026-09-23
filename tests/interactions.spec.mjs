@@ -352,7 +352,8 @@ test('bounded offline control sweep and default scope', async () => {
   await page.getByPlaceholder(/Search/).fill('Offline beat 2')
   await expect(page.locator('[data-beat-id]')).toHaveCount(1)
   await page.getByPlaceholder(/Search/).fill('')
-  await page.getByRole('button', { name: 'Newest first' }).click()
+  // Entering a search selects relevance; clearing the text retains the chosen sort.
+  await page.getByRole('button', { name: 'Relevance' }).click()
   await page.getByRole('menuitemradio', { name: /Title A/ }).click()
   await page.getByRole('button', { name: 'Filters', exact: true }).click()
   await page.getByRole('button', { name: /^wav$/i }).click()

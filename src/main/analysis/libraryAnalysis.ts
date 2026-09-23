@@ -5,6 +5,7 @@ import { analysisService, type AnalysisProgress } from './service'
 import { analysisCache } from './cache'
 import { libraryService } from '../services/library'
 import { settingsService } from '../services/settings'
+import { storageEvents } from '../lib/jsonStore'
 
 /**
  * Connects acoustic analysis to the library.
@@ -21,6 +22,8 @@ class LibraryAnalysisCoordinator extends EventEmitter {
   /** Cancellation remains authoritative even if a completed service reply races it. */
   private readonly cancelled = new Set<string>()
   private stopped = false
+  private blockedAdmission = false
+  private readonly cancelAfterRetry = new Set<string>()
   private readonly tasks = new Set<Promise<{ ok: boolean; error: string | null; analysis: AudioAnalysis | null }>>()
 
   constructor() {
@@ -31,6 +34,31 @@ class LibraryAnalysisCoordinator extends EventEmitter {
       if (!beatId || this.stopped) return
       this.emit('progress', { beatId, jobId: null, phase: progress.phase, message: progress.message })
     })
+    storageEvents.on('changed', () => {
+      if (!this.blockedAdmission) return
+      // JsonStore announces a successful retry after its committed cache moves
+      // forward. Never run a batch whose status revision is still unsaved.
+      queueMicrotask(() => {
+        try { this.settlePendingAdmission() }
+        catch (error) { this.emit('storage-error', String(error)) }
+      })
+    })
+  }
+
+  /** Called after final storage retry so close cannot outrun a queued microtask. */
+  settlePendingAdmission(): void {
+    if (!this.blockedAdmission || !libraryService.analysisStatusesSaved()) return
+    if (this.cancelAfterRetry.size) {
+      const ids = [...this.cancelAfterRetry]
+      libraryService.restoreAnalysisStatuses(ids)
+      for (const id of ids) {
+        const index = this.pending.indexOf(id)
+        if (index >= 0) this.pending.splice(index, 1)
+      }
+      this.cancelAfterRetry.clear()
+    }
+    this.blockedAdmission = false
+    this.drain()
   }
 
   private requestIdFor(beatId: string, generation: number): string {
@@ -157,13 +185,17 @@ class LibraryAnalysisCoordinator extends EventEmitter {
   /** Queues each available track once, running it as capacity allows. */
   queue(beatIds: string[]): number {
     if (this.stopped || isStopping()) return 0
+    if (this.blockedAdmission) throw new Error('Library batch admission is waiting for a storage retry.')
     const fresh = [...new Set(beatIds)].filter((id) => {
       const beat = libraryService.get(id)
       return beat != null && !beat.missing && !this.running.has(id) && !this.pending.includes(id)
     })
-    for (const id of fresh) {
-      libraryService.setAnalysisStatus(id, 'queued')
-      this.pending.push(id)
+    this.pending.push(...fresh)
+    try {
+      libraryService.setAnalysisStatuses(fresh, 'queued')
+    } catch (error) {
+      this.blockedAdmission = true
+      throw error
     }
     this.drain()
     return fresh.length
@@ -181,6 +213,10 @@ class LibraryAnalysisCoordinator extends EventEmitter {
   cancel(beatId: string): void {
     const index = this.pending.indexOf(beatId)
     if (index !== -1) {
+      if (this.blockedAdmission) {
+        this.cancelAfterRetry.add(beatId)
+        return
+      }
       this.pending.splice(index, 1)
       this.restoreAnalysisStatus(beatId)
       return
@@ -193,9 +229,18 @@ class LibraryAnalysisCoordinator extends EventEmitter {
   }
 
   cancelAll(): void {
-    const pending = this.pending.splice(0)
-    for (const id of pending) {
-      try { this.restoreAnalysisStatus(id) } catch { /* Pending storage error remains visible and retryable. */ }
+    const pending = [...this.pending]
+    if (this.blockedAdmission) {
+      for (const id of pending) this.cancelAfterRetry.add(id)
+    } else {
+      try {
+        libraryService.restoreAnalysisStatuses(pending)
+        this.pending.length = 0
+      } catch (error) {
+        this.blockedAdmission = true
+        for (const id of pending) this.cancelAfterRetry.add(id)
+        this.emit('storage-error', String(error))
+      }
     }
     for (const id of this.running) this.cancelled.add(id)
     // This coordinator owns library requests, not the download queue's jobs.
@@ -205,7 +250,7 @@ class LibraryAnalysisCoordinator extends EventEmitter {
 
   /** Starts as many queued analyses as the configured concurrency allows. */
   private drain(): void {
-    if (this.stopped || isStopping()) return
+    if (this.stopped || isStopping() || this.blockedAdmission) return
     const limit = Math.max(1, settingsService.get().analysisConcurrency)
     while (this.running.size < limit && this.pending.length > 0) {
       const beatId = this.pending.shift()

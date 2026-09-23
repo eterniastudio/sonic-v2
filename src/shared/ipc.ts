@@ -41,9 +41,7 @@ export interface IpcMap {
   'library:retrySidecar': { args: [id: string]; result: LibraryBeat[] }
   'app:readClipboard': { args: []; result: string }
   'app:info': { args: []; result: AppInfo }
-  'app:openExternal': { args: [url: string]; result: boolean }
-  'app:revealPath': { args: [target: string]; result: boolean }
-  'app:openPath': { args: [target: string]; result: boolean }
+  'app:openDirectory': { args: [kind: 'userData' | 'downloads' | 'engine']; result: boolean }
 
   'window:minimize': { args: []; result: void }
   'window:toggleMaximize': { args: []; result: boolean }
@@ -56,7 +54,7 @@ export interface IpcMap {
 
   'settings:get': { args: []; result: Settings }
   'settings:patch': { args: [patch: Partial<Settings>]; result: Settings }
-  'settings:chooseDir': { args: [current: string | null]; result: string | null }
+  'settings:chooseDir': { args: []; result: string | null }
   'settings:previewTemplate': {
     args: [template: string, presetId: PresetId]
     result: TemplatePreview
@@ -75,10 +73,15 @@ export interface IpcMap {
   'queue:reorder': { args: [ids: string[]]; result: QueueSnapshot }
   'queue:updateJob': { args: [id: string, patch: JobPatch]; result: Job | null }
   'queue:clearFinished': { args: []; result: QueueSnapshot }
+  'queue:revealOutput': { args: [id: string]; result: boolean }
+  'queue:openOutput': { args: [id: string]; result: boolean }
 
   'library:list': { args: []; result: LibraryBeat[] }
   'library:openSource': { args: [id: string]; result: boolean }
   'library:refreshSource': { args: [id: string]; result: LibraryBeat[] }
+  'library:revealFile': { args: [id: string]; result: boolean }
+  'library:openFile': { args: [id: string]; result: boolean }
+  'library:openSidecarFile': { args: [id: string]; result: boolean }
   'library:updateMetadata': {
     args: [id: string, patch: Partial<BeatMetadata>, clearOverrides?: MetadataField[]]
     result: LibraryBeat[]
@@ -109,7 +112,6 @@ export interface IpcMap {
     args: [id: string, presetId: PresetId]
     result: { ok: boolean; outputPath: string | null; error: string | null }
   }
-  'library:openSidecar': { args: [id: string]; result: string | null }
 
   'metadata:parse': {
     args: [{ title?: string | null; description?: string | null; filename?: string | null }]
@@ -140,15 +142,25 @@ export interface IpcEvents {
 export type IpcChannel = keyof IpcMap
 export type IpcEventChannel = keyof IpcEvents
 
+export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = [
+  'storage:changed',
+  'queue:changed',
+  'engine:status',
+  'engine:progress',
+  'settings:changed',
+  'library:changed',
+  'app:notice',
+  'window:maximized',
+  'analysis:progress'
+] as const
+
 export const IPC_CHANNELS: readonly IpcChannel[] = [
   'storage:status',
   'storage:retry',
   'library:retrySidecar',
   'app:info',
   'app:readClipboard',
-  'app:openExternal',
-  'app:revealPath',
-  'app:openPath',
+  'app:openDirectory',
   'window:minimize',
   'window:toggleMaximize',
   'window:close',
@@ -172,9 +184,14 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'queue:reorder',
   'queue:updateJob',
   'queue:clearFinished',
+  'queue:revealOutput',
+  'queue:openOutput',
   'library:list',
   'library:openSource',
   'library:refreshSource',
+  'library:revealFile',
+  'library:openFile',
+  'library:openSidecarFile',
   'library:updateMetadata',
   'library:remove',
   'analysis:beat',
@@ -184,7 +201,6 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'analysis:status',
   'library:rescan',
   'library:reexport',
-  'library:openSidecar',
   'metadata:parse'
 ] as const
 

@@ -61,6 +61,8 @@ export interface PublishInput {
   sources: SourceValues
   /** Container tags read at export time. */
   embedded: MetadataValues
+  /** Tags read back from the converted output before publication. */
+  tagReadback?: MetadataValues
   /** Tool versions recorded in the sidecar for provenance. */
   engine: { ytdlp: string | null; ffmpeg: string | null }
   output: {
@@ -156,6 +158,7 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
     filePath,
     fileName,
     sidecarPath,
+    publishedTags: input.tagReadback ?? null,
     sizeBytes: input.output.sizeBytes,
     durationSec: input.durationSec || 0,
     bitrateKbps: input.output.bitrateKbps,

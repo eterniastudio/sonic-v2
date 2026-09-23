@@ -651,6 +651,7 @@ class QueueService extends EventEmitter {
       overrides: finalJob.metadata.overrides,
       sources: finalJob.metadata.sources,
       embedded: finalJob.metadata.embedded,
+      tagReadback: readback,
       channels: settings.channelMode,
       lufs: settings.normalizeLufs,
       embedTags: settings.embedTags,
