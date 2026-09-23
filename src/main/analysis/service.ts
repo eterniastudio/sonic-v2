@@ -29,6 +29,8 @@ export interface AnalyzeRequest {
   channels?: number
   /** Ignore a cached result and analyse again. */
   force?: boolean
+  /** Optional shorter request deadline, useful for bounded callers and tests. */
+  timeoutMs?: number
 }
 
 export interface AnalyzeOutcome {
@@ -46,7 +48,7 @@ export interface AnalysisProgress {
   message: string
 }
 
-/** Hard ceiling for one analysis, including decode. */
+/** Hard ceiling for one request, including resolution, probing, hashing, waiting and decode. */
 const ANALYSIS_TIMEOUT_MS = 180_000
 
 function safeSegment(value: string): string {
@@ -54,14 +56,24 @@ function safeSegment(value: string): string {
 }
 
 /** Streaming SHA-256 — the analysis-cache identity, not the export fingerprint. */
-function hashFile(filePath: string): Promise<string> {
+function hashFile(filePath: string, signal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new Error('Cancelled')); return }
     const hash = createHash('sha256')
     const stream = createReadStream(filePath)
-    stream.on('error', reject)
+    const onAbort = (): void => { stream.destroy(new Error('Cancelled')) }
+    signal.addEventListener('abort', onAbort, { once: true })
+    stream.on('error', (error) => { signal.removeEventListener('abort', onAbort); reject(error) })
     stream.on('data', (chunk) => hash.update(chunk))
-    stream.on('end', () => resolve(hash.digest('hex')))
+    stream.on('end', () => { signal.removeEventListener('abort', onAbort); resolve(hash.digest('hex')) })
   })
+}
+
+interface InFlight {
+  worker: Worker | null
+  controller: AbortController
+  timedOut: boolean
+  deadlineMs: number
 }
 
 /**
@@ -75,13 +87,11 @@ function hashFile(filePath: string): Promise<string> {
 class AnalysisService extends EventEmitter {
   private active = 0
   private waiting: (() => void)[] = []
-  private readonly inFlight = new Map<
-    string,
-    { worker: Worker | null; controller: AbortController }
-  >()
+  private readonly inFlight = new Map<string, InFlight>()
   private readonly requests = new Set<string>()
   private readonly cancelled = new Set<string>()
   private readonly tasks = new Set<Promise<AnalyzeOutcome>>()
+  private stopped = false
 
   /** True while this request id is being worked on. */
   isRunning(requestId: string): boolean {
@@ -107,96 +117,109 @@ class AnalysisService extends EventEmitter {
 
   /** Analyses an audio file. Resolves; never throws for expected failures. */
   async analyze(request: AnalyzeRequest): Promise<AnalyzeOutcome> {
-    if (isStopping()) return this.cancelledOutcome(Date.now())
+    const started = Date.now()
+    if (this.stopped || isStopping()) return this.cancelledOutcome(started)
+    if (this.requests.has(request.requestId)) {
+      return { ok: false, analysis: null, fromCache: false, cancelled: false,
+        error: 'An analysis with this request ID is already running.', elapsedMs: 0 }
+    }
+    const timeoutMs = Math.min(ANALYSIS_TIMEOUT_MS, Math.max(1, request.timeoutMs ?? ANALYSIS_TIMEOUT_MS))
+    const entry: InFlight = { worker: null, controller: new AbortController(), timedOut: false, deadlineMs: timeoutMs }
+    const timer = setTimeout(() => { entry.timedOut = true; entry.controller.abort() }, timeoutMs)
     this.requests.add(request.requestId)
     this.cancelled.delete(request.requestId)
-    const task = this.perform(request)
+    this.inFlight.set(request.requestId, entry)
+    const task = this.perform(request, entry, started)
     this.tasks.add(task)
     try { return await task }
-    finally { this.tasks.delete(task); this.requests.delete(request.requestId); this.cancelled.delete(request.requestId) }
+    finally {
+      clearTimeout(timer)
+      this.tasks.delete(task)
+      this.requests.delete(request.requestId)
+      this.cancelled.delete(request.requestId)
+      this.inFlight.delete(request.requestId)
+    }
   }
 
-  private async perform(request: AnalyzeRequest): Promise<AnalyzeOutcome> {
-    const started = Date.now()
-
-    const ffmpeg = await engineService.resolve('ffmpeg')
-    if (!ffmpeg.path) {
-      return {
-        ok: false,
-        analysis: null,
-        fromCache: false,
-        cancelled: false,
-        error: 'ffmpeg is not installed, so audio cannot be decoded for analysis.',
-        elapsedMs: Date.now() - started
-      }
-    }
-
-    // If the caller does not know how long the file is, measure it.
-    //
-    // Window planning needs a real duration: assuming one would analyse a few
-    // seconds of a three-minute track and report "inconclusive" for material
-    // that is perfectly analysable. This was a live defect — a 133 s beat was
-    // being judged on 6 s of audio.
-    let durationSec = request.durationSec
-    if (!(durationSec > 0)) {
-      try {
-        const info = await probeMediaFile(request.inputPath)
-        durationSec = info.durationSec
-      } catch {
-        // Leave it unknown; the window planner handles that case generously.
-        durationSec = 0
-      }
-    }
-
-    let inputId: string
+  private async perform(request: AnalyzeRequest, entry: InFlight, started: number): Promise<AnalyzeOutcome> {
+    const { controller } = entry
+    let acquired = false
+    const scratch: string[] = []
     try {
-      inputId = await hashFile(request.inputPath)
-    } catch {
-      return {
-        ok: false,
-        analysis: null,
-        fromCache: false,
-        cancelled: false,
-        error: 'The audio file could not be read for analysis.',
-        elapsedMs: Date.now() - started
-      }
-    }
-
-    if (this.cancelled.has(request.requestId)) return this.cancelledOutcome(started)
-
-    if (!request.force) {
-      const cached = analysisCache.get(inputId)
-      if (cached) {
-        this.emitProgress(request.requestId, 'done', 'Loaded a cached analysis.')
+      const ffmpeg = await engineService.resolve('ffmpeg', false, controller.signal)
+      this.throwIfAborted(controller.signal)
+      if (!ffmpeg.path) {
         return {
-          ok: true,
-          analysis: cached,
-          fromCache: true,
+          ok: false,
+          analysis: null,
+          fromCache: false,
           cancelled: false,
-          error: null,
+          error: 'ffmpeg is not installed, so audio cannot be decoded for analysis.',
           elapsedMs: Date.now() - started
         }
       }
-    }
 
-    await this.acquire()
+      // If the caller does not know how long the file is, measure it.
+      //
+      // Window planning needs a real duration: assuming one would analyse a few
+      // seconds of a three-minute track and report "inconclusive" for material
+      // that is perfectly analysable. This was a live defect — a 133 s beat was
+      // being judged on 6 s of audio.
+      let durationSec = request.durationSec
+      if (!(durationSec > 0)) {
+        try {
+          const info = await probeMediaFile(request.inputPath, controller.signal)
+          durationSec = info.durationSec
+        } catch {
+          this.throwIfAborted(controller.signal)
+          // Leave it unknown; the window planner handles that case generously.
+          durationSec = 0
+        }
+      }
 
-    if (this.cancelled.has(request.requestId)) {
-      this.release()
-      return this.cancelledOutcome(started)
-    }
+      let inputId: string
+      try {
+        inputId = await hashFile(request.inputPath, controller.signal)
+      } catch {
+        this.throwIfAborted(controller.signal)
+        return {
+          ok: false,
+          analysis: null,
+          fromCache: false,
+          cancelled: false,
+          error: 'The audio file could not be read for analysis.',
+          elapsedMs: Date.now() - started
+        }
+      }
 
-    const controller = new AbortController()
-    this.inFlight.set(request.requestId, { worker: null, controller })
+      if (this.cancelled.has(request.requestId)) return this.cancelledOutcome(started)
 
-    const workDir = analysisDir()
-    const scratch: string[] = []
+      if (!request.force) {
+        const cached = analysisCache.get(inputId)
+        if (cached) {
+          this.throwIfAborted(controller.signal)
+          this.emitProgress(request.requestId, 'done', 'Loaded a cached analysis.')
+          return {
+            ok: true,
+            analysis: cached,
+            fromCache: true,
+            cancelled: false,
+            error: null,
+            elapsedMs: Date.now() - started
+          }
+        }
+      }
 
-    try {
+      await this.acquire(controller.signal)
+      acquired = true
+      this.throwIfAborted(controller.signal)
+
+      const workDir = analysisDir()
       this.emitProgress(request.requestId, 'starting', 'Preparing audio…')
 
       const plan = planWindows(durationSec)
       await ensureDir(workDir)
+      this.throwIfAborted(controller.signal)
 
       const decodeOne = async (
         window: { offsetSec: number; durationSec: number },
@@ -239,18 +262,14 @@ class AnalysisService extends EventEmitter {
         }
       }
 
-      if (this.cancelled.has(request.requestId)) {
-        return this.cancelledOutcome(started)
-      }
+      this.throwIfAborted(controller.signal)
 
       this.emitProgress(request.requestId, 'analyzing', 'Analyzing tempo and key…')
 
       const job: AnalysisWorkerJob = { tempo: tempoWindow, key: keyWindows }
       const reply = await this.runWorker(request.requestId, job, controller)
 
-      if (this.cancelled.has(request.requestId)) {
-        return this.cancelledOutcome(started)
-      }
+      this.throwIfAborted(controller.signal)
 
       if (!reply.ok || (!reply.tempo && !reply.key)) {
         return {
@@ -299,6 +318,7 @@ class AnalysisService extends EventEmitter {
       // A cache failure cannot invalidate a completed acoustic result. JsonStore retains
       // the unsaved cache revision and reports it independently through storage status.
       try { analysisCache.set(inputId, analysis) } catch { /* retryable storage failure */ }
+      this.throwIfAborted(controller.signal)
       this.emitProgress(request.requestId, 'done', 'Analysis complete.')
 
       return {
@@ -310,9 +330,13 @@ class AnalysisService extends EventEmitter {
         elapsedMs: Date.now() - started
       }
     } catch (error) {
-      if (this.cancelled.has(request.requestId) || controller.signal.aborted) {
-        return this.cancelledOutcome(started)
+      if (entry.timedOut) {
+        const message = `Analysis timed out after ${entry.deadlineMs} ms.`
+        this.emitProgress(request.requestId, 'failed', message)
+        return { ok: false, analysis: null, fromCache: false, cancelled: false,
+          error: message, elapsedMs: Date.now() - started }
       }
+      if (this.cancelled.has(request.requestId) || controller.signal.aborted) return this.cancelledOutcome(started)
       const message = error instanceof Error ? error.message : String(error)
       this.emitProgress(request.requestId, 'failed', message)
       return {
@@ -326,8 +350,7 @@ class AnalysisService extends EventEmitter {
     } finally {
       // Always remove scratch PCM, and always release the slot.
       for (const file of scratch) await removeFile(file).catch(() => undefined)
-      this.inFlight.delete(request.requestId)
-      this.release()
+      if (acquired) this.release()
     }
   }
 
@@ -335,10 +358,7 @@ class AnalysisService extends EventEmitter {
   cancel(requestId: string): void {
     this.cancelled.add(requestId)
     const entry = this.inFlight.get(requestId)
-    if (!entry) return
-
-    entry.controller.abort()
-    void entry.worker?.terminate()
+    entry?.controller.abort()
 
     // Bound the tombstone so the set cannot grow forever.
     if (this.cancelled.size > 200) {
@@ -353,6 +373,7 @@ class AnalysisService extends EventEmitter {
   }
 
   async shutdown(): Promise<void> {
+    this.stopped = true
     this.cancelAll()
     await Promise.allSettled([...this.tasks])
   }
@@ -368,7 +389,7 @@ class AnalysisService extends EventEmitter {
     }
   }
 
-  /** Runs the DSP on a worker thread with a hard timeout. */
+  /** Runs the DSP on a worker thread under the request's shared deadline. */
   private runWorker(
     requestId: string,
     job: AnalysisWorkerJob,
@@ -382,24 +403,15 @@ class AnalysisService extends EventEmitter {
       const finish = (reply: AnalysisWorkerReply): void => {
         if (settled) return
         settled = true
-        clearTimeout(timer)
+        controller.signal.removeEventListener('abort', onAbort)
         void worker.terminate().then(() => resolve(reply), () => resolve(reply))
       }
 
-      const timer = setTimeout(() => {
-        finish({
-          ok: false,
-          tempo: null,
-          key: null,
-          error: `Analysis timed out after ${Math.round(ANALYSIS_TIMEOUT_MS / 1000)}s.`,
-          elapsedMs: ANALYSIS_TIMEOUT_MS
-        })
-      }, ANALYSIS_TIMEOUT_MS)
+      const onAbort = (): void => finish({ ok: false, tempo: null, key: null, error: 'Cancelled', elapsedMs: 0 })
 
       try {
         worker = new Worker(workerPath, { workerData: job })
       } catch (error) {
-        clearTimeout(timer)
         settled = true
         resolve({
           ok: false,
@@ -421,29 +433,43 @@ class AnalysisService extends EventEmitter {
         finish({ ok: false, tempo: null, key: null, error: error.message, elapsedMs: 0 })
       })
       worker.on('exit', (code) => {
-        if (code !== 0) {
+        if (!settled) {
           finish({
             ok: false,
             tempo: null,
             key: null,
-            error: `The analysis worker exited with code ${code}.`,
+            error: `The analysis worker exited with code ${code} before returning a result.`,
             elapsedMs: 0
           })
         }
       })
 
-      controller.signal.addEventListener('abort', () => {
-        finish({ ok: false, tempo: null, key: null, error: 'Cancelled', elapsedMs: 0 })
-      })
+      controller.signal.addEventListener('abort', onAbort, { once: true })
+      if (controller.signal.aborted) onAbort()
     })
   }
 
-  private async acquire(): Promise<void> {
+  private async acquire(signal: AbortSignal): Promise<void> {
     const limit = Math.max(1, settingsService.get().analysisConcurrency)
     while (this.active >= limit) {
-      await new Promise<void>((resolve) => this.waiting.push(resolve))
+      this.throwIfAborted(signal)
+      await new Promise<void>((resolve, reject) => {
+        const wake = (): void => { signal.removeEventListener('abort', onAbort); resolve() }
+        const onAbort = (): void => {
+          this.waiting = this.waiting.filter((entry) => entry !== wake)
+          reject(new Error('Cancelled'))
+        }
+        this.waiting.push(wake)
+        signal.addEventListener('abort', onAbort, { once: true })
+        if (signal.aborted) onAbort()
+      })
     }
+    this.throwIfAborted(signal)
     this.active += 1
+  }
+
+  private throwIfAborted(signal: AbortSignal): void {
+    if (signal.aborted) throw new Error('Cancelled')
   }
 
   private release(): void {

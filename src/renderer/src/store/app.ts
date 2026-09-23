@@ -150,7 +150,7 @@ export const useApp = create<AppState>()((set, get) => ({
   },
 
   async chooseDownloadDir() {
-    const chosen = await ipc.invoke('settings:chooseDir', get().settings.downloadDir || null)
+    const chosen = await ipc.invoke('settings:chooseDir')
     if (chosen) await get().patchSettings({ downloadDir: chosen })
   },
 

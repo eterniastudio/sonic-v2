@@ -1,4 +1,5 @@
 import { app, clipboard, dialog, ipcMain, shell } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
 import { assertAccepting, ownOperation } from './lifecycle'
 import { retryStorage, storageEvents, storageStatus } from './lib/jsonStore'
 import type { IpcChannel, IpcMap } from '@shared/ipc'
@@ -19,6 +20,7 @@ import { settingsService } from './services/settings'
 import {
   closeWindow,
   isWindowMaximized,
+  getMainWindow,
   minimizeWindow,
   syncWindowTheme,
   toggleMaximizeWindow
@@ -30,7 +32,9 @@ type Handler<K extends IpcChannel> = (
 
 /** Registers one channel, with the channel list checked at compile time. */
 function handle<K extends IpcChannel>(channel: K, handler: Handler<K>): void {
-  ipcMain.handle(channel, async (_event, ...args: unknown[]) => {
+  ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+    assertTrustedSender(event)
+    assertValidArguments(channel, args)
     const readOnly = /:(get|list|snapshot|status|info|isMaximized|readClipboard|previewTemplate|parse|openSidecar)$/.test(channel)
     if (channel.startsWith('window:') || channel === 'storage:status' || channel === 'storage:retry') return handler(...(args as IpcMap[K]['args']))
     if (!readOnly) assertAccepting()
@@ -43,13 +47,128 @@ function handle<K extends IpcChannel>(channel: K, handler: Handler<K>): void {
   })
 }
 
-function isSafeExternal(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
-  } catch {
-    return false
+function assertTrustedSender(event: IpcMainInvokeEvent): void {
+  const window = getMainWindow()
+  if (!window || window.isDestroyed() || event.sender !== window.webContents ||
+    event.senderFrame !== window.webContents.mainFrame) {
+    throw new Error('IPC request rejected: untrusted sender or frame.')
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256
+}
+
+function isStringArray(value: unknown, limit = 1000, maxLength = 256): value is string[] {
+  return Array.isArray(value) && value.length <= limit && value.every((item) =>
+    typeof item === 'string' && item.length > 0 && item.length <= maxLength)
+}
+
+const PRESETS = new Set(['original', 'mp3-v0', 'mp3-320', 'm4a-256', 'wav-44100-24', 'wav-48000-24', 'flac', 'opus-192'])
+const SETTINGS_OPTIONS: Record<string, ReadonlySet<string>> = {
+  theme: new Set(['dark', 'light', 'system']),
+  accent: new Set(['violet', 'cyan', 'emerald', 'amber', 'rose']),
+  reduceMotion: new Set(['system', 'on', 'off']),
+  defaultPresetId: PRESETS,
+  channelMode: new Set(['preserve', 'stereo', 'mono']),
+  cookiesFromBrowser: new Set(['none', 'chrome', 'edge', 'firefox', 'brave', 'opera', 'vivaldi'])
+}
+const FIELDS = new Set(['title', 'producer', 'bpm', 'altBpm', 'key', 'camelot', 'detune', 'tuning', 'genre'])
+const STRING_FIELDS = new Set(['title', 'producer', 'key', 'camelot', 'tuning', 'genre'])
+const NUMBER_FIELDS = new Set(['bpm', 'altBpm', 'detune'])
+
+function isFieldArray(value: unknown): boolean {
+  return isStringArray(value, 16) && value.every((field) => FIELDS.has(field))
+}
+
+function isMetadataPatch(value: unknown): boolean {
+  return isRecord(value) && Object.entries(value).every(([field, entry]) =>
+    STRING_FIELDS.has(field) ? entry === null || (typeof entry === 'string' && entry.length <= 2000)
+      : NUMBER_FIELDS.has(field) && (entry === null || (typeof entry === 'number' && Number.isFinite(entry))))
+}
+
+function isSettingsPatch(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  const current = settingsService.get() as unknown as Record<string, unknown>
+  return Object.entries(value).every(([key, entry]) => {
+    if (!Object.hasOwn(current, key)) return false
+    if (SETTINGS_OPTIONS[key]) return typeof entry === 'string' && SETTINGS_OPTIONS[key].has(entry)
+    if (['normalizeLufs', 'ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key) && entry === null) return true
+    if (key === 'normalizeLufs') return typeof entry === 'number' && Number.isFinite(entry)
+    if (['ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key)) return typeof entry === 'string' && entry.length <= 4096
+    const original = current[key]
+    if (typeof entry !== typeof original) return false
+    if (typeof entry === 'string') return entry.length <= 4096
+    if (typeof entry === 'number') return Number.isFinite(entry)
+    return typeof entry === 'boolean'
+  })
+}
+
+/** TypeScript contracts do not validate messages from a compromised renderer. */
+function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
+  const [a, b, c] = args
+  let valid = false
+  switch (channel) {
+    case 'storage:status': case 'storage:retry': case 'app:readClipboard': case 'app:info':
+    case 'window:minimize': case 'window:toggleMaximize': case 'window:close': case 'window:isMaximized':
+    case 'engine:status': case 'engine:setup': case 'settings:get': case 'settings:chooseDir': case 'queue:snapshot':
+    case 'queue:clearFinished': case 'library:list': case 'library:rescan':
+    case 'analysis:queueMissing': case 'analysis:clearCache': case 'analysis:status':
+      valid = args.length === 0; break
+    case 'library:retrySidecar': case 'queue:remove': case 'queue:cancel': case 'queue:retry':
+    case 'queue:revealOutput': case 'queue:openOutput': case 'library:openSource':
+    case 'library:refreshSource': case 'library:revealFile': case 'library:openFile':
+    case 'library:openSidecarFile': case 'analysis:cancel':
+      valid = args.length === 1 && isId(a); break
+    case 'app:openDirectory':
+      valid = args.length === 1 && ['userData', 'downloads', 'engine'].includes(a as string); break
+    case 'engine:pickTool':
+      valid = args.length === 1 && ['yt-dlp', 'ffmpeg', 'ffprobe'].includes(a as string); break
+    case 'settings:patch':
+      valid = args.length === 1 && isSettingsPatch(a); break
+    case 'settings:previewTemplate':
+      valid = args.length === 2 && typeof a === 'string' && a.length <= 4096 && PRESETS.has(b as string); break
+    case 'probe:url':
+      valid = args.length === 1 && typeof a === 'string' && a.length <= 4096; break
+    case 'queue:add':
+      valid = args.length === 1 && isStringArray(a, 1000, 4096); break
+    case 'queue:reorder':
+      valid = args.length === 1 && isStringArray(a); break
+    case 'queue:start':
+      valid = args.length === 1 && (a === null || isStringArray(a)); break
+    case 'queue:setPaused':
+      valid = args.length === 1 && typeof a === 'boolean'; break
+    case 'queue:setConcurrency':
+      valid = args.length === 1 && typeof a === 'number' && Number.isInteger(a) && a >= 1 && a <= 3; break
+    case 'queue:updateJob':
+      valid = args.length === 2 && isId(a) && isRecord(b) && Object.entries(b).every(([key, value]) => {
+        if (key === 'presetId') return PRESETS.has(value as string)
+        if (key === 'clearOverrides' || key === 'adoptAnalyzed') return isFieldArray(value)
+        if (key === 'metadataEdit') return isRecord(value) && FIELDS.has(value.field as string) &&
+          Object.keys(value).every((field) => field === 'field' || field === 'value') &&
+          (value.value === null || (typeof value.value === 'string' && value.value.length <= 2000) ||
+            (typeof value.value === 'number' && Number.isFinite(value.value)))
+        return false
+      }); break
+    case 'library:updateMetadata':
+      valid = (args.length === 2 || args.length === 3) && isId(a) && isMetadataPatch(b) &&
+        (args.length === 2 || c === undefined || isFieldArray(c)); break
+    case 'library:remove':
+      valid = (args.length === 2 || args.length === 3) && isId(a) && typeof b === 'boolean' &&
+        (args.length === 2 || c === undefined || (isRecord(c) && typeof c.filePath === 'string' && c.filePath.length <= 4096 && isId(c.fingerprint))); break
+    case 'library:reexport':
+      valid = args.length === 2 && isId(a) && PRESETS.has(b as string); break
+    case 'analysis:beat':
+      valid = args.length === 2 && isId(a) && typeof b === 'boolean'; break
+    case 'metadata:parse':
+      valid = args.length === 1 && isRecord(a) && Object.entries(a).every(([field, value]) =>
+        ['title', 'description', 'filename'].includes(field) && (value === null || (typeof value === 'string' && value.length <= 20_000))); break
+  }
+  if (!valid) throw new Error(`Invalid ${channel} request.`)
 }
 
 export function registerIpcHandlers(): void {
@@ -75,20 +194,10 @@ export function registerIpcHandlers(): void {
     defaultDownloadDir: defaultDownloadDir()
   }))
 
-  handle('app:openExternal', async (url) => {
-    if (!isSafeExternal(url)) return false
-    await shell.openExternal(url)
-    return true
-  })
-
-  handle('app:revealPath', (target) => {
-    if (!target) return false
-    shell.showItemInFolder(target)
-    return true
-  })
-
-  handle('app:openPath', async (target) => {
-    if (!target) return false
+  handle('app:openDirectory', async (kind) => {
+    const target = kind === 'userData' ? app.getPath('userData') :
+      kind === 'engine' ? engineService.directory :
+        settingsService.get().downloadDir || defaultDownloadDir()
     if (!(await fileExists(target))) return false
     const error = await shell.openPath(target)
     return error.length === 0
@@ -168,10 +277,10 @@ export function registerIpcHandlers(): void {
     return next
   })
 
-  handle('settings:chooseDir', async (current) => {
+  handle('settings:chooseDir', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Choose where Sonic V2 saves your beats',
-      defaultPath: current ?? defaultDownloadDir(),
+      defaultPath: settingsService.get().downloadDir || defaultDownloadDir(),
       properties: ['openDirectory', 'createDirectory']
     })
     if (result.canceled || result.filePaths.length === 0) return null
@@ -203,6 +312,16 @@ export function registerIpcHandlers(): void {
   handle('queue:reorder', (ids) => queueService.reorder(ids))
   handle('queue:updateJob', (id, patch) => queueService.updateJob(id, patch))
   handle('queue:clearFinished', () => queueService.clearFinished())
+  handle('queue:revealOutput', async (id) => {
+    const target = queueService.getJob(id)?.outputPath
+    if (!target || !(await fileExists(target))) return false
+    shell.showItemInFolder(target)
+    return true
+  })
+  handle('queue:openOutput', async (id) => {
+    const target = queueService.getJob(id)?.outputPath
+    return target && await fileExists(target) ? (await shell.openPath(target)).length === 0 : false
+  })
 
   // -------------------------------------------------------------- library
   handle('library:list', () => libraryService.list())
@@ -223,6 +342,20 @@ export function registerIpcHandlers(): void {
     if (beat.sidecarPath) await libraryService.retrySidecar(id)
     return libraryService.list()
   })
+  handle('library:revealFile', async (id) => {
+    const target = libraryService.get(id)?.filePath
+    if (!target || !(await fileExists(target))) return false
+    shell.showItemInFolder(target)
+    return true
+  })
+  handle('library:openFile', async (id) => {
+    const target = libraryService.get(id)?.filePath
+    return target && await fileExists(target) ? (await shell.openPath(target)).length === 0 : false
+  })
+  handle('library:openSidecarFile', async (id) => {
+    const target = libraryService.get(id)?.sidecarPath
+    return target && await fileExists(target) ? (await shell.openPath(target)).length === 0 : false
+  })
 
   handle('library:updateMetadata', (id, patch, clearOverrides) =>
     libraryService.updateMetadata(id, patch, clearOverrides ?? [])
@@ -242,13 +375,6 @@ export function registerIpcHandlers(): void {
   handle('library:rescan', () => libraryService.rescan())
 
   handle('library:reexport', async (id, presetId) => reexportBeat(id, presetId))
-
-  handle('library:openSidecar', async (id) => {
-    const beat = libraryService.get(id)
-    if (!beat?.sidecarPath) return null
-    if (!(await fileExists(beat.sidecarPath))) return null
-    return beat.sidecarPath
-  })
 
   // ------------------------------------------------------------- metadata
   handle('metadata:parse', (sources) => {

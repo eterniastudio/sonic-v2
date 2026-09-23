@@ -21,6 +21,7 @@
     "dist": "electron-vite build && electron-builder --win",
     "test:capture": "node scripts/capture-selftest.mjs",
     "test:services": "node scripts/service-selftest.mjs",
+    "test:analysis": "node --test tests/library-analysis.test.mjs",
     "test:dsp": "node scripts/dsp-selftest.mjs",
     "test:ui": "node scripts/build-component-harness.mjs && playwright test",
     "test:idle": "playwright test tests/interactions.spec.mjs --grep \"offline pointer\" --repeat-each=10",

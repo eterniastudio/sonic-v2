@@ -113,14 +113,14 @@ export function AdvancedSection(): ReactNode {
           <Button
             variant="secondary"
             leading={<FolderOpen />}
-            onClick={() => void ipc.invoke('app:openPath', info?.userDataDir ?? '')}
+            onClick={() => void ipc.invoke('app:openDirectory', 'userData')}
           >
             Open app data folder
           </Button>
           <Button
             variant="ghost"
             leading={<FolderOpen />}
-            onClick={() => void ipc.invoke('app:openPath', settings.downloadDir)}
+            onClick={() => void ipc.invoke('app:openDirectory', 'downloads')}
           >
             Open export folder
           </Button>

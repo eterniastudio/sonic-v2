@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcChannel, IpcEventChannel, IpcEvents, IpcMap } from '@shared/ipc'
-import { IPC_CHANNELS } from '@shared/ipc'
+import { IPC_CHANNELS, IPC_EVENT_CHANNELS } from '@shared/ipc'
 
 const allowed = new Set<string>(IPC_CHANNELS)
+const allowedEvents = new Set<string>(IPC_EVENT_CHANNELS)
 
 /**
  * The only surface the renderer gets.
@@ -20,6 +21,9 @@ const api = {
 
   /** Subscribes to a push channel. Returns an unsubscribe function. */
   on<K extends IpcEventChannel>(channel: K, listener: (payload: IpcEvents[K]) => void): () => void {
+    if (!allowedEvents.has(channel)) {
+      throw new Error(`Unknown IPC event channel: ${String(channel)}`)
+    }
     const wrapped = (_event: unknown, payload: IpcEvents[K]): void => listener(payload)
     ipcRenderer.on(channel, wrapped)
     return () => {

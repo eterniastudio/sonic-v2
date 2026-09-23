@@ -1,5 +1,13 @@
 # DSP correctness pass — 2026-09-22
 
+## 2026-09-23 minor-mode rotation follow-up
+
+The current required baseline remains **20/22 passing** (`npm run test:dsp` exits 1). The two unresolved cases are still the Am–F–C–G and Gm–Eb–Bb–F loops: each returns an inconclusive relative-major/minor result with the expected minor key in its alternatives. No threshold or expected label was changed to force an exact-key pass.
+
+The regression harness now includes all 12 chromatic transpositions of the unambiguous F#m–D–C#m–F#m progression. All 12 return the expected minor key as primary; the existing 12 major-mode transpositions also pass. Evidence regressions are **57/57**, tempo positives **9/9**, tempo false positives **0/18**, and determinism checks **4/4**. This narrows the remaining issue to genuinely ambiguous relative-mode material rather than a general pitch-class rotation or minor-profile indexing defect. The transposed fixtures are generated signals; they do not establish real-music accuracy.
+
+Reproduce this follow-up with `npm run test:dsp` from the project root. The full current run is in `test-results/dsp-agent/current-minor-rotation.log` and its JSON report in `test-results/dsp-agent/current-minor-rotation.json`. The project has no documented, legally usable and independently annotated real-music reference sample; the credible reference count remains **0**. A first-chord or expected-label rule would manufacture certainty for these particular loops, so the detector still surfaces both plausible acoustic readings.
+
 The original synthetic cohort improves from **15/22 to 19/22 under its unchanged historical annotations**, or **20/22 with the demonstrably incorrect percussion/no-tempo annotation corrected**. The two strict exact-key requirements still fail. `npm run test:dsp` deliberately exits **1**, not green, for those unresolved cases. All 45 added evidence regressions pass.
 
 ## Reproduction and evidence

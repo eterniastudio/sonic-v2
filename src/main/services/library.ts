@@ -9,7 +9,7 @@ import type {
 } from '@shared/analysis'
 import { analyzedValuesFrom, deriveAnalysisStatus } from '@shared/analysis'
 import type { BeatMetadata, BeatSidecar, LibraryBeat, MetadataField, MetadataValues, MetadataVerification, PresetId, SourceKind, SourceValues } from '@shared/domain'
-import { reconcile, BPM_MIN, BPM_MAX } from '@shared/metadata'
+import { reconcile, decideMetadataField, BPM_MIN, BPM_MAX } from '@shared/metadata'
 import { parseKeyString } from '@shared/music'
 import { renderExportStem, resolveCollision } from '@shared/template'
 import { buildAudioEvidence } from '@shared/metadata'
@@ -73,6 +73,7 @@ function normalizeLibrary(raw: unknown): LibraryBeat[] {
       sidecarPath: typeof entry.sidecarPath === 'string' ? entry.sidecarPath : null,
       sidecarSync: isRecord(entry.sidecarSync) && ['pending', 'synced', 'error'].includes(String(entry.sidecarSync.status))
         ? entry.sidecarSync as LibraryBeat['sidecarSync'] : undefined,
+      publishedTags: isRecord(entry.publishedTags) ? entry.publishedTags as MetadataValues : null,
       sizeBytes: typeof entry.sizeBytes === 'number' ? entry.sizeBytes : 0,
       durationSec: typeof entry.durationSec === 'number' ? entry.durationSec : 0,
       bitrateKbps: typeof entry.bitrateKbps === 'number' ? entry.bitrateKbps : null,
@@ -151,7 +152,7 @@ function recomputeVerification(beat: LibraryBeat): MetadataVerification | null {
  * inspector uses, so a library record can never hold a Camelot code belonging to
  * a different key.
  */
-function reconcileBeat(beat: LibraryBeat, overrides: MetadataField[]): LibraryBeat {
+function reconcileBeat(beat: LibraryBeat, overrides: MetadataField[], resetFields: MetadataField[] = []): LibraryBeat {
   const current = {
     title: beat.title,
     producer: beat.producer,
@@ -162,10 +163,23 @@ function reconcileBeat(beat: LibraryBeat, overrides: MetadataField[]): LibraryBe
     detune: beat.detune
   }
 
+  // Existing, untouched fields retain their chosen values. Only an explicit
+  // reset returns a field to its evidence layers; a correction to one field
+  // must not silently revise another field.
+  const declared: MetadataValues = { ...current }
+  const previousFinal = { ...current }
+  for (const field of resetFields) {
+    const fromSource = [beat.sources.title, beat.sources.description, beat.sources.filename]
+      .map(layer => layer[field]).find(value => value != null && value !== '')
+    Object.assign(declared, { [field]: fromSource ?? null })
+    Object.assign(previousFinal, { [field]: null })
+  }
   const { final } = reconcile({
-    declared: current,
+    declared,
+    embedded: beat.embedded,
+    analyzed: beat.analysis ? analyzedValuesFrom(beat.analysis) : {},
     overrides,
-    previousFinal: current
+    previousFinal
   })
 
   return {
@@ -355,8 +369,7 @@ class LibraryService extends EventEmitter {
    * Corrects a library record's musical metadata by hand.
    *
    * Exactly the fields named in `patch` become manual overrides. Fields listed
-   * in `clearOverrides` are handed back to the evidence layers — reset to what
-   * the audio analysis proposed, or to nothing when there is no analysis.
+   * in `clearOverrides` are handed back to the evidence-priority rule.
    */
   async updateMetadata(
     id: string,
@@ -408,18 +421,16 @@ class LibraryService extends EventEmitter {
     if (clearOverrides.length > 0) {
       overrides = overrides.filter((field) => !clearOverrides.includes(field))
 
-      // Put the analysed value back, so "reset" means "trust the audio again"
-      // rather than "blank the field".
-      const proposed = beat.analysis ? analyzedValuesFrom(beat.analysis) : null
       for (const field of clearOverrides) {
-        if (field === 'bpm') patched.bpm = proposed?.bpm ?? null
-        if (field === 'altBpm') patched.altBpm = proposed?.altBpm ?? null
-        if (field === 'key') patched.key = proposed?.key ?? null
-        if (field === 'camelot') patched.camelot = proposed?.camelot ?? null
+        const choice = decideMetadataField(field, {
+          current: beat, overrides: beat.overrides, sources: beat.sources,
+          embedded: beat.embedded, analyzed: beat.analysis ? analyzedValuesFrom(beat.analysis) : {}
+        })
+        Object.assign(patched, { [field]: choice.resetValue })
       }
     }
 
-    const reconciled = reconcileBeat(patched, overrides)
+    const reconciled = reconcileBeat(patched, overrides, clearOverrides)
     const updated: LibraryBeat = { ...reconciled, overrides,
       sidecarSync: beat.sidecarPath ? { status: 'pending', error: null } : undefined }
     updated.verification = recomputeVerification(updated)
@@ -456,6 +467,49 @@ class LibraryService extends EventEmitter {
     if (!result) return null
     if (result.sidecarPath) await this.synchronizeSidecar(id, result.sidecarPath)
     return this.get(id)
+  }
+
+  /** Admits a batch with one committed library revision. */
+  setAnalysisStatuses(ids: string[], status: AnalysisStatus): void {
+    const selected = new Set(ids)
+    if (selected.size === 0) return
+    let changed = false
+    const next = this.store.read().map((entry) => {
+      if (!selected.has(entry.id) || entry.analysisStatus === status) return entry
+      changed = true
+      return { ...entry, analysisStatus: status }
+    })
+    if (changed) {
+      this.store.write(next)
+      this.emitChanged()
+    }
+  }
+
+  /** Restore a cancelled batch in one revision, preserving previous analysis. */
+  restoreAnalysisStatuses(ids: string[]): void {
+    const selected = new Set(ids)
+    if (selected.size === 0) return
+    let changed = false
+    const next = this.store.read().map((entry) => {
+      if (!selected.has(entry.id)) return entry
+      const status = entry.analysis
+        ? deriveAnalysisStatus(entry.analysis.tempo, entry.analysis.key)
+        : 'not-analyzed'
+      if (entry.analysisStatus === status) return entry
+      changed = true
+      return { ...entry, analysisStatus: status }
+    })
+    if (changed) {
+      this.store.write(next)
+      this.emitChanged()
+    }
+  }
+
+  /** A failed library replacement remains pending until JsonStore retries it. */
+  analysisStatusesSaved(): boolean {
+    const key = path.resolve(libraryFile()).toLowerCase()
+    const state = storageStatus().find(item => path.resolve(item.file).toLowerCase() === key)
+    return !state || (state.error === null && state.persisted === state.revision)
   }
 
   private async applyAnalysisLocked(id: string, analysis: AudioAnalysis): Promise<{ sidecarPath: string | null } | null> {

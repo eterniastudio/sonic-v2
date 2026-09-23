@@ -208,7 +208,7 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
                       label="Reveal in folder"
                       size="icon-sm"
                       variant="ghost"
-                      onClick={() => void ipc.invoke('app:revealPath', job.outputPath as string)}
+                      onClick={() => void ipc.invoke('queue:revealOutput', job.id)}
                     >
                       <FolderOpen />
                     </IconButton>
@@ -218,7 +218,7 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
                       label="Play in default app"
                       size="icon-sm"
                       variant="ghost"
-                      onClick={() => void ipc.invoke('app:openPath', job.outputPath as string)}
+                      onClick={() => void ipc.invoke('queue:openOutput', job.id)}
                     >
                       <ExternalLink />
                     </IconButton>

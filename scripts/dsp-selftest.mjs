@@ -892,6 +892,11 @@ async function main() {
     const expected = `${names[transpose]} major`
     checkRegression(nextId(), chordProgression(chords, 20, { seed: 337 }), 'key', (a) => a.key === expected, expected)
   }
+  for (let transpose = 0; transpose < 12; transpose += 1) {
+    const chords = [TRIADS['F#m'], TRIADS.D, TRIADS['C#m'], TRIADS['F#m']].map((chord) => chord.map((note) => note + transpose))
+    const expected = `${names[(6 + transpose) % 12]} minor`
+    checkRegression(nextId(), chordProgression(chords, 18, { seed: 341 }), 'key', (a) => a.key === expected, expected)
+  }
   // Controlled API fault: the first branch throws while reading PCM. The
   // second branch receives the valid samples and must retain its own result.
   // This verifies branch-local catches; coordinator/worker IPC is service scope.

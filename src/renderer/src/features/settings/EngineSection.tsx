@@ -141,7 +141,7 @@ export function EngineSection(): ReactNode {
           <Button
             variant="ghost"
             leading={<FolderOpen />}
-            onClick={() => void ipc.invoke('app:openPath', engine?.engineDir ?? '')}
+            onClick={() => void ipc.invoke('app:openDirectory', 'engine')}
           >
             Open engine folder
           </Button>

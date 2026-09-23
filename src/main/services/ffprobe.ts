@@ -48,8 +48,9 @@ function toNumber(value: string | number | undefined): number | null {
 }
 
 /** Reads container and stream facts for a local file. */
-export async function probeMediaFile(filePath: string): Promise<MediaInfo> {
-  const ffprobe = await engineService.resolve('ffprobe')
+export async function probeMediaFile(filePath: string, signal?: AbortSignal): Promise<MediaInfo> {
+  const ffprobe = await engineService.resolve('ffprobe', false, signal)
+  if (signal?.aborted) throw new Error('Reading audio metadata was cancelled.')
   if (!ffprobe.path) {
     throw new Error('ffprobe is not installed. Run media engine setup from Settings.')
   }
@@ -57,9 +58,10 @@ export async function probeMediaFile(filePath: string): Promise<MediaInfo> {
   const result = await run(
     ffprobe.path,
     ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', filePath],
-    { timeoutMs: 60_000 }
+    { timeoutMs: 60_000, signal }
   )
 
+  if (result.aborted || signal?.aborted) throw new Error('Reading audio metadata was cancelled.')
   if (result.code !== 0) {
     throw new Error(`ffprobe could not read ${filePath}: ${result.stderr.trim().slice(0, 200)}`)
   }
