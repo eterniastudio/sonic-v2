@@ -1,5 +1,7 @@
 # Persistence, shutdown, and analysis verification — 22 September 2026
 
+The 23 September follow-up has fresh source-bound packaged close/reopen evidence in [RELIABILITY-FOLLOWUP-2026-09-23.md](RELIABILITY-FOLLOWUP-2026-09-23.md). This document retains the earlier incident record and its unproven original `ENOENT` cause.
+
 ## Evidence categories
 
 **Confirmed defects:** shutdown did not await owned work, completion callbacks could restart scheduling, queue controller ownership was cleared before settlement, asynchronous sidecar read/modify/write updates could lose another revision, and the editor reset discarded the other field's draft. Queue migration also discarded saved manual final values. A failed library publication could lose its retained pending snapshot to a later write from committed state; subsequent writes now cannot do that.
