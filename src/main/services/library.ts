@@ -46,9 +46,14 @@ function normalizeLibrary(raw: unknown): LibraryBeat[] {
     if (!isRecord(entry)) throw new Error('Invalid library record: expected an object.')
     const filePath = typeof entry.filePath === 'string' ? entry.filePath : null
     if (!filePath) throw new Error('Invalid library record: missing filePath.')
+    // Only an absent field proves this is a pre-import Sonic library record.
+    // An explicit but unknown value may be a damaged external-import record;
+    // treating it as owned would grant destructive authority over user audio.
+    const fileOwnership = !Object.hasOwn(entry, 'fileOwnership') || entry.fileOwnership === 'sonic-export'
+      ? 'sonic-export' : 'external'
 
     let restoredChannel = typeof entry.sourceChannel === 'string' ? entry.sourceChannel : null
-    if (!restoredChannel && typeof entry.sidecarPath === 'string') {
+    if (fileOwnership === 'sonic-export' && !restoredChannel && typeof entry.sidecarPath === 'string') {
       try {
         const sidecar = JSON.parse(readFileSync(entry.sidecarPath, 'utf8')) as BeatSidecar
         if (typeof entry.fingerprint === 'string' && entry.fingerprint && sidecar.schema === 'sonic-v2/beat' && sidecar.output?.filePath === path.basename(filePath) &&
@@ -70,8 +75,9 @@ function normalizeLibrary(raw: unknown): LibraryBeat[] {
       format: typeof entry.format === 'string' ? entry.format : path.extname(filePath).replace('.', ''),
       filePath,
       fileName: typeof entry.fileName === 'string' ? entry.fileName : path.basename(filePath),
-      sidecarPath: typeof entry.sidecarPath === 'string' ? entry.sidecarPath : null,
-      sidecarSync: isRecord(entry.sidecarSync) && ['pending', 'synced', 'error'].includes(String(entry.sidecarSync.status))
+      fileOwnership,
+      sidecarPath: fileOwnership === 'external' ? null : typeof entry.sidecarPath === 'string' ? entry.sidecarPath : null,
+      sidecarSync: fileOwnership === 'sonic-export' && isRecord(entry.sidecarSync) && ['pending', 'synced', 'error'].includes(String(entry.sidecarSync.status))
         ? entry.sidecarSync as LibraryBeat['sidecarSync'] : undefined,
       publishedTags: isRecord(entry.publishedTags) ? entry.publishedTags as MetadataValues : null,
       sizeBytes: typeof entry.sizeBytes === 'number' ? entry.sizeBytes : 0,
@@ -226,6 +232,7 @@ class LibraryService extends EventEmitter {
   }
 
   add(beat: LibraryBeat): LibraryBeat[] {
+    if (beat.fileOwnership === 'external') beat = { ...beat, sidecarPath: null, sidecarSync: undefined }
     const next = [beat, ...this.store.read().filter((entry) => entry.id !== beat.id)]
     this.store.write(next)
     this.emitChanged()
@@ -237,6 +244,11 @@ class LibraryService extends EventEmitter {
     const next = this.store.read().map((entry) => {
       if (entry.id !== id) return entry
       updated = { ...entry, ...patch }
+      if (entry.fileOwnership === 'external') {
+        updated.fileOwnership = 'external'
+        updated.sidecarPath = null
+        updated.sidecarSync = undefined
+      }
       return updated
     })
     if (updated) {
@@ -278,6 +290,10 @@ class LibraryService extends EventEmitter {
   private async removeVerified(id: string, deleteFiles: boolean, removed: string[]): Promise<DeleteResult & { library: LibraryBeat[] }> {
     const beat = this.get(id)
     if (!beat) return { ok: false, reason: 'That record is no longer in the library.', library: this.list() }
+
+    if (deleteFiles && beat.fileOwnership === 'external') {
+      return { ok: false, reason: 'Imported files are externally owned. Remove the library record while keeping the file.', library: this.list() }
+    }
 
     if (deleteFiles) {
       // Validate every owned artefact before removing either one.
@@ -432,13 +448,13 @@ class LibraryService extends EventEmitter {
 
     const reconciled = reconcileBeat(patched, overrides, clearOverrides)
     const updated: LibraryBeat = { ...reconciled, overrides,
-      sidecarSync: beat.sidecarPath ? { status: 'pending', error: null } : undefined }
+      sidecarSync: beat.fileOwnership === 'sonic-export' && beat.sidecarPath ? { status: 'pending', error: null } : undefined }
     updated.verification = recomputeVerification(updated)
 
     await this.commitBeatWithName(beat, updated)
 
     this.emitChanged()
-    return updated.sidecarPath
+    return updated.fileOwnership === 'sonic-export' ? updated.sidecarPath : null
   }
 
   /** Marks a record as queued/analyzing so the UI can show progress. */
@@ -537,12 +553,12 @@ class LibraryService extends EventEmitter {
     }
 
     const updated = reconcileBeat(merged, overrides)
-    updated.sidecarSync = updated.sidecarPath ? { status: 'pending', error: null } : undefined
+    updated.sidecarSync = updated.fileOwnership === 'sonic-export' && updated.sidecarPath ? { status: 'pending', error: null } : undefined
     updated.verification = recomputeVerification(updated)
     await this.commitBeatWithName(beat, updated)
 
     this.emitChanged()
-    return { sidecarPath: updated.sidecarPath }
+    return { sidecarPath: updated.fileOwnership === 'sonic-export' ? updated.sidecarPath : null }
   }
 
   /** Records that an analysis attempt failed, so the UI can offer a retry. */
@@ -572,7 +588,7 @@ class LibraryService extends EventEmitter {
   async retrySidecar(id: string): Promise<LibraryBeat[]> {
     if (this.stopped || this.deleting.has(id)) throw new Error('This record is closing or being deleted.')
     const beat = this.get(id)
-    if (beat?.sidecarPath) {
+    if (beat?.fileOwnership === 'sonic-export' && beat.sidecarPath) {
       this.update(id, { sidecarSync: { status: 'pending', error: null } })
       await this.synchronizeSidecar(id, beat.sidecarPath)
     }
@@ -581,6 +597,14 @@ class LibraryService extends EventEmitter {
 
   /** Commit a new basename without ever replacing someone else's export. */
   private async commitBeatWithName(previous: LibraryBeat, updated: LibraryBeat): Promise<void> {
+    if (previous.fileOwnership === 'external') {
+      // An imported path belongs to the user, even when its metadata changes.
+      updated.fileOwnership = 'external'
+      updated.sidecarPath = null
+      updated.sidecarSync = undefined
+      this.store.write(this.store.read().map(entry => entry.id === updated.id ? updated : entry))
+      return
+    }
     const template = previous.namingTemplate || settingsService.get().namingTemplate
     const desiredStem = renderExportStem(template, {
       metadata: { title: updated.title, producer: updated.producer || updated.sourceChannel || null,
@@ -684,7 +708,7 @@ class LibraryService extends EventEmitter {
         stage = 'read'
         const parsed = JSON.parse(await readFile(sidecarPath, 'utf8')) as BeatSidecar
         beat = this.get(id)
-        if (!beat || beat.sidecarPath !== sidecarPath || this.deleting.has(id)) return
+        if (!beat || beat.fileOwnership !== 'sonic-export' || beat.sidecarPath !== sidecarPath || this.deleting.has(id)) return
         stage = 'validate'
         if (parsed.schema !== 'sonic-v2/beat' || parsed.output?.filePath !== beat.fileName || parsed.output?.fingerprint !== beat.fingerprint) {
           throw new Error('The sidecar no longer belongs to this export.')
@@ -702,6 +726,8 @@ class LibraryService extends EventEmitter {
         temporary = `${sidecarPath}.${process.pid}.${randomUUID()}.tmp`
         stage = 'write'
         await writeFile(temporary, JSON.stringify(parsed, null, 2), { encoding: 'utf8', flag: 'wx' })
+        const latest = this.get(id)
+        if (!latest || latest.fileOwnership !== 'sonic-export' || latest.sidecarPath !== sidecarPath || this.deleting.has(id)) return
         stage = 'replace'
         await rename(temporary, sidecarPath)
         stage = 'save-sync-status'

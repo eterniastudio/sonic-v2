@@ -25,6 +25,32 @@ export type ChannelMode = 'preserve' | 'stereo' | 'mono'
 
 export type SourceKind = 'youtube' | 'local' | 'unknown'
 
+/** Only Sonic-created exports may be renamed or removed from disk by library actions. */
+export type FileOwnership = 'sonic-export' | 'external'
+
+export interface LocalImportItem {
+  id: string
+  filePath: string
+  fileName: string
+  status: 'ready' | 'already-indexed' | 'unsupported' | 'unreadable' | 'failed' | 'imported' | 'skipped'
+  duplicateOf: string | null
+  error: string | null
+  title: string | null
+  bpm: number | null
+  key: string | null
+  durationSec: number | null
+}
+
+export interface LocalImportReview {
+  sessionId: string
+  kind: 'files' | 'folder'
+  recursive: boolean
+  phase: 'scanning' | 'ready' | 'importing' | 'done' | 'cancelled' | 'error'
+  scanned: number
+  items: LocalImportItem[]
+  error: string | null
+}
+
 /** Where a text/tag metadata value came from. */
 export type EvidenceSource = 'title' | 'description' | 'filename' | 'tags' | 'manual'
 
@@ -230,6 +256,7 @@ export interface LibraryBeat {
   format: string
   filePath: string
   fileName: string
+  fileOwnership: FileOwnership
   sidecarPath: string | null
   /** Library is authoritative; audio tags are unchanged by correction. */
   sidecarSync?: { status: 'pending' | 'synced' | 'error'; error: string | null }

@@ -14,7 +14,8 @@ import {
   Wand2,
   X
 } from 'lucide-react'
-import type { LibraryBeat } from '@shared/domain'
+import type { LibraryBeat, PresetId } from '@shared/domain'
+import { PRESETS } from '@shared/presets'
 import { formatBpm, formatBytes, formatDuration } from '@shared/format'
 import { coverArtFor } from '@shared/url'
 import { cn } from '@/lib/cn'
@@ -36,6 +37,7 @@ import { NumberPop } from '@/components/ui/NumberPop'
 import { toast } from '@/components/ui/Toaster'
 import { BeatCard } from './BeatCard'
 import { PreviewTransport } from './PreviewTransport'
+import { ImportAudio } from './ImportAudio'
 import { createLibraryIndex, searchLibrary, type FileFilter, type LibrarySort, type ReviewFilter } from './librarySearch'
 
 const SORTS: { key: LibrarySort; label: string }[] = [
@@ -55,12 +57,14 @@ const TEMPO_BANDS: { id: string; label: string }[] = [
   { id: 'fast', label: '150+' }
 ]
 
-/** Searchable, filterable archive of everything Sonic has exported. */
+/** Searchable archive of imported audio and Sonic-created exports. */
 export function LibraryView(): ReactNode {
   const library = useApp((state) => state.library)
   const rescanLibrary = useApp((state) => state.rescanLibrary)
   const removeBeat = useApp((state) => state.removeBeat)
   const updateBeatMetadata = useApp((state) => state.updateBeatMetadata)
+  const reexportBeat = useApp((state) => state.reexportBeat)
+  const defaultPresetId = useApp((state) => state.settings.defaultPresetId)
   const analyzeMissing = useApp((state) => state.analyzeMissing)
   const focusId = useApp((state) => state.libraryFocusId)
   const setLibraryFocus = useApp((state) => state.setLibraryFocus)
@@ -85,6 +89,10 @@ export function LibraryView(): ReactNode {
   const [renameTitle, setRenameTitle] = useState('')
   const [renaming, setRenaming] = useState(false)
   const [renameError, setRenameError] = useState('')
+  const [exportTarget, setExportTarget] = useState<LibraryBeat | null>(null)
+  const [exportPresetId, setExportPresetId] = useState<PresetId>('wav-44100-24')
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -182,6 +190,8 @@ export function LibraryView(): ReactNode {
           </div>
 
           <span className="flex-1" />
+
+          <ImportAudio />
 
           <div className="w-[260px]">
             <Input
@@ -439,8 +449,8 @@ export function LibraryView(): ReactNode {
                 </span>
               </h2>
               <p className="mt-3 text-[12.5px] leading-relaxed text-fg-muted">
-                Every beat you export lands here with its tempo, key and waveform ready to audition.
-                Paste a link in the Download tab to start.
+                Import audio you already own, or paste a link in the Download tab.
+                Sonic keeps imported originals in place and saves corrections in your library.
               </p>
             </div>
           </div>
@@ -495,7 +505,7 @@ export function LibraryView(): ReactNode {
                       <div className="p-3">
                         <div className="text-[12.5px] font-medium text-fg">{beat.title}</div>
                         <div className="mt-0.5 text-[11px] text-fg-muted">
-                          {beat.producer || beat.sourceChannel || 'Unknown channel'}
+                          {beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')}
                         </div>
                         <div className="mt-2 flex flex-wrap gap-1">
                           {beat.bpm != null ? <Badge size="sm">{formatBpm(beat.bpm)} BPM</Badge> : null}
@@ -527,8 +537,13 @@ export function LibraryView(): ReactNode {
           beat={selected}
           onClose={() => setSelectedId(null)}
           onRequestDelete={() => {
-            setAlsoDeleteFiles(true)
+            setAlsoDeleteFiles(selected.fileOwnership === 'sonic-export')
             setDeleteTarget(selected)
+          }}
+          onRequestExport={() => {
+            setExportTarget(selected)
+            setExportPresetId(defaultPresetId === 'original' ? 'wav-44100-24' : defaultPresetId)
+            setExportError('')
           }}
         />
       ) : null}
@@ -555,19 +570,28 @@ export function LibraryView(): ReactNode {
               </button>
             )
             return <>
-              {item('Open on YouTube', async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid YouTube link is saved for this beat.') }, !beat.sourceUrl)}
-              {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.setState({ library: refreshed }) }, !beat.sourceUrl)}
-              {item('Rename beat and file…', () => { setRenameTarget(beat); setRenameTitle(beat.title); setRenameError('') }, beat.missing)}
+              {beat.sourceKind === 'youtube' && beat.sourceUrl ? <>
+                {item('Open on YouTube', async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid YouTube link is saved for this beat.') })}
+                {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.setState({ library: refreshed }) })}
+              </> : null}
+              {item(beat.fileOwnership === 'external' ? 'Rename in library…' : 'Rename beat and file…', () => { setRenameTarget(beat); setRenameTitle(beat.title); setRenameError('') })}
+              {beat.fileOwnership === 'external' ? item('Export prepared copy…', () => {
+                setExportTarget(beat); setExportPresetId(defaultPresetId === 'original' ? 'wav-44100-24' : defaultPresetId); setExportError('')
+              }, beat.missing) : null}
               {item('Show file in folder', async () => { if (!await ipc.invoke('library:revealFile', beat.id)) throw new Error('File is unavailable.') }, beat.missing)}
               <div role="separator" className="my-1 border-t border-line" />
-              {item('Delete beat…', () => { setAlsoDeleteFiles(true); setDeleteTarget(beat) })}
+              {item(beat.fileOwnership === 'external' ? 'Remove from library…' : 'Delete beat…', () => {
+                setAlsoDeleteFiles(beat.fileOwnership === 'sonic-export'); setDeleteTarget(beat)
+              })}
             </>
           })()}
         </div>, overlayRoot()) : null}
 
       <Modal open={renameTarget != null} onClose={() => !renaming && setRenameTarget(null)}
-        title="Rename beat and file" size="sm" blocking={renaming}
-        description="The audio filename and sidecar will follow the saved BPM and key. Audio tags are updated when you re-export."
+        title={renameTarget?.fileOwnership === 'external' ? 'Rename in library' : 'Rename beat and file'} size="sm" blocking={renaming}
+        description={renameTarget?.fileOwnership === 'external'
+          ? 'This changes only Sonic’s library record. The original filename and audio tags stay untouched.'
+          : 'The audio filename and sidecar will follow the saved BPM and key. Audio tags are updated when you re-export.'}
         footer={<>
           <Button variant="secondary" onClick={() => setRenameTarget(null)} disabled={renaming}>Cancel</Button>
           <Button onClick={() => {
@@ -576,7 +600,7 @@ export function LibraryView(): ReactNode {
             if (!title) { setRenameError('Enter a beat title.'); return }
             setRenaming(true); setRenameError('')
             void updateBeatMetadata(renameTarget.id, { title })
-              .then(() => { setRenameTarget(null); toast({ kind: 'success', title: 'Beat and file renamed' }) })
+              .then(() => { setRenameTarget(null); toast({ kind: 'success', title: renameTarget.fileOwnership === 'external' ? 'Library name saved' : 'Beat and file renamed' }) })
               .catch(error => setRenameError(String(error)))
               .finally(() => setRenaming(false))
           }} disabled={renaming}>Save name</Button>
@@ -585,29 +609,60 @@ export function LibraryView(): ReactNode {
         {renameError ? <p role="alert" className="mt-2 text-[12px] text-danger">{renameError}</p> : null}
       </Modal>
 
+      <Modal open={exportTarget != null} onClose={() => !exporting && setExportTarget(null)}
+        title="Export prepared copy" size="sm" blocking={exporting}
+        description="Sonic creates a new file with your current library metadata. The imported original stays untouched."
+        footer={<>
+          <Button variant="secondary" onClick={() => setExportTarget(null)} disabled={exporting}>Cancel</Button>
+          <Button disabled={exporting || exportTarget?.missing} onClick={() => {
+            if (!exportTarget || exporting) return
+            setExporting(true); setExportError('')
+            void reexportBeat(exportTarget.id, exportPresetId)
+              .then(result => {
+                if (!result.ok) throw new Error(result.error || 'Export failed.')
+                setExportTarget(null)
+                toast({ kind: 'success', title: 'Prepared copy exported' })
+              })
+              .catch(failure => setExportError(failure instanceof Error ? failure.message : String(failure)))
+              .finally(() => setExporting(false))
+          }}>{exporting ? 'Exporting…' : 'Export copy'}</Button>
+        </>}>
+        <label className="block text-[12px] font-medium text-fg-muted" htmlFor="local-export-preset">Audio format</label>
+        <select id="local-export-preset" value={exportPresetId}
+          onChange={event => setExportPresetId(event.target.value as PresetId)}
+          className="mt-1.5 h-9 w-full rounded-[9px] border border-line bg-surface-2 px-2.5 text-[13px] text-fg">
+          {PRESETS.filter(preset => preset.id !== 'original').map(preset =>
+            <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+        </select>
+        {exportError ? <p role="alert" className="mt-2 text-[12px] text-danger">{exportError}</p> : null}
+      </Modal>
+
       <ConfirmDialog
         open={deleteTarget != null}
-        title={`Remove “${deleteTarget?.title ?? 'beat'}”?`}
+        title={`${deleteTarget?.fileOwnership === 'external' ? 'Remove from library' : 'Remove'} “${deleteTarget?.title ?? 'beat'}”?`}
         description={
-          alsoDeleteFiles
+          deleteTarget?.fileOwnership === 'external'
+            ? 'Only the library record is removed. The imported original remains in its folder, unchanged.'
+            : alsoDeleteFiles
             ? 'The audio file and its sidecar will be removed from disk. This cannot be undone.'
             : 'Only the library record is removed. The audio stays on disk.'
         }
-        confirmLabel={alsoDeleteFiles ? 'Delete files' : 'Remove record'}
+        confirmLabel={deleteTarget?.fileOwnership === 'external' ? 'Remove from library' : alsoDeleteFiles ? 'Delete files' : 'Remove record'}
         tone="danger"
         onCancel={() => setDeleteTarget(null)}
         onConfirm={async () => {
           if (!deleteTarget) return
           const id = deleteTarget.id
-          await removeBeat(id, alsoDeleteFiles, { filePath: deleteTarget.filePath, fingerprint: deleteTarget.fingerprint })
+          await removeBeat(id, deleteTarget.fileOwnership === 'sonic-export' && alsoDeleteFiles,
+            { filePath: deleteTarget.filePath, fingerprint: deleteTarget.fingerprint })
           if (selectedId === id) setSelectedId(null)
           setDeleteTarget(null)
         }}
       >
-        <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
+        {deleteTarget?.fileOwnership !== 'external' ? <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
           <Switch checked={alsoDeleteFiles} onChange={setAlsoDeleteFiles} label="Also delete the files" />
           <span className="text-[12.5px] text-fg-muted">Also delete the audio and sidecar</span>
-        </div>
+        </div> : null}
         {deleteTarget ? (
           <p className="mt-2 font-mono text-[10.5px] break-all text-fg-subtle">{deleteTarget.fileName}</p>
         ) : null}

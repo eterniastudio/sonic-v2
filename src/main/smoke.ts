@@ -680,18 +680,21 @@ export function installSmokeTest(window: BrowserWindow): void {
       const before = await invoke('settings:get')
       let malformedRejected = false
       let arbitraryPathRejected = false
+      let importPathRejected = false
       let unknownEventRejected = false
       try { await invoke('settings:patch', { theme: { invalid: true } }) }
       catch { malformedRejected = true }
       try { await invoke('app:openPath', 'not-an-actual-path') }
       catch { arbitraryPathRejected = true }
+      try { await invoke('import:chooseFiles', 'arbitrary-selected-path') }
+      catch { importPathRejected = true }
       try { window.sonic.on('not:a:real:event', () => {}) }
       catch { unknownEventRejected = true }
       const after = await invoke('settings:get')
       return {
-        ok: malformedRejected && arbitraryPathRejected && unknownEventRejected &&
+        ok: malformedRejected && arbitraryPathRejected && importPathRejected && unknownEventRejected &&
           after.theme === before.theme,
-        malformedRejected, arbitraryPathRejected, unknownEventRejected,
+        malformedRejected, arbitraryPathRejected, importPathRejected, unknownEventRejected,
         settingsUnchanged: after.theme === before.theme
       }
     })()`)
