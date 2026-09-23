@@ -1,0 +1,117 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync, appendFileSync, openSync, closeSync, fsyncSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { EventEmitter } from 'node:events'
+import os from 'node:os'
+import path from 'node:path'
+
+const instance = `${process.pid}-${randomUUID()}`
+export const storageEvents = new EventEmitter()
+type State = { cached: unknown; loaded: boolean; revision: number; persisted: number; pending?: unknown; error: string | null; retry?: () => void; writing?: boolean }
+const states = new Map<string, State>()
+export function storageStatus(): { file: string; revision: number; persisted: number; error: string | null }[] {
+  return [...states].map(([file, s]) => ({ file, revision: s.revision, persisted: s.persisted, error: s.error }))
+}
+export function retryStorage(): void { for (const s of states.values()) if (s.error && s.retry) s.retry() }
+export function storageDiagnostic(file: string, details: Record<string, unknown>): void {
+  const record = JSON.stringify({ time: new Date().toISOString(), pid: process.pid, instance, file, ...details }) + '\n'
+  // A removed profile must not be recreated by a late callback.
+  try { appendFileSync(path.join(path.dirname(file), 'persistence.jsonl'), record) }
+  catch { try { appendFileSync(path.join(os.tmpdir(), `sonic-persistence-${instance}.jsonl`), record) } catch { /* stderr remains available */ } }
+  if (details.error) console.error(record.trim())
+}
+
+/** Main-event-loop synchronous commits, shared cache for every instance of a path.
+ * Success means flushed bytes and atomic replacement, not power-loss-proof directory metadata.
+ */
+export class JsonStore<T> {
+  private readonly state: State
+  constructor(private readonly file: string, private readonly defaults: T, private readonly normalize: (raw: unknown) => T = raw => {
+    if (Array.isArray(defaults)) {
+      if (!Array.isArray(raw)) throw new Error('Expected a JSON array')
+      return raw as T
+    }
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('Expected a JSON object')
+    return { ...defaults, ...raw } as T
+  }) {
+    const key = path.resolve(file).toLowerCase()
+    let state = states.get(key)
+    if (!state) {
+      mkdirSync(path.dirname(file), { recursive: true })
+      state = { cached: null, loaded: false, revision: 0, persisted: 0, error: null }
+      states.set(key, state)
+    }
+    this.state = state
+  }
+  get path(): string { return this.file }
+  read(): T {
+    if (this.state.loaded) return this.state.cached as T
+    let value = this.defaults
+    if (existsSync(this.file)) {
+      try { value = this.normalize(JSON.parse(readFileSync(this.file, 'utf8'))) }
+      catch (error) {
+        const damaged = `${this.file}.damaged-${Date.now()}-${randomUUID()}`
+        writeFileSync(damaged, readFileSync(this.file), { flag: 'wx' })
+        try { value = this.normalize(JSON.parse(readFileSync(`${this.file}.backup`, 'utf8'))) }
+        catch { throw new Error(`Cannot recover ${this.file}. Damaged data preserved at ${damaged}. ${String(error)}`) }
+        storageDiagnostic(this.file, { operation: 'recovered-backup', damaged, error: String(error) })
+      }
+    } else if (existsSync(`${this.file}.backup`)) {
+      value = this.normalize(JSON.parse(readFileSync(`${this.file}.backup`, 'utf8')))
+      storageDiagnostic(this.file, { operation: 'recovered-missing-destination' })
+    }
+    this.state.cached = value
+    this.state.loaded = true
+    return value
+  }
+  private replace(destination: string, data: string): void {
+    const temporary = `${destination}.${instance}.${randomUUID()}.tmp`
+    let created = false
+    let stage = 'create'
+    try {
+      const fd = openSync(temporary, 'wx')
+      created = true
+      try { stage = 'write'; writeFileSync(fd, data, 'utf8'); stage = 'flush'; fsyncSync(fd) } finally { closeSync(fd) }
+      stage = 'replace'
+      renameSync(temporary, destination)
+    } catch (error) {
+      storageDiagnostic(this.file, { operation: stage, destination, temporary, temporaryExists: existsSync(temporary), directoryExists: existsSync(path.dirname(destination)), revision: this.state.revision, error: String(error), stack: error instanceof Error ? error.stack : null })
+      throw error
+    } finally { if (created) { try { unlinkSync(temporary) } catch { /* Only this operation owns this path. */ } } }
+  }
+  write(value: T, options: { replacePending?: boolean } = {}): T {
+    const start = performance.now()
+    const s = this.state
+    if (s.writing) throw new Error(`Reentrant write rejected for ${this.file}; retry after the active commit.`)
+    const data = JSON.stringify(value, null, 2)
+    if (s.error && s.pending !== undefined && !options.replacePending && data !== JSON.stringify(s.pending, null, 2)) {
+      throw new Error(`Unsaved revision ${s.revision} of ${this.file} must be retried before another change.`)
+    }
+    const snapshot = JSON.parse(data) as T
+    s.revision += 1
+    s.pending = snapshot
+    s.retry = () => { this.write(s.pending as T, { replacePending: true }) }
+    s.writing = true
+    try {
+      if (s.loaded) this.replace(`${this.file}.backup`, JSON.stringify(s.cached, null, 2))
+      else if (existsSync(this.file)) {
+        this.read()
+        this.replace(`${this.file}.backup`, JSON.stringify(s.cached, null, 2))
+      }
+      this.replace(this.file, data)
+      s.cached = snapshot
+      s.loaded = true
+      s.persisted = s.revision
+      s.pending = undefined
+      s.error = null
+      s.retry = undefined
+      storageDiagnostic(this.file, { operation: 'committed', revision: s.persisted, bytes: Buffer.byteLength(data), elapsedMs: performance.now() - start })
+      storageEvents.emit('changed')
+      return this.read()
+    } catch (error) {
+      s.error = String(error)
+      storageEvents.emit('changed')
+      throw error
+    } finally { s.writing = false }
+  }
+  update(mutator: (current: T) => T): T { return this.write(mutator(structuredClone(this.read()))) }
+}

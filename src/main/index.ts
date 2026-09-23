@@ -1,0 +1,153 @@
+import { BrowserWindow, app, session, dialog } from 'electron'
+import { registerIpcHandlers, wireServiceEvents } from './ipc'
+import { installMediaProtocol, registerMediaScheme } from './protocol'
+import { queueService } from './services/queue'
+import { installSmokeTest } from './smoke'
+import { createMainWindow, flushWindowState } from './window'
+import { beginShutdown, isStopping, settleOperations } from './lifecycle'
+import { analysisService } from './analysis/service'
+import { libraryAnalysis } from './analysis/libraryAnalysis'
+import { libraryService } from './services/library'
+import { retryStorage, storageDiagnostic } from './lib/jsonStore'
+import { queueFile } from './services/paths'
+import { settleChildren } from './lib/child'
+
+let readyToQuit = false
+let closing: Promise<void> | null = null
+let shutdownWork: Promise<void> | null = null
+function requestShutdown(): void {
+  if (readyToQuit || closing) return
+  beginShutdown()
+  libraryService.scheduleRescan(0)
+  // Defer work out of the close/Inspector callback. Never nest a flush inside another synchronous write.
+  closing = new Promise<void>(resolve => setImmediate(resolve)).then(async () => {
+    storageDiagnostic(queueFile(), { operation: 'shutdown-start' })
+    shutdownWork ??= (async () => {
+      await Promise.all([queueService.stopAll(), libraryAnalysis.shutdown(), analysisService.shutdown()])
+      await settleOperations()
+      await libraryService.shutdown()
+      await settleChildren()
+    })().catch(error => { shutdownWork = null; throw error })
+    let timer: NodeJS.Timeout | undefined
+    try {
+      await Promise.race([shutdownWork, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Work is still stopping after 20 seconds. Your app remains open; retry close when it settles.')), 20_000)
+      })])
+      queueService.flush()
+      flushWindowState()
+      retryStorage()
+      storageDiagnostic(queueFile(), { operation: 'shutdown-saved' })
+      readyToQuit = true
+      app.quit()
+    } finally { if (timer) clearTimeout(timer) }
+  }).catch(async error => {
+    storageDiagnostic(queueFile(), { operation: 'shutdown-failed', error: String(error) })
+    // Intentional failure UI, never an uncaught native exception. No forced exit or claimed save.
+    await dialog.showMessageBox({ type: 'error', title: 'Sonic could not finish closing', message: 'Sonic is still open to protect pending changes.', detail: `${String(error)}\nResolve the storage problem, then use Retry saving or close again.`, buttons: ['Keep open'] })
+  }).finally(() => { closing = null })
+}
+
+// Must happen before the app is ready.
+registerMediaScheme()
+
+/**
+ * Locks the renderer down to its own bundle.
+ *
+ * The relaxed policy is keyed to the Vite dev server rather than to packaging:
+ * HMR needs inline/eval, but a `file://` renderer does not — including an
+ * unpackaged one — so only a real dev server gets the looser policy. Remote
+ * images are allowed because provider thumbnails load directly, and
+ * `sonic-media:` is the only route to local audio.
+ */
+function installContentSecurityPolicy(): void {
+  const isDevServer = Boolean(process.env['ELECTRON_RENDERER_URL'])
+
+  const common = [
+    "default-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "media-src 'self' blob: sonic-media:",
+    "font-src 'self' data:",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-src 'none'"
+  ]
+
+  const policy = isDevServer
+    ? [
+        ...common,
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        "connect-src 'self' ws: wss: http://localhost:* http://127.0.0.1:* sonic-media: blob: data:"
+      ].join('; ')
+    : [...common, "script-src 'self'", "connect-src 'self' sonic-media: blob: data:"].join('; ')
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [policy]
+      }
+    })
+  })
+
+  // Sonic never needs camera, microphone, geolocation, or notifications.
+  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
+    callback(false)
+  })
+}
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('browser-window-created', (_event, window) => {
+    window.on('close', event => { if (!readyToQuit) { event.preventDefault(); requestShutdown() } })
+    window.on('query-session-end', event => { event.preventDefault(); requestShutdown() })
+    window.on('session-end', () => {
+      // Windows may bypass normal quit. Only already committed changes are guaranteed.
+      beginShutdown()
+      try { queueService.flush() } catch (error) { storageDiagnostic(queueFile(), { operation: 'session-end-save-failed', error: String(error) }) }
+    })
+  })
+  app.on('second-instance', () => {
+    const [existing] = BrowserWindow.getAllWindows()
+    if (!existing) return
+    if (existing.isMinimized()) existing.restore()
+    existing.focus()
+  })
+
+  app.whenReady().then(() => {
+    installContentSecurityPolicy()
+    installMediaProtocol()
+    wireServiceEvents()
+    registerIpcHandlers()
+    // Validate saved state before producers start. Unrecoverable data is preserved
+    // and reported intentionally instead of leaving an unhandled bootstrap rejection.
+    libraryService.list()
+    libraryAnalysis.status()
+    const window = createMainWindow()
+    queueService.init()
+    installSmokeTest(window)
+
+    app.on('activate', () => {
+      if (!isStopping() && BrowserWindow.getAllWindows().length === 0) createMainWindow()
+    })
+  }).catch(async error => {
+    beginShutdown()
+    storageDiagnostic(queueFile(), { operation: 'startup-failed', error: String(error) })
+    await dialog.showMessageBox({ type: 'error', title: 'Saved state could not be recovered', message: 'Sonic could not safely load its saved state.', detail: `${String(error)}\nThe damaged data has been preserved. Restore a valid backup before reopening.`, buttons: ['Close'] })
+    readyToQuit = true
+    app.quit()
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+
+  app.on('before-quit', event => {
+    if (!readyToQuit) { event.preventDefault(); requestShutdown() }
+  })
+}

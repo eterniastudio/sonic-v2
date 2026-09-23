@@ -1,0 +1,384 @@
+@import 'tailwindcss';
+@import './transitions.css';
+
+/* data-theme drives both the palette and Tailwind's dark variant. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* ============================================================================
+   Palette
+   Dark is the default surface; light is a first-class peer, not an afterthought.
+   ========================================================================= */
+
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  --sonic-bg: #f3f4f8;
+  --sonic-bg-deep: #e9ebf1;
+  --sonic-surface: #ffffff;
+  --sonic-surface-2: #f7f8fb;
+  --sonic-surface-3: #eef0f6;
+  --sonic-border: rgba(11, 14, 25, 0.09);
+  --sonic-border-strong: rgba(11, 14, 25, 0.17);
+  --sonic-fg: #0a0d17;
+  --sonic-fg-muted: #545c70;
+  --sonic-fg-subtle: #828a9d;
+  --sonic-overlay: rgba(11, 14, 25, 0.4);
+  --sonic-fg-on-accent: #ffffff;
+
+  --sonic-cyan: #0891b2;
+  --sonic-success: #0d9668;
+  --sonic-warning: #b45309;
+  --sonic-danger: #dc2626;
+
+  --sonic-shadow-panel: 0 1px 2px rgba(11, 14, 25, 0.05), 0 14px 34px -18px rgba(11, 14, 25, 0.28);
+  --sonic-shadow-pop: 0 2px 6px rgba(11, 14, 25, 0.08), 0 24px 56px -20px rgba(11, 14, 25, 0.32);
+  --sonic-grid: rgba(11, 14, 25, 0.045);
+  --sonic-sheen: rgba(255, 255, 255, 0.6);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --sonic-bg: #08090c;
+  --sonic-bg-deep: #040507;
+  --sonic-surface: #0e1015;
+  --sonic-surface-2: #14171e;
+  --sonic-surface-3: #1b1f29;
+  --sonic-border: rgba(255, 255, 255, 0.085);
+  --sonic-border-strong: rgba(255, 255, 255, 0.17);
+  --sonic-fg: #f3f4f8;
+  --sonic-fg-muted: #99a0b0;
+  --sonic-fg-subtle: #69707f;
+  --sonic-overlay: rgba(3, 4, 7, 0.68);
+  --sonic-fg-on-accent: #ffffff;
+
+  --sonic-cyan: #22d3ee;
+  --sonic-success: #34d399;
+  --sonic-warning: #fbbf24;
+  --sonic-danger: #f87171;
+
+  --sonic-shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.5), 0 18px 40px -20px rgba(0, 0, 0, 0.8);
+  --sonic-shadow-pop: 0 2px 8px rgba(0, 0, 0, 0.6), 0 30px 64px -24px rgba(0, 0, 0, 0.9);
+  --sonic-grid: rgba(255, 255, 255, 0.032);
+  --sonic-sheen: rgba(255, 255, 255, 0.08);
+}
+
+/* Accent choices. Derived tints use color-mix so one hue drives the whole scale. */
+[data-accent='violet'] {
+  --sonic-accent: #7c5cff;
+  --sonic-accent-fg: #ffffff;
+}
+[data-accent='cyan'] {
+  --sonic-accent: #06b6d4;
+  --sonic-accent-fg: #04141a;
+}
+[data-accent='emerald'] {
+  --sonic-accent: #10b981;
+  --sonic-accent-fg: #04150e;
+}
+[data-accent='amber'] {
+  --sonic-accent: #f59e0b;
+  --sonic-accent-fg: #1b1305;
+}
+[data-accent='rose'] {
+  --sonic-accent: #f43f5e;
+  --sonic-accent-fg: #ffffff;
+}
+
+:root {
+  --sonic-accent-soft: color-mix(in oklab, var(--sonic-accent) 16%, transparent);
+  --sonic-accent-softer: color-mix(in oklab, var(--sonic-accent) 8%, transparent);
+  --sonic-accent-ring: color-mix(in oklab, var(--sonic-accent) 45%, transparent);
+  --sonic-accent-hover: color-mix(in oklab, var(--sonic-accent) 86%, white);
+  --sonic-accent-line: color-mix(in oklab, var(--sonic-accent) 32%, transparent);
+}
+
+/* ============================================================================
+   transitions.dev colour tokens
+   The vendored snippets ship light-mode values only, so both themes are
+   restated here against Sonic's palette. Geometry tokens are left untouched.
+   ========================================================================= */
+
+:root,
+[data-theme='light'] {
+  --tabs-bar-bg: #e9ebf1;
+  --tabs-pill-bg: #ffffff;
+  --tabs-text-muted: #5b6273;
+  --tabs-text-active: #0a0d17;
+  --tt-bg: #ffffff;
+  --tt-fg: #2b3040;
+  --shimmer-base: #8b93a5;
+  --shimmer-highlight: #0a0d17;
+}
+
+[data-theme='dark'] {
+  --tabs-bar-bg: #14171e;
+  --tabs-pill-bg: #272c38;
+  --tabs-text-muted: #99a0b0;
+  --tabs-text-active: #f3f4f8;
+  --tt-bg: #1c202a;
+  --tt-fg: #eef0f6;
+  --shimmer-base: #6a7181;
+  --shimmer-highlight: #f3f4f8;
+}
+
+
+/* ============================================================================
+   Tailwind theme bridge
+   ========================================================================= */
+
+@theme inline {
+  --color-bg: var(--sonic-bg);
+  --color-bg-deep: var(--sonic-bg-deep);
+  --color-surface: var(--sonic-surface);
+  --color-surface-2: var(--sonic-surface-2);
+  --color-surface-3: var(--sonic-surface-3);
+  --color-line: var(--sonic-border);
+  --color-line-strong: var(--sonic-border-strong);
+  --color-fg: var(--sonic-fg);
+  --color-fg-muted: var(--sonic-fg-muted);
+  --color-fg-subtle: var(--sonic-fg-subtle);
+  --color-overlay: var(--sonic-overlay);
+
+  --color-accent: var(--sonic-accent);
+  --color-accent-fg: var(--sonic-accent-fg);
+  --color-accent-soft: var(--sonic-accent-soft);
+  --color-accent-softer: var(--sonic-accent-softer);
+  --color-accent-line: var(--sonic-accent-line);
+
+  --color-cyan: var(--sonic-cyan);
+  --color-success: var(--sonic-success);
+  --color-warning: var(--sonic-warning);
+  --color-danger: var(--sonic-danger);
+
+  --font-sans: 'Inter', 'Inter Variable', system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI',
+    Roboto, sans-serif;
+  --font-mono: 'Cascadia Code', 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+
+  --shadow-panel: var(--sonic-shadow-panel);
+  --shadow-pop: var(--sonic-shadow-pop);
+  --shadow-accent: 0 10px 34px -12px var(--sonic-accent-ring);
+}
+
+/* ============================================================================
+   Base
+   ========================================================================= */
+
+@layer base {
+  * {
+    border-color: var(--sonic-border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--sonic-bg);
+    color: var(--sonic-fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    /* The shell owns scrolling; the window itself never scrolls. */
+    overflow: hidden;
+    /* Desktop-app feel: text is not selectable unless it is content. */
+    user-select: none;
+    transition:
+      background-color var(--duration-fast) var(--ease-smooth-out),
+      color var(--duration-fast) var(--ease-smooth-out);
+  }
+
+  input,
+  textarea,
+  [contenteditable='true'],
+  .selectable {
+    user-select: text;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--sonic-accent-ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--sonic-accent-soft);
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--sonic-border-strong);
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--sonic-fg-subtle);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+/* Respect the OS setting, and the in-app override. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+[data-reduce-motion='true'] *,
+[data-reduce-motion='true'] *::before,
+[data-reduce-motion='true'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* ============================================================================
+   Composed surfaces
+   ========================================================================= */
+
+@layer components {
+  /* Window drag handle for the frameless title bar. */
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  .panel {
+    background-color: var(--sonic-surface);
+    border: 1px solid var(--sonic-border);
+  }
+
+  .glass {
+    background-color: color-mix(in oklab, var(--sonic-surface) 74%, transparent);
+    backdrop-filter: blur(18px) saturate(150%);
+  }
+
+  .glass-strong {
+    background-color: color-mix(in oklab, var(--sonic-surface) 90%, transparent);
+    backdrop-filter: blur(28px) saturate(160%);
+  }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(var(--sonic-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--sonic-grid) 1px, transparent 1px);
+    background-size: 34px 34px;
+  }
+
+  .dot-bg {
+    background-image: radial-gradient(var(--sonic-grid) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  /* Hairline highlight along the top edge of a raised surface. */
+  .sheen::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--sonic-sheen), transparent);
+    pointer-events: none;
+  }
+
+  .text-gradient {
+    background: linear-gradient(
+      118deg,
+      var(--sonic-fg) 12%,
+      color-mix(in oklab, var(--sonic-accent) 78%, var(--sonic-fg)) 88%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Tabular figures keep live counters from jittering as digits change. */
+  .nums {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  /* Compact geometry for the sliding-tabs pill. The snippet's own geometry
+     token (height 30px / top 3px) stays the default. */
+  .t-tabs-sm .t-tab {
+    height: 26px;
+    padding: 2px 10px;
+  }
+  .t-tabs-sm .t-tabs-pill {
+    top: 3px;
+    height: 26px;
+  }
+}
+
+
+/* Indeterminate sweep for the progress bar. */
+@keyframes sonic-indeterminate {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}
+
+/* Slow drift used by the ambient background glows. */
+@keyframes sonic-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(2%, -3%, 0) scale(1.06);
+  }
+}
+
+
+/* Portaled controls retain the same tokens and a visible keyboard focus. */
+#sonic-overlays button:focus-visible { outline: 2px solid var(--sonic-accent); outline-offset: 2px; }
+#sonic-overlays [inert] { pointer-events: none !important; }
+html[data-reduce-motion="true"] *, html[data-reduce-motion="true"] *::before, html[data-reduce-motion="true"] *::after { animation-duration: 0s !important; transition-duration: 0s !important; }
