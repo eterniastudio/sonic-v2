@@ -439,7 +439,7 @@ export function installSmokeTest(window: BrowserWindow): void {
     }
   }
 
-  /** Drives the real UI: open the Library, select the beat, await the decoder. */
+  /** Drives an explicit Play action and waits for the one shell-owned decoder. */
   const checkPreviewTransport = async (beatId: string): Promise<GroupResult> => {
     const navigated = await evalInRenderer<boolean>(`(() => {
       const target = [...document.querySelectorAll('nav button')].find(
@@ -466,6 +466,20 @@ export function installSmokeTest(window: BrowserWindow): void {
       return false
     })()
 
+    const playClicked = await (async (): Promise<boolean> => {
+      const deadline = Date.now() + 8_000
+      while (Date.now() < deadline) {
+        const clicked = await evalInRenderer<boolean>(`(() => {
+          const button = document.querySelector('[data-beat-id="${beatId}"] button[aria-label^="Play "]')
+          if (button) button.click()
+          return Boolean(button)
+        })()`)
+        if (clicked) return true
+        await sleep(200)
+      }
+      return false
+    })()
+
     let state: string | null = null
     let waveformChildren = 0
     let waveformHtml: string | null = null
@@ -481,14 +495,14 @@ export function installSmokeTest(window: BrowserWindow): void {
         displayedDuration: string | null
       }>(
         `(() => {
-          const transport = document.querySelector('[data-preview-state]')
+          const transport = document.querySelector('[data-playback-dock]')
           if (!transport) {
             return { state: null, waveformChildren: 0, waveformHtml: null, displayedDuration: null }
           }
           const waveform = transport.querySelector('[data-waveform]')
           const match = (transport.innerText || '').match(/(\\d+:\\d{2})\\s*\\/\\s*(\\d+:\\d{2})/)
           return {
-            state: transport.getAttribute('data-preview-state'),
+            state: transport.getAttribute('data-playback-state'),
             waveformChildren: waveform ? waveform.children.length : 0,
             waveformHtml: waveform ? waveform.innerHTML.replace(/\\s+/g, ' ').slice(0, 500) : null,
             displayedDuration: match ? match[2] : null
@@ -499,25 +513,26 @@ export function installSmokeTest(window: BrowserWindow): void {
       waveformChildren = snapshot.waveformChildren
       waveformHtml = snapshot.waveformHtml
       displayedDuration = snapshot.displayedDuration
-      if (state === 'ready' || state === 'failed') break
+      if (state === 'error' || (['ready', 'playing', 'paused', 'ended'].includes(state ?? '') &&
+        displayedDuration != null && displayedDuration !== '0:00')) break
     }
 
-    // Renderer paint happens after `ready`, so let it settle before judging
-    // whether anything was actually drawn.
+    // Decoder readiness and waveform paint are separate conditions.
     let canvasCount = 0
     let shadowHosts = 0
     let canvasesPartChildren = 0
     let lightDomCanvases = 0
-    if (state === 'ready') {
-      await sleep(1800)
-      const settled = await evalInRenderer<{
+    if (state === 'ready' || state === 'playing' || state === 'paused' || state === 'ended') {
+      const canvasDeadline = Date.now() + 6_000
+      while (Date.now() < canvasDeadline) {
+        const settled = await evalInRenderer<{
         canvasCount: number
         shadowHosts: number
         canvasesPartChildren: number
         lightDomCanvases: number
-      }>(
+        }>(
         `(() => {
-          const waveform = document.querySelector('[data-preview-state] [data-waveform]')
+          const waveform = document.querySelector('[data-playback-dock] [data-waveform]')
           if (!waveform) {
             return { canvasCount: 0, shadowHosts: 0, canvasesPartChildren: 0, lightDomCanvases: 0 }
           }
@@ -541,20 +556,24 @@ export function installSmokeTest(window: BrowserWindow): void {
           }
         })()`
       )
-      canvasCount = settled.canvasCount
-      shadowHosts = settled.shadowHosts
-      canvasesPartChildren = settled.canvasesPartChildren
-      lightDomCanvases = settled.lightDomCanvases
+        canvasCount = settled.canvasCount
+        shadowHosts = settled.shadowHosts
+        canvasesPartChildren = settled.canvasesPartChildren
+        lightDomCanvases = settled.lightDomCanvases
+        if (canvasCount > 0) break
+        await sleep(150)
+      }
     }
 
     return {
       ok:
-        state === 'ready' &&
+        ['ready', 'playing', 'paused', 'ended'].includes(state ?? '') &&
         displayedDuration != null &&
         displayedDuration !== '0:00' &&
-        canvasCount > 0,
+        canvasCount > 0 && playClicked,
       navigated,
       cardClicked,
+      playClicked,
       decoderState: state,
       displayedDuration,
       waveformChildren,

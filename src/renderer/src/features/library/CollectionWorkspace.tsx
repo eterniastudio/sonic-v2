@@ -12,7 +12,7 @@ import { toast } from '@/components/ui/Toaster'
 type Mode = 'create-manual' | 'create-smart' | 'edit-smart' | 'rename' | 'delete' | 'tag-add' | 'tag-remove' | 'add-members' | 'export' | null
 const EMPTY_RULE: SmartCollectionRule = { version: 1 }
 
-export function CollectionWorkspace({ organization, activeId, library, visible, selectedIds, clearSelection, selectAll,
+export function CollectionWorkspace({ organization, activeId, library, visible, selectedIds, clearSelection, selectAll, onPlayDisplayed, onPlaySelected,
   onScope, command, batch, setBatch, defaultPresetId, manualSort }: {
   organization: OrganizationSnapshot | null
   activeId: string | null
@@ -21,6 +21,8 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
   selectedIds: ReadonlySet<string>
   clearSelection: () => void
   selectAll: () => void
+  onPlayDisplayed: () => void
+  onPlaySelected: () => void
   onScope: (id: string | null) => Promise<void>
   command: (command: OrganizationCommand) => Promise<OrganizationSnapshot>
   batch: BatchSession | null
@@ -105,6 +107,8 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
 
     {selectedCount ? <div role="toolbar" aria-label="Selected beats" className="flex flex-wrap items-center gap-2 rounded-[12px] border border-[var(--sonic-accent-line)] bg-accent-softer px-3 py-2">
       <strong className="text-[12px] text-fg nums">{selectedCount} selected</strong>
+      <Button size="sm" variant="primary" onClick={onPlaySelected}>Play selected tracks</Button>
+      <Button size="sm" variant="secondary" disabled={!matchingIds.length} onClick={onPlayDisplayed}>Play displayed results</Button>
       <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => void run(() => command({ type: 'batch-annotation', beatIds: selected, favorite: true }), false)}>Favorite selected</Button>
       <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => void run(() => command({ type: 'batch-annotation', beatIds: selected, favorite: false }), false)}>Unfavorite selected</Button>
       <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => open('tag-add')}>Add tag to selected</Button>
@@ -118,6 +122,8 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
       {selectedCount !== matchingIds.length ? <Button size="sm" variant="ghost" onClick={selectAll}>Select all {matchingIds.length} matching</Button> : null}
       <Button size="sm" variant="ghost" onClick={clearSelection}>Clear selection</Button>
     </div> : <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-fg-subtle">
+      <Button size="sm" variant="quiet" disabled={!matchingIds.length} onClick={onPlayDisplayed}>Play displayed results</Button>
+      <span className="flex-1" />
       <span>Ctrl/Cmd-click to select · Shift-click for a range</span>
       {matchingIds.length ? <Button size="sm" variant="ghost" onClick={selectAll}>Select all {matchingIds.length} matching</Button> : null}
     </div>}

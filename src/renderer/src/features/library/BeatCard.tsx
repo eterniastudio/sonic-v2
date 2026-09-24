@@ -22,11 +22,12 @@ export interface BeatCardProps {
   selected: boolean
   batchSelected?: boolean
   onSelect: (event: MouseEvent | KeyboardEvent) => void
+  onPlay?: () => void
   onToggleSelection?: () => void
   onContextMenu?: (event: MouseEvent) => void
 }
 
-export function BeatCard({ beat, layout, selected, batchSelected = false, onSelect, onToggleSelection, onContextMenu }: BeatCardProps): ReactNode {
+export function BeatCard({ beat, layout, selected, batchSelected = false, onSelect, onPlay, onToggleSelection, onContextMenu }: BeatCardProps): ReactNode {
   const cover = coverArtFor(beat.sourceUrl)
   const credit = beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')
   const selectionControl = onToggleSelection ? <label className="relative grid size-5 shrink-0 cursor-pointer place-items-center"
@@ -55,6 +56,11 @@ export function BeatCard({ beat, layout, selected, batchSelected = false, onSele
         )}
       >
         {selectionControl}
+        {onPlay ? <button type="button" aria-label={`Play ${beat.title}`} disabled={beat.missing}
+          onClick={event => { event.stopPropagation(); onPlay() }}
+          className="grid size-8 shrink-0 place-items-center rounded-[7px] text-accent hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40">
+          <Play className="size-3.5" />
+        </button> : null}
         <button type="button" aria-label={`Preview ${beat.title}`} onClick={onSelect}
           className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:rounded-[7px] focus-visible:outline-2 focus-visible:outline-accent">
         <span
@@ -95,7 +101,7 @@ export function BeatCard({ beat, layout, selected, batchSelected = false, onSele
   }
 
   return (
-    <div data-beat-id={beat.id} onContextMenu={onContextMenu} className="relative">
+    <div data-beat-id={beat.id} onContextMenu={onContextMenu} className="group relative">
     <TiltCard
       className={cn('rounded-[12px]', beat.missing && 'opacity-55')}
       glare={!beat.missing}
@@ -147,17 +153,6 @@ export function BeatCard({ beat, layout, selected, batchSelected = false, onSele
             </span>
           ) : null}
 
-          {/* Play affordance appears on hover and stays put when selected. */}
-          <span
-            className={cn(
-              'absolute top-1/2 left-1/2 grid size-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full',
-              'bg-white/15 text-white backdrop-blur-md transition-[opacity,transform] duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)]',
-              selected ? 'scale-100 opacity-100' : 'scale-90 opacity-0 group-hover:scale-100 group-hover:opacity-100'
-            )}
-          >
-            <Play className="size-4 translate-x-px" />
-          </span>
-
           {selected ? (
             <span className="absolute inset-0 ring-2 ring-inset ring-[var(--sonic-accent)]" />
           ) : null}
@@ -188,6 +183,15 @@ export function BeatCard({ beat, layout, selected, batchSelected = false, onSele
         </div>
       </div>
     </TiltCard>
+    {onPlay ? <button type="button" aria-label={`Play ${beat.title}`} disabled={beat.missing}
+      onClick={event => { event.stopPropagation(); onPlay() }}
+      className={cn(
+        'absolute top-2 left-9 z-10 grid size-8 place-items-center rounded-full',
+        'bg-black/65 text-white backdrop-blur-md transition-[opacity,transform] duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)]',
+        'focus-visible:scale-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent',
+        'disabled:cursor-not-allowed disabled:opacity-30',
+        selected ? 'scale-100 opacity-100' : 'scale-90 opacity-0 group-hover:scale-100 group-hover:opacity-100'
+      )}><Play className="size-4 translate-x-px" /></button> : null}
     {selectionControl ? <span className="absolute top-2 left-2 z-10">{selectionControl}</span> : null}
     </div>
   )

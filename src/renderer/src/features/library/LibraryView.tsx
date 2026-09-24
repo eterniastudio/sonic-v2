@@ -44,6 +44,7 @@ import { ImportAudio } from './ImportAudio'
 import { createLibraryIndex, searchLibrary, searchSmartCollection, type FileFilter, type LibrarySort, type ReviewFilter } from './librarySearch'
 import { CollectionWorkspace } from './CollectionWorkspace'
 import { AnnotationEditor } from './AnnotationEditor'
+import { usePlaybackActions } from '@/features/playback/playbackSession'
 
 const SORTS: { key: LibrarySort; label: string }[] = [
   { key: 'manual', label: 'Collection order' },
@@ -65,6 +66,7 @@ const TEMPO_BANDS: { id: string; label: string }[] = [
 
 /** Searchable archive of imported audio and Sonic-created exports. */
 export function LibraryView(): ReactNode {
+  const { playOne, playQueue } = usePlaybackActions()
   const library = useApp((state) => state.library)
   const rescanLibrary = useApp((state) => state.rescanLibrary)
   const removeBeat = useApp((state) => state.removeBeat)
@@ -215,6 +217,16 @@ export function LibraryView(): ReactNode {
     const positions = new Map(activeCollection.beatIds.map((id, position) => [id, position]))
     return rows.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity))
   }, [library, index, organization, activeScope, activeCollection, query, sort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter])
+
+  const auditionLabel = activeCollection?.name ?? (activeScope === FAVORITES_COLLECTION_ID ? 'Favorites' : 'All audio')
+  const playDisplayed = (): void => {
+    const ids = visible.map(beat => beat.id)
+    if (ids.length) playQueue(ids, ids[0], auditionLabel)
+  }
+  const playSelected = (): void => {
+    const ids = visible.filter(beat => selectedIds.has(beat.id)).map(beat => beat.id)
+    if (ids.length) playQueue(ids, ids[0], `${auditionLabel} shortlist`)
+  }
 
   const selectionScope = `${activeScope}\u0000${activeCollection?.type === 'smart' ? JSON.stringify(activeCollection.rules) : ''}\u0000${query}\u0000${[...bands].sort()}\u0000${[...formats].sort()}\u0000${fileFilter}\u0000${reviewFilter}\u0000${bpmFilter}\u0000${bpmTolerance}\u0000${includeHalfDouble}\u0000${keyFilter}`
   useEffect(() => { setSelectedIds(new Set()); selectionAnchor.current = null }, [selectionScope])
@@ -546,6 +558,8 @@ export function LibraryView(): ReactNode {
         library={library} visible={visible} selectedIds={selectedIds}
         clearSelection={() => { setSelectedIds(new Set()); selectionAnchor.current = null }}
         selectAll={() => { setSelectedIds(new Set(visible.map(beat => beat.id))); selectionAnchor.current = visible[0]?.id ?? null }}
+        onPlayDisplayed={playDisplayed}
+        onPlaySelected={playSelected}
         onScope={changeScope} command={executeOrganization} batch={batch} setBatch={setBatch}
         defaultPresetId={defaultPresetId} manualSort={sort === 'manual'} />
 
@@ -621,6 +635,7 @@ export function LibraryView(): ReactNode {
                   batchSelected={selectedIds.has(beat.id)}
                   onToggleSelection={() => toggleSelectedId(beat.id)}
                   onSelect={(event) => selectCard(event, beat)}
+                  onPlay={() => playOne(beat.id)}
                   onContextMenu={(event) => openMenu(event, beat)}
                 />
               </div>
@@ -641,6 +656,7 @@ export function LibraryView(): ReactNode {
                       batchSelected={selectedIds.has(beat.id)}
                       onToggleSelection={() => toggleSelectedId(beat.id)}
                       onSelect={(event) => selectCard(event, beat)}
+                      onPlay={() => playOne(beat.id)}
                       onContextMenu={(event) => openMenu(event, beat)}
                     />
                   }
@@ -721,6 +737,7 @@ export function LibraryView(): ReactNode {
               </button>
             )
             return <>
+              {item('Play this beat', () => playOne(beat.id), beat.missing)}
               {beat.sourceKind === 'youtube' && beat.sourceUrl ? <>
                 {item('Open on YouTube', async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid YouTube link is saved for this beat.') })}
                 {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.setState({ library: refreshed }) })}

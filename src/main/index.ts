@@ -3,7 +3,7 @@ import { registerIpcHandlers, wireServiceEvents } from './ipc'
 import { installMediaProtocol, registerMediaScheme } from './protocol'
 import { queueService } from './services/queue'
 import { installSmokeTest } from './smoke'
-import { createMainWindow, flushWindowState } from './window'
+import { createMainWindow, flushWindowState, getMainWindow } from './window'
 import { beginShutdown, isStopping, settleOperations } from './lifecycle'
 import { analysisService } from './analysis/service'
 import { libraryAnalysis } from './analysis/libraryAnalysis'
@@ -14,10 +14,28 @@ import { settleChildren } from './lib/child'
 import { stopReexports } from './services/reexport'
 import { localImportService } from './services/localImport'
 import { batchOperations } from './services/batchOperations'
+import { playbackSessionService } from './services/playbackSession'
 
 let readyToQuit = false
 let closing: Promise<void> | null = null
 let shutdownWork: Promise<void> | null = null
+async function flushRendererPlayback(): Promise<void> {
+  const window = getMainWindow()
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return
+  let timer: NodeJS.Timeout | undefined
+  try {
+    await Promise.race([
+      window.webContents.executeJavaScript(`(() => {
+        if (window.__sonicPlaybackFlush) return window.__sonicPlaybackFlush()
+        if (document.querySelector('[data-playback-dock]')) throw new Error('The playback close handler is unavailable.')
+        return null
+      })()`),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('The playback position is still saving after 8 seconds.')), 8_000)
+      })
+    ])
+  } finally { if (timer) clearTimeout(timer) }
+}
 function requestShutdown(): void {
   if (readyToQuit || closing) return
   beginShutdown()
@@ -25,6 +43,7 @@ function requestShutdown(): void {
   // Defer work out of the close/Inspector callback. Never nest a flush inside another synchronous write.
   closing = new Promise<void>(resolve => setImmediate(resolve)).then(async () => {
     storageDiagnostic(queueFile(), { operation: 'shutdown-start' })
+    await flushRendererPlayback()
     shutdownWork ??= (async () => {
       await Promise.all([queueService.stopAll(), libraryAnalysis.shutdown(), analysisService.shutdown(), stopReexports(), localImportService.shutdown(), batchOperations.shutdown()])
       await settleOperations()
@@ -131,6 +150,7 @@ if (!hasSingleInstanceLock) {
     // Validate saved state before producers start. Unrecoverable data is preserved
     // and reported intentionally instead of leaving an unhandled bootstrap rejection.
     libraryService.list()
+    playbackSessionService.snapshot()
     libraryAnalysis.status()
     const window = createMainWindow()
     queueService.init()

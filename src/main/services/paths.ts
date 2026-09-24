@@ -28,6 +28,10 @@ export function organizationFile(): string {
   return path.join(userDataDir(), 'organization.json')
 }
 
+export function playbackSessionFile(): string {
+  return path.join(userDataDir(), 'playback-session.json')
+}
+
 export function queueFile(): string {
   return path.join(userDataDir(), 'queue.json')
 }

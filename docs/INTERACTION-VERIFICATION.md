@@ -1,5 +1,7 @@
 # Sonic V2 interaction verification — 22 September 2026
 
+**23 September persistent auditioning:** The shell-owned playback runtime, saved listening position, fresh unpacked Windows build, close/reopen results, and current test limits are recorded in [PLAYBACK-VERIFICATION-2026-09-23.md](PLAYBACK-VERIFICATION-2026-09-23.md). The counts below describe earlier builds unless explicitly labeled otherwise.
+
 **23 September follow-up:** PR #1 is merged into `main`. The subsequent analysis lifecycle, metadata, IPC, search, and re-export changes were verified on branch `work/sonic-reliability-2026-09-23`; see [RELIABILITY-FOLLOWUP-2026-09-23.md](RELIABILITY-FOLLOWUP-2026-09-23.md) for the new source manifest, fresh unpacked executable, first-attempt failures, and close/reopen results. Counts and artifact hashes below describe the earlier September 22 builds.
 
 This persistence pass preserved the tested interface and targeted saving, shutdown, and acoustic correctness. Its source manifest is `d220b9d1202a6a6c220794334125f2274de1877992deb3efd4edc579eebe2b84`. Development CDP runs passed **10/10 offline, 3/3 loaded, and 6/6 persistence**. Its unpacked executable passed **1/1 offline, 3/3 loaded, and 6/6 persistence**, including same-profile reopen. All had zero retries and successful required shutdowns. Final native OS-pointer tests were blocked, two strict DSP cases remained failing, and a slow save remained a performance limitation. This workspace has no Git repository; manifests identify source and artifact hashes.

@@ -24,6 +24,7 @@ import type {
 import type { AudioAnalysis } from './analysis'
 import type { OrganizationCommand, OrganizationSnapshot } from './organization'
 import type { BatchRequest, BatchSession } from './batch'
+import type { PlaybackCheckpoint, PlaybackIdentity, PlaybackSessionSnapshot } from './playback'
 
 export type ToolName = 'yt-dlp' | 'ffmpeg' | 'ffprobe'
 
@@ -39,6 +40,9 @@ export interface JobPatch {
 }
 
 export interface IpcMap {
+  'playback:get': { args: []; result: PlaybackSessionSnapshot }
+  'playback:identity': { args: [beatId: string]; result: PlaybackIdentity }
+  'playback:checkpoint': { args: [command: PlaybackCheckpoint]; result: PlaybackSessionSnapshot }
   'storage:status': { args: []; result: StorageStatus[] }
   'storage:retry': { args: []; result: StorageStatus[] }
   'library:retrySidecar': { args: [id: string]; result: LibraryBeat[] }
@@ -171,6 +175,9 @@ export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = [
 ] as const
 
 export const IPC_CHANNELS: readonly IpcChannel[] = [
+  'playback:get',
+  'playback:identity',
+  'playback:checkpoint',
   'storage:status',
   'storage:retry',
   'library:retrySidecar',

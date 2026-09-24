@@ -71,9 +71,9 @@ for (const [cycle, lastChange] of ['settings', 'correction', 'active analysis'].
     if (lastChange === 'active analysis') {
       await page.getByRole('button', { name: /Library/ }).first().click()
       await page.locator(`[data-beat-id="${beatId}"]`).click()
-      await expect(page.locator('[data-preview-state]')).toHaveAttribute('data-preview-state', 'ready')
-      await page.getByRole('button', { name: 'Play', exact: true }).click()
-      await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+      await expect(page.locator('[data-preview-state]')).toHaveAttribute('data-preview-state', 'inspecting')
+      await page.getByRole('button', { name: 'Play this beat', exact: true }).click()
+      await expect(page.locator('[data-playback-dock]')).toHaveAttribute('data-playback-state', 'playing')
       await page.getByRole('button', { name: 'Analyze audio', exact: true }).click()
       await expect.poll(async () => (await invoke('analysis:status')).running).toBeGreaterThan(0)
       await captureOwnedProcesses(app)

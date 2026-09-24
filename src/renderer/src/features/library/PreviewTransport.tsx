@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import WaveSurfer from 'wavesurfer.js'
 import {
   Copy,
   ExternalLink,
   FileJson,
   FolderOpen,
-  Pause,
   Play,
-  Repeat,
   Timer,
   Trash2,
   TriangleAlert,
@@ -19,25 +16,17 @@ import { analyzedValuesFrom, describeAnalysisStatus } from '@shared/analysis'
 import { decideMetadataField, publishedTagStatus, BPM_MIN as MIN_BPM, BPM_MAX as MAX_BPM, type FieldOrigin } from '@shared/metadata'
 import { parseKeyString } from '@shared/music'
 import { formatBitrate, formatBpm, formatBytes, formatChannelCount, formatDuration, formatRelativeTime, formatSampleRate } from '@shared/format'
-import { cn } from '@/lib/cn'
 import { ipc } from '@/lib/ipc'
 import { useIpcEvent, useNow } from '@/lib/hooks'
 import { useApp } from '@/store/app'
-import { useResolvedTheme } from '@/lib/theme'
 import { Badge } from '@/components/ui/Badge'
 import { CircleMenu } from '@/components/obsidian/CircleMenu'
 import { IconButton } from '@/components/ui/Button'
-import { Skeleton, SkeletonBar } from '@/components/ui/SuccessCheck'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { toast } from '@/components/ui/Toaster'
+import { usePlaybackActions } from '@/features/playback/playbackSession'
 
-/**
- * Waveform audition bar.
- *
- * Audio is streamed through the `sonic-media:` protocol, which resolves a
- * library id to a file inside the main process — the renderer never handles a
- * filesystem path, and range requests keep seeking cheap.
- */
+/** Metadata inspector. Audio belongs to the persistent shell player. */
 export function PreviewTransport({
   beat,
   onClose,
@@ -49,7 +38,7 @@ export function PreviewTransport({
   onRequestDelete: () => void
   onRequestExport: () => void
 }): ReactNode {
-  const theme = useResolvedTheme()
+  const { playOne } = usePlaybackActions()
   const updateBeatMetadata = useApp((state) => state.updateBeatMetadata)
   const now = useNow(30_000)
   const [storage, setStorage] = useState<StorageStatus[]>([])
@@ -63,83 +52,9 @@ export function PreviewTransport({
   const keyDecision = decideMetadataField('key', evidenceInput)
   const tags = publishedTagStatus(beat, beat.publishedTags)
 
-  const waveRef = useRef<HTMLDivElement | null>(null)
-  const wsRef = useRef<WaveSurfer | null>(null)
-  const loopRef = useRef(false)
   const tapTimes = useRef<number[]>([])
 
-  const [volume, setVolume] = useState(1)
-  const [playing, setPlaying] = useState(false)
-  const [ready, setReady] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const [current, setCurrent] = useState(0)
-  const [duration, setDuration] = useState(beat.durationSec || 0)
-  const [loop, setLoop] = useState(false)
   const [tapBpm, setTapBpm] = useState<number | null>(null)
-
-  loopRef.current = loop
-
-  useEffect(() => {
-    const container = waveRef.current
-    if (!container) return
-
-    // Colours are read once at build time; both themes restate the tokens.
-    const styles = getComputedStyle(document.documentElement)
-    const accent = styles.getPropertyValue('--sonic-accent').trim() || '#7c5cff'
-    const wave = styles.getPropertyValue('--sonic-border-strong').trim() || 'rgba(255,255,255,0.2)'
-    const cursor = styles.getPropertyValue('--sonic-fg-subtle').trim() || '#69707f'
-
-    setReady(false)
-    setFailed(false)
-    setPlaying(false)
-    setCurrent(0)
-    setDuration(beat.durationSec || 0)
-
-    const instance = WaveSurfer.create({
-      container,
-      url: `sonic-media://beat/${encodeURIComponent(beat.id)}`,
-      height: 52,
-      waveColor: wave,
-      progressColor: accent,
-      cursorColor: cursor,
-      cursorWidth: 2,
-      barWidth: 2,
-      barGap: 1,
-      barRadius: 2,
-      normalize: true,
-      dragToSeek: true,
-      backend: 'WebAudio'
-    })
-
-    wsRef.current = instance
-
-    instance.on('ready', () => {
-      setReady(true)
-      setDuration(instance.getDuration())
-    })
-    instance.on('play', () => setPlaying(true))
-    instance.on('pause', () => setPlaying(false))
-    instance.on('timeupdate', (time) => setCurrent(time))
-    instance.on('finish', () => {
-      if (loopRef.current) void instance.play()
-    })
-    instance.on('error', () => setFailed(true))
-
-    return () => {
-      instance.destroy()
-      wsRef.current = null
-    }
-  }, [beat.id, beat.durationSec])
-
-  useEffect(() => {
-    const styles = getComputedStyle(document.documentElement)
-    wsRef.current?.setOptions({ waveColor: styles.getPropertyValue('--sonic-border-strong').trim(), progressColor: styles.getPropertyValue('--sonic-accent').trim() })
-  }, [theme])
-  useEffect(() => { wsRef.current?.setVolume(volume) }, [volume, ready])
-
-  const toggle = (): void => {
-    void wsRef.current?.playPause()
-  }
 
   const applyBpm = (next: number | null): void => {
     if (next == null) return
@@ -169,62 +84,19 @@ export function PreviewTransport({
 
   return (
     <div
-      // Exposes decoder state so the headless self-check can assert that a real
-      // file was streamed through `sonic-media:` and decoded.
-      data-preview-state={failed ? 'failed' : ready ? 'ready' : 'loading'}
+      data-preview-state="inspecting"
       className="shrink-0 rounded-[14px] border border-line bg-surface p-3"
     >
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={toggle}
-          disabled={!ready}
-          aria-label={playing ? 'Pause' : 'Play'}
-          className={cn(
-            'grid size-10 shrink-0 place-items-center rounded-full transition-[background-color,transform]',
-            'duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)] active:scale-95',
-            ready
-              ? 'bg-accent text-accent-fg shadow-accent hover:bg-[var(--sonic-accent-hover)]'
-              : 'cursor-not-allowed bg-surface-3 text-fg-subtle'
-          )}
-        >
-          {playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}
-        </button>
-
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-[180px] flex-1">
           <div className="flex items-baseline gap-2">
             <span className="truncate text-[13px] font-medium text-fg">{beat.title}</span>
             {beat.producer ? (
               <span className="truncate text-[11.5px] text-fg-muted">· {beat.producer}</span>
             ) : null}
           </div>
-
-          <div className="relative mt-1 h-[52px]">
-            <div ref={waveRef} data-waveform className="absolute inset-0" />
-
-            {/* Placeholder layer only: the real content is the waveform canvas
-                underneath, so the "content" side of the cross-fade is empty. */}
-            <div className="pointer-events-none absolute inset-0">
-              <Skeleton
-                loading={!ready && !failed}
-                className="size-full"
-                placeholder={<SkeletonBar className="rounded-[6px]" />}
-              >
-                <span />
-              </Skeleton>
-            </div>
-
-            {failed ? (
-              <div className="absolute inset-0 grid place-items-center text-[11.5px] text-danger">
-                This file could not be read — it may have been moved or deleted.
-              </div>
-            ) : null}
-          </div>
-
-          <div className="mt-1 flex items-center gap-2 text-[11px] text-fg-subtle nums">
-            <span className="text-fg-muted">
-              {formatDuration(current)} / {formatDuration(duration || beat.durationSec)}
-            </span>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-fg-subtle nums">
+            <span className="text-fg-muted">{formatDuration(beat.durationSec)}</span>
             <span>·</span>
             <span>{beat.format.toUpperCase()}</span>
             {beat.bitrateKbps ? (
@@ -253,17 +125,10 @@ export function PreviewTransport({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <Tooltip label={loop ? 'Looping on' : 'Loop'}>
-            <IconButton
-              label="Loop"
-              size="icon-sm"
-              variant={loop ? 'quiet' : 'ghost'}
-              onClick={() => setLoop((value) => !value)}
-            >
-              <Repeat />
-            </IconButton>
-          </Tooltip>
-
+          <button type="button" disabled={beat.missing} onClick={() => playOne(beat.id)}
+            className="flex h-8 items-center gap-1.5 rounded-[8px] bg-accent-soft px-2.5 text-[11.5px] font-medium text-accent transition-colors hover:bg-[var(--sonic-accent-line)] disabled:opacity-40">
+            <Play className="size-3.5" /> Play this beat
+          </button>
           <Tooltip label="Tap along to set the tempo">
             <button
               type="button"
@@ -418,14 +283,6 @@ export function PreviewTransport({
         </span>
       </div>
 
-      <div className="mt-2 flex items-center gap-3 text-[11px] text-fg-muted">
-        <label className="flex flex-1 items-center gap-2">Seek
-          <input aria-label="Seek preview" className="min-w-0 flex-1" type="range" min="0" max={duration || 1} step="0.1" value={current} disabled={!ready} onChange={event => wsRef.current?.setTime(Number(event.target.value))} />
-        </label>
-        <label className="flex items-center gap-2">Volume
-          <input aria-label="Preview volume" className="w-20" type="range" min="0" max="1" step="0.05" value={volume} onChange={event => setVolume(Number(event.target.value))} />
-        </label>
-      </div>
       <MetadataCorrection key={beat.id} beat={beat} />
       {beat.analysis && beat.analysis.warnings.length > 0 ? (
         <ul className="mt-1.5 space-y-0.5">
