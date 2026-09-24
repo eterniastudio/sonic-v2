@@ -24,6 +24,10 @@ export function libraryFile(): string {
   return path.join(userDataDir(), 'library.json')
 }
 
+export function organizationFile(): string {
+  return path.join(userDataDir(), 'organization.json')
+}
+
 export function queueFile(): string {
   return path.join(userDataDir(), 'queue.json')
 }

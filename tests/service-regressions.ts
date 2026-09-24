@@ -161,12 +161,19 @@ app.whenReady().then(async () => {
   await check('failed library publication preserves files for pending-store retry', async () => {
     const libraryPath = path.join(app.getPath('userData'), 'library.json')
     const before = new Set(libraryService.list().map(beat => beat.id))
+    let resultBeatId: string | undefined
+    let resultOutputPath: string | null = null
     await rename(libraryPath, `${libraryPath}.test-saved`)
     await mkdir(libraryPath)
     try {
       const result = await reexportBeat('fixture-0', 'flac')
       assert.equal(result.ok, false)
       assert.match(result.error!, /Export files preserved/)
+      assert.equal(result.pendingSave, true)
+      assert.ok(result.outputPath)
+      assert.ok(result.publishedBeatId)
+      resultBeatId = result.publishedBeatId
+      resultOutputPath = result.outputPath
     } finally { await rmdir(libraryPath); await rename(`${libraryPath}.test-saved`, libraryPath) }
     assert.throws(() => libraryService.setAnalysisStatus('fixture-0', 'queued'), /must be retried/)
     const failedStart = await libraryAnalysis.analyze('fixture-0')
@@ -175,6 +182,8 @@ app.whenReady().then(async () => {
     retryStorage()
     const recovered = libraryService.list().find(beat => !before.has(beat.id))!
     assert.ok(recovered)
+    assert.equal(recovered.id, resultBeatId)
+    assert.equal(recovered.filePath, resultOutputPath)
     assert.equal((await probeMediaFile(recovered.filePath)).audio?.codec, 'flac')
     assert.equal(JSON.parse(await readFile(recovered.sidecarPath!, 'utf8')).output.fingerprint, recovered.fingerprint)
     const originalUnlink = fs.unlink

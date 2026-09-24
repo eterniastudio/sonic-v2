@@ -16,7 +16,7 @@ function editorTest(name, run) {
 
 editorTest('Reset BPM preserves an unsaved key', async page => {
   await page.getByLabel('Manual key', { exact: true }).fill('F# minor')
-  await page.getByRole('button', { name: 'Reset BPM', exact: true }).click()
+  await page.getByRole('button', { name: 'Reset BPM to evidence priority', exact: true }).click()
   await expect(page.getByLabel('Manual BPM', { exact: true })).toHaveValue('100')
   await expect(page.getByLabel('Manual key', { exact: true })).toHaveValue('F# minor')
   await page.getByRole('button', { name: 'Save corrections', exact: true }).click()
@@ -25,7 +25,7 @@ editorTest('Reset BPM preserves an unsaved key', async page => {
 
 editorTest('Reset key preserves an unsaved BPM', async page => {
   await page.getByLabel('Manual BPM', { exact: true }).fill('133')
-  await page.getByRole('button', { name: 'Reset key', exact: true }).click()
+  await page.getByRole('button', { name: 'Reset key to evidence priority', exact: true }).click()
   await expect(page.getByLabel('Manual key', { exact: true })).toHaveValue('C major')
   await expect(page.getByLabel('Manual BPM', { exact: true })).toHaveValue('133')
   await page.getByRole('button', { name: 'Save corrections', exact: true }).click()

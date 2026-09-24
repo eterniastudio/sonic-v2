@@ -16,7 +16,9 @@ const source = []
 for (const file of files.sort()) source.push({ file, sha256: await hashFile(file) })
 const sourceHash = createHash('sha256').update(JSON.stringify(source)).digest('hex')
 const artifacts = []
-for (const file of ['out/main/index.js', 'out/main/analysisWorker.js', 'release/win-unpacked/Sonic V2.exe', 'release/win-unpacked/resources/app.asar']) {
+const packagedRoot = process.argv[3] || 'release/win-unpacked'
+for (const file of ['out/main/index.js', 'out/main/analysisWorker.js',
+  path.join(packagedRoot, 'Sonic V2.exe'), path.join(packagedRoot, 'resources', 'app.asar')]) {
   try { artifacts.push({ file, sha256: await hashFile(file) }) } catch { /* not built yet */ }
 }
 const output = process.argv[2] ?? 'test-results/source-manifest.json'

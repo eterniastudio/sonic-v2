@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from 'react'
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 import { useTilt } from '../motion/usePresence'
 
@@ -8,7 +8,7 @@ export interface TiltCardProps {
   /** Cursor-tracked glare overlay. */
   glare?: boolean
   disabled?: boolean
-  onClick?: () => void
+  onClick?: (event: MouseEvent | KeyboardEvent) => void
   onContextMenu?: (event: MouseEvent) => void
 }
 
@@ -42,7 +42,7 @@ export function TiltCard({
             ? (event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault()
-                  onClick()
+                  onClick(event)
                 }
               }
             : undefined

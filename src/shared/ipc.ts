@@ -22,6 +22,8 @@ import type {
   TemplatePreview
 } from './domain'
 import type { AudioAnalysis } from './analysis'
+import type { OrganizationCommand, OrganizationSnapshot } from './organization'
+import type { BatchRequest, BatchSession } from './batch'
 
 export type ToolName = 'yt-dlp' | 'ffmpeg' | 'ffprobe'
 
@@ -78,6 +80,12 @@ export interface IpcMap {
   'queue:openOutput': { args: [id: string]; result: boolean }
 
   'library:list': { args: []; result: LibraryBeat[] }
+  'organization:snapshot': { args: []; result: OrganizationSnapshot }
+  'organization:command': { args: [command: OrganizationCommand]; result: OrganizationSnapshot }
+  'batch:start': { args: [request: BatchRequest]; result: BatchSession }
+  'batch:status': { args: [sessionId: string]; result: BatchSession | null }
+  'batch:cancel': { args: [sessionId: string]; result: BatchSession | null }
+  'batch:retry': { args: [sessionId: string]; result: BatchSession }
   'import:chooseFiles': { args: []; result: { sessionId: string | null } }
   'import:chooseFolder': { args: [recursive: boolean]; result: { sessionId: string | null } }
   'import:status': { args: [sessionId: string]; result: LocalImportReview | null }
@@ -116,7 +124,7 @@ export interface IpcMap {
   'library:rescan': { args: []; result: LibraryBeat[] }
   'library:reexport': {
     args: [id: string, presetId: PresetId]
-    result: { ok: boolean; outputPath: string | null; error: string | null }
+    result: { ok: boolean; outputPath: string | null; error: string | null; pendingSave?: boolean; publishedBeatId?: string }
   }
 
   'metadata:parse': {
@@ -133,6 +141,7 @@ export interface IpcEvents {
   'engine:progress': EngineProgress
   'settings:changed': Settings
   'library:changed': LibraryBeat[]
+  'organization:changed': OrganizationSnapshot
   'app:notice': { kind: 'info' | 'success' | 'error'; message: string }
   'window:maximized': boolean
   /** Analysis progress for a library track or a download job. */
@@ -155,6 +164,7 @@ export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = [
   'engine:progress',
   'settings:changed',
   'library:changed',
+  'organization:changed',
   'app:notice',
   'window:maximized',
   'analysis:progress'
@@ -193,6 +203,12 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'queue:revealOutput',
   'queue:openOutput',
   'library:list',
+  'organization:snapshot',
+  'organization:command',
+  'batch:start',
+  'batch:status',
+  'batch:cancel',
+  'batch:retry',
   'import:chooseFiles',
   'import:chooseFolder',
   'import:status',

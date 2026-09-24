@@ -81,6 +81,18 @@ export interface PublishResult {
   beat: LibraryBeat
 }
 
+/** Publication reached disk, but its library revision has not been committed. */
+export class PendingPublicationError extends Error {
+  constructor(
+    readonly outputPath: string,
+    readonly beatId: string,
+    cause: unknown
+  ) {
+    super(`Export files preserved at ${outputPath}; library save needs retry: ${String(cause)}`, { cause })
+    this.name = 'PendingPublicationError'
+  }
+}
+
 const SIDECAR_FOLDER = '.json'
 interface OwnedOutput { path: string; ino: number; birthtimeMs: number }
 
@@ -128,6 +140,7 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
   let sidecarPath: string | null = null
   const owned: OwnedOutput[] = []
   let libraryCommitAttempted = false
+  let pendingBeatId: string | null = null
   try {
   // Exclusive reservation closes the check/rename overwrite race. A concurrent
   // winner is reported as a retryable publication failure; never overwritten.
@@ -185,6 +198,7 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
 
   input.signal?.throwIfAborted()
   libraryCommitAttempted = true
+  pendingBeatId = beat.id
   libraryService.add(beat)
 
   try { await unlink(input.stagedPath) } catch (error) {
@@ -195,7 +209,7 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
   } catch (error) {
     if (libraryCommitAttempted) {
       storageDiagnostic(libraryFile(), { operation: 'export-library-pending', filePath, sidecarPath, error: String(error) })
-      throw new Error(`Export files preserved at ${filePath}; library save needs retry: ${String(error)}`)
+      throw new PendingPublicationError(filePath, pendingBeatId!, error)
     }
     const cleanupErrors: string[] = []
     for (const file of owned.reverse()) {
