@@ -13,6 +13,9 @@ import { libraryAnalysis } from './analysis/libraryAnalysis'
 import { engineService } from './services/engine'
 import { libraryService } from './services/library'
 import { localImportService } from './services/localImport'
+import { organizationService, validateOrganizationCommand } from './services/organization'
+import { batchOperations } from './services/batchOperations'
+import { validateBatchRequest } from '@shared/batch'
 import { defaultDownloadDir } from './services/paths'
 import { probeUrl } from './services/probe'
 import { queueService } from './services/queue'
@@ -118,14 +121,22 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
     case 'window:minimize': case 'window:toggleMaximize': case 'window:close': case 'window:isMaximized':
     case 'engine:status': case 'engine:setup': case 'settings:get': case 'settings:chooseDir': case 'queue:snapshot':
     case 'queue:clearFinished': case 'library:list': case 'library:rescan': case 'import:chooseFiles':
+    case 'organization:snapshot':
     case 'analysis:queueMissing': case 'analysis:clearCache': case 'analysis:status':
       valid = args.length === 0; break
     case 'library:retrySidecar': case 'queue:remove': case 'queue:cancel': case 'queue:retry':
     case 'queue:revealOutput': case 'queue:openOutput': case 'library:openSource':
     case 'library:refreshSource': case 'library:revealFile': case 'library:openFile':
     case 'library:openSidecarFile': case 'analysis:cancel':
-    case 'import:status': case 'import:cancel':
+    case 'import:status': case 'import:cancel': case 'batch:status': case 'batch:cancel': case 'batch:retry':
       valid = args.length === 1 && isId(a); break
+    case 'organization:command':
+      valid = args.length === 1 && validateOrganizationCommand(a); break
+    case 'batch:start':
+      if (args.length === 1) {
+        try { validateBatchRequest(a); valid = true } catch { valid = false }
+      }
+      break
     case 'import:chooseFolder':
       valid = args.length === 1 && typeof a === 'boolean'; break
     case 'import:confirm':
@@ -184,6 +195,7 @@ export function registerIpcHandlers(): void {
     retryStorage()
     broadcast('settings:changed', settingsService.get())
     broadcast('library:changed', libraryService.list())
+    broadcast('organization:changed', organizationService.snapshot())
     return storageStatus()
   })
   handle('library:retrySidecar', id => libraryService.retrySidecar(id))
@@ -331,6 +343,12 @@ export function registerIpcHandlers(): void {
 
   // -------------------------------------------------------------- library
   handle('library:list', () => libraryService.list())
+  handle('organization:snapshot', () => organizationService.snapshot())
+  handle('organization:command', command => organizationService.execute(command))
+  handle('batch:start', request => batchOperations.start(request))
+  handle('batch:status', id => batchOperations.status(id))
+  handle('batch:cancel', id => batchOperations.cancel(id))
+  handle('batch:retry', id => batchOperations.retry(id))
   handle('import:chooseFiles', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Choose audio to import into Sonic',
@@ -434,6 +452,7 @@ export function wireServiceEvents(): void {
   }))
   queueService.on('changed', (snapshot) => broadcast('queue:changed', snapshot))
   libraryService.on('changed', (beats) => broadcast('library:changed', beats))
+  organizationService.on('changed', (snapshot) => broadcast('organization:changed', snapshot))
   engineService.on('progress', (progress) => broadcast('engine:progress', progress))
   libraryAnalysis.on('progress', (progress) => broadcast('analysis:progress', progress))
   settingsService.on('changed', (settings) => {

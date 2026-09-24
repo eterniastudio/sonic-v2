@@ -16,7 +16,16 @@ function Harness() {
   return <main className="bg-bg text-fg h-screen p-4"><button onClick={() => setOpen(true)}>Open dialog</button><button onClick={() => setConfirm(true)}>Confirm operation</button><output aria-label="Selections">{count}</output><div className="absolute bottom-2 right-2 h-14 w-52 overflow-hidden">{picker}</div><Modal open={open} onClose={() => setOpen(false)} title="Nested overlay">{picker}<button>Last control</button></Modal><ConfirmDialog open={confirm} title="Pending operation" confirmLabel="Apply" onCancel={() => setConfirm(false)} onConfirm={async () => { setCount(n => n + 1); await new Promise(resolve => setTimeout(resolve, 150)); throw new Error('Deliberate write failure') }} /></main>
 }
 function EditorHarness() {
-  const [beat, setBeat] = useState({ id: 'editor-fixture', bpm: 120, key: 'A minor', camelot: '8A', overrides: ['bpm', 'key'] } as LibraryBeat)
+  const [beat, setBeat] = useState<LibraryBeat>({
+    id: 'editor-fixture', title: 'Editor fixture', producer: null,
+    bpm: 120, altBpm: null, key: 'A minor', camelot: '8A', detune: null,
+    presetId: 'mp3-320', format: 'wav', filePath: 'editor-fixture.wav', fileName: 'editor-fixture.wav',
+    fileOwnership: 'sonic-export', sidecarPath: null, sizeBytes: 0, durationSec: 0,
+    bitrateKbps: null, sampleRate: null, channels: null, sourceUrl: null, sourceKind: 'unknown',
+    addedAt: 0, fingerprint: '', missing: false, analysisStatus: 'not-analyzed', analysis: null,
+    overrides: ['bpm', 'key'], sources: { title: {}, description: {}, filename: {} },
+    embedded: {}, verification: null
+  })
   useEffect(() => {
     const controls = {
       calls: [] as unknown[],

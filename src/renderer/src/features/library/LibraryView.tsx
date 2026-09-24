@@ -14,7 +14,10 @@ import {
   Wand2,
   X
 } from 'lucide-react'
+import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { LibraryBeat, PresetId } from '@shared/domain'
+import { FAVORITES_COLLECTION_ID, type OrganizationCommand, type OrganizationSnapshot } from '@shared/organization'
+import type { BatchSession } from '@shared/batch'
 import { PRESETS } from '@shared/presets'
 import { formatBpm, formatBytes, formatDuration } from '@shared/format'
 import { coverArtFor } from '@shared/url'
@@ -38,9 +41,12 @@ import { toast } from '@/components/ui/Toaster'
 import { BeatCard } from './BeatCard'
 import { PreviewTransport } from './PreviewTransport'
 import { ImportAudio } from './ImportAudio'
-import { createLibraryIndex, searchLibrary, type FileFilter, type LibrarySort, type ReviewFilter } from './librarySearch'
+import { createLibraryIndex, searchLibrary, searchSmartCollection, type FileFilter, type LibrarySort, type ReviewFilter } from './librarySearch'
+import { CollectionWorkspace } from './CollectionWorkspace'
+import { AnnotationEditor } from './AnnotationEditor'
 
 const SORTS: { key: LibrarySort; label: string }[] = [
+  { key: 'manual', label: 'Collection order' },
   { key: 'relevance', label: 'Relevance' },
   { key: 'newest', label: 'Newest first' },
   { key: 'oldest', label: 'Oldest first' },
@@ -81,6 +87,10 @@ export function LibraryView(): ReactNode {
   const [includeHalfDouble, setIncludeHalfDouble] = useState(false)
   const [keyFilter, setKeyFilter] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const selectionAnchor = useRef<string | null>(null)
+  const [organization, setOrganization] = useState<OrganizationSnapshot | null>(null)
+  const [batch, setBatch] = useState<BatchSession | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<LibraryBeat | null>(null)
   const [alsoDeleteFiles, setAlsoDeleteFiles] = useState(true)
   const [showFilters, setShowFilters] = useState(false)
@@ -94,6 +104,67 @@ export function LibraryView(): ReactNode {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let live = true
+    void ipc.invoke('organization:snapshot').then(snapshot => {
+      if (!live) return
+      setOrganization(snapshot)
+      setLayout(snapshot.view.layout)
+      setSort(snapshot.view.sort)
+    }).catch(error => toast({ kind: 'error', title: 'Collections unavailable', description: String(error) }))
+    const off = ipc.on('organization:changed', snapshot => { if (live) setOrganization(snapshot) })
+    return () => { live = false; off() }
+  }, [])
+  useEffect(() => {
+    if (!organization) return
+    setLayout(organization.view.layout)
+    setSort(organization.view.sort)
+  }, [organization?.view.layout, organization?.view.sort])
+  useEffect(() => {
+    const id = window.sessionStorage.getItem('sonic:library-batch-session')
+    if (!id) return
+    void ipc.invoke('batch:status', id).then(result => {
+      if (result) setBatch(result)
+      else window.sessionStorage.removeItem('sonic:library-batch-session')
+    }).catch(() => window.sessionStorage.removeItem('sonic:library-batch-session'))
+  }, [])
+  useEffect(() => {
+    if (batch) window.sessionStorage.setItem('sonic:library-batch-session', batch.id)
+    else window.sessionStorage.removeItem('sonic:library-batch-session')
+  }, [batch?.id])
+
+  const executeOrganization = async (command: OrganizationCommand): Promise<OrganizationSnapshot> => {
+    const next = await ipc.invoke('organization:command', command)
+    setOrganization(next)
+    return next
+  }
+
+  const activeCollection = organization?.collections.find(item => item.id === organization.view.activeCollectionId) ?? null
+  const activeScope = organization?.view.activeCollectionId ?? 'all'
+  const changeScope = async (id: string | null): Promise<void> => {
+    if (!organization || organization.view.activeCollectionId === id) return
+    const nextSort = organization.collections.some(item => item.id === id && item.type === 'manual')
+      ? 'manual' : sort === 'manual' ? 'newest' : sort
+    await executeOrganization({ type: 'set-view', activeCollectionId: id, layout, sort: nextSort })
+    setSort(nextSort)
+    setSelectedIds(new Set())
+    selectionAnchor.current = null
+  }
+
+  const changeLayout = (next: 'grid' | 'list'): void => {
+    if (!organization) return
+    void executeOrganization({ type: 'set-view', activeCollectionId: organization.view.activeCollectionId, layout: next, sort })
+      .then(() => setLayout(next))
+      .catch(error => toast({ kind: 'error', title: 'Layout was not saved', description: String(error) }))
+  }
+
+  const changeSort = (next: LibrarySort): void => {
+    if (!organization) return
+    void executeOrganization({ type: 'set-view', activeCollectionId: organization.view.activeCollectionId, layout, sort: next })
+      .then(() => setSort(next))
+      .catch(error => toast({ kind: 'error', title: 'Sort was not saved', description: String(error) }))
+  }
 
   useEffect(() => {
     if (!menu) return
@@ -112,6 +183,7 @@ export function LibraryView(): ReactNode {
   const openMenu = (event: React.MouseEvent, beat: LibraryBeat): void => {
     event.preventDefault()
     event.stopPropagation()
+    if (!selectedIds.has(beat.id)) { setSelectedIds(new Set([beat.id])); selectionAnchor.current = beat.id }
     setMenu({ id: beat.id, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - 216)) })
   }
@@ -125,10 +197,71 @@ export function LibraryView(): ReactNode {
     [library]
   )
 
-  const visible = useMemo(() => searchLibrary(library, index, {
-    query, sort, bands, formats, fileFilter, reviewFilter, bpm: bpmFilter,
-    bpmTolerance, includeHalfDouble, key: keyFilter
-  }), [library, index, query, sort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter])
+  const visible = useMemo(() => {
+    let scope = library
+    if (activeCollection?.type === 'manual') {
+      const byId = new Map(library.map(beat => [beat.id, beat]))
+      scope = activeCollection.beatIds.flatMap(id => byId.get(id) ? [byId.get(id)!] : [])
+    } else if (activeCollection?.type === 'smart' && organization) {
+      scope = searchSmartCollection(library, index, activeCollection.rules, organization.annotations, sort)
+    } else if (activeScope === FAVORITES_COLLECTION_ID) {
+      scope = library.filter(beat => organization && Object.prototype.hasOwnProperty.call(organization.annotations, beat.id) && organization.annotations[beat.id].favorite)
+    }
+    const rows = searchLibrary(scope, index, {
+      query, sort, bands, formats, fileFilter, reviewFilter, bpm: bpmFilter,
+      bpmTolerance, includeHalfDouble, key: keyFilter
+    })
+    if (activeCollection?.type !== 'manual' || sort !== 'manual') return rows
+    const positions = new Map(activeCollection.beatIds.map((id, position) => [id, position]))
+    return rows.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity))
+  }, [library, index, organization, activeScope, activeCollection, query, sort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter])
+
+  const selectionScope = `${activeScope}\u0000${activeCollection?.type === 'smart' ? JSON.stringify(activeCollection.rules) : ''}\u0000${query}\u0000${[...bands].sort()}\u0000${[...formats].sort()}\u0000${fileFilter}\u0000${reviewFilter}\u0000${bpmFilter}\u0000${bpmTolerance}\u0000${includeHalfDouble}\u0000${keyFilter}`
+  useEffect(() => { setSelectedIds(new Set()); selectionAnchor.current = null }, [selectionScope])
+  useEffect(() => {
+    const existing = new Set(library.map(beat => beat.id))
+    setSelectedIds(previous => {
+      if ([...previous].every(id => existing.has(id))) return previous
+      return new Set([...previous].filter(id => existing.has(id)))
+    })
+  }, [library])
+  useEffect(() => {
+    // Manual membership and smart-rule results can change without changing the
+    // active collection ID. Hidden tracks must not remain batch targets.
+    const matching = new Set(visible.map(beat => beat.id))
+    setSelectedIds(previous => {
+      if ([...previous].every(id => matching.has(id))) return previous
+      return new Set([...previous].filter(id => matching.has(id)))
+    })
+  }, [visible])
+  const visibleIdsKey = visible.map(beat => beat.id).sort().join('\u0000')
+  useEffect(() => {
+    const ids = new Set(visible.map(beat => beat.id))
+    setSelectedIds(previous => [...previous].every(id => ids.has(id)) ? previous : new Set([...previous].filter(id => ids.has(id))))
+  }, [visibleIdsKey])
+
+  const toggleSelectedId = (id: string): void => {
+    setSelectedIds(previous => {
+      const next = new Set(previous)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    selectionAnchor.current = id
+  }
+
+  const selectCard = (event: ReactMouseEvent | ReactKeyboardEvent, beat: LibraryBeat): void => {
+    if (event.shiftKey) {
+      const ids = visible.map(item => item.id)
+      const anchor = ids.indexOf(selectionAnchor.current ?? beat.id)
+      const end = ids.indexOf(beat.id)
+      if (anchor >= 0 && end >= 0) setSelectedIds(previous => new Set([...previous, ...ids.slice(Math.min(anchor, end), Math.max(anchor, end) + 1)]))
+      return
+    }
+    if (event.ctrlKey || event.metaKey) { toggleSelectedId(beat.id); return }
+    setSelectedId(selectedId === beat.id ? null : beat.id)
+    selectionAnchor.current = beat.id
+  }
 
   const selected = useMemo(
     () => library.find((beat) => beat.id === selectedId) ?? null,
@@ -197,7 +330,7 @@ export function LibraryView(): ReactNode {
             <Input
               value={query}
               onChange={(event) => {
-                if (!query.trim() && event.target.value.trim()) setSort('relevance')
+                if (!query.trim() && event.target.value.trim()) changeSort('relevance')
                 setQuery(event.target.value)
               }}
               placeholder="Search title, producer, BPM, key…"
@@ -232,12 +365,12 @@ export function LibraryView(): ReactNode {
             {(close) => (
               <>
                 <DropdownLabel>Sort by</DropdownLabel>
-                {SORTS.map((entry) => (
+                {SORTS.filter(entry => entry.key !== 'manual' || activeCollection?.type === 'manual').map((entry) => (
                   <DropdownItem
                     key={entry.key}
                     selected={entry.key === sort}
                     onSelect={() => {
-                      setSort(entry.key)
+                      changeSort(entry.key)
                       close()
                     }}
                   >
@@ -250,7 +383,7 @@ export function LibraryView(): ReactNode {
 
           <Segmented
             value={layout}
-            onChange={setLayout}
+            onChange={changeLayout}
             ariaLabel="Layout"
             size="sm"
             options={[
@@ -409,6 +542,13 @@ export function LibraryView(): ReactNode {
         ) : null}
       </div>
 
+      <CollectionWorkspace organization={organization} activeId={organization?.view.activeCollectionId ?? null}
+        library={library} visible={visible} selectedIds={selectedIds}
+        clearSelection={() => { setSelectedIds(new Set()); selectionAnchor.current = null }}
+        selectAll={() => { setSelectedIds(new Set(visible.map(beat => beat.id))); selectionAnchor.current = visible[0]?.id ?? null }}
+        onScope={changeScope} command={executeOrganization} batch={batch} setBatch={setBatch}
+        defaultPresetId={defaultPresetId} manualSort={sort === 'manual'} />
+
       {library.length > 0 ? (
         <BentoGrid className="shrink-0">
           <BentoCard
@@ -456,7 +596,13 @@ export function LibraryView(): ReactNode {
           </div>
         ) : visible.length === 0 ? (
           <div className="grid h-full min-h-[220px] place-items-center rounded-[14px] border border-line bg-surface text-[12.5px] text-fg-subtle">
-            No beats match those filters.
+            {activeCollection?.type === 'manual' && activeCollection.beatIds.length === 0
+              ? 'This collection is empty. Select beats and use Add to collection.'
+              : activeScope === FAVORITES_COLLECTION_ID && !library.some(beat => organization && Object.prototype.hasOwnProperty.call(organization.annotations, beat.id) && organization.annotations[beat.id].favorite)
+                ? 'No favorites yet. Open a beat and mark it as a favorite.'
+                : activeCollection?.type === 'smart'
+                  ? 'No beats currently match this smart collection’s rules.'
+                  : 'No beats match those filters.'}
           </div>
         ) : layout === 'grid' ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(212px,1fr))] gap-3 pr-0.5 pb-0.5">
@@ -472,7 +618,9 @@ export function LibraryView(): ReactNode {
                   beat={beat}
                   layout="grid"
                   selected={selectedId === beat.id}
-                  onSelect={() => setSelectedId(selectedId === beat.id ? null : beat.id)}
+                  batchSelected={selectedIds.has(beat.id)}
+                  onToggleSelection={() => toggleSelectedId(beat.id)}
+                  onSelect={(event) => selectCard(event, beat)}
                   onContextMenu={(event) => openMenu(event, beat)}
                 />
               </div>
@@ -490,7 +638,9 @@ export function LibraryView(): ReactNode {
                       beat={beat}
                       layout="list"
                       selected={selectedId === beat.id}
-                      onSelect={() => setSelectedId(selectedId === beat.id ? null : beat.id)}
+                      batchSelected={selectedIds.has(beat.id)}
+                      onToggleSelection={() => toggleSelectedId(beat.id)}
+                      onSelect={(event) => selectCard(event, beat)}
                       onContextMenu={(event) => openMenu(event, beat)}
                     />
                   }
@@ -547,6 +697,7 @@ export function LibraryView(): ReactNode {
           }}
         />
       ) : null}
+      {selected && organization ? <AnnotationEditor key={selected.id} beat={selected} annotation={Object.prototype.hasOwnProperty.call(organization.annotations, selected.id) ? organization.annotations[selected.id] : undefined} command={executeOrganization} /> : null}
 
       {menu && library.some(beat => beat.id === menu.id) ? createPortal(
         <div ref={menuRef} role="menu" aria-label="Beat actions" tabIndex={-1}

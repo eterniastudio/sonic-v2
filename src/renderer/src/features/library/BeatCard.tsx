@@ -1,5 +1,5 @@
-import type { MouseEvent, ReactNode } from 'react'
-import { Play, TriangleAlert } from 'lucide-react'
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
+import { Check, Play, TriangleAlert } from 'lucide-react'
 import type { LibraryBeat } from '@shared/domain'
 import { formatBpm, formatDuration } from '@shared/format'
 import { coverArtFor } from '@shared/url'
@@ -20,23 +20,33 @@ export interface BeatCardProps {
   beat: LibraryBeat
   layout: 'grid' | 'list'
   selected: boolean
-  onSelect: () => void
+  batchSelected?: boolean
+  onSelect: (event: MouseEvent | KeyboardEvent) => void
+  onToggleSelection?: () => void
   onContextMenu?: (event: MouseEvent) => void
 }
 
-export function BeatCard({ beat, layout, selected, onSelect, onContextMenu }: BeatCardProps): ReactNode {
+export function BeatCard({ beat, layout, selected, batchSelected = false, onSelect, onToggleSelection, onContextMenu }: BeatCardProps): ReactNode {
   const cover = coverArtFor(beat.sourceUrl)
   const credit = beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')
+  const selectionControl = onToggleSelection ? <label className="relative grid size-5 shrink-0 cursor-pointer place-items-center"
+    onClick={event => event.stopPropagation()}>
+    <input type="checkbox" checked={batchSelected} aria-checked={batchSelected}
+      aria-label={`Select ${beat.title}`} onChange={onToggleSelection}
+      className="peer absolute inset-0 size-full cursor-pointer opacity-0" />
+    <span aria-hidden className={cn('pointer-events-none grid size-5 place-items-center rounded-[5px] border text-[11px] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent',
+      batchSelected ? 'border-accent bg-accent text-white' : 'border-line-strong bg-surface/80 text-transparent')}>
+      <Check className="size-3.5" />
+    </span>
+  </label> : null
 
   if (layout === 'list') {
     return (
-      <button
-        type="button"
-        onClick={onSelect}
+      <div
         onContextMenu={onContextMenu}
         data-beat-id={beat.id}
         className={cn(
-          'flex w-full items-center gap-3 rounded-[10px] border px-2.5 py-2 text-left',
+          'flex w-full items-center gap-3 rounded-[10px] border px-2.5 py-2',
           'transition-[border-color,background-color] duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
           selected
             ? 'border-[var(--sonic-accent-line)] bg-accent-softer'
@@ -44,6 +54,9 @@ export function BeatCard({ beat, layout, selected, onSelect, onContextMenu }: Be
           beat.missing && 'opacity-55'
         )}
       >
+        {selectionControl}
+        <button type="button" aria-label={`Preview ${beat.title}`} onClick={onSelect}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:rounded-[7px] focus-visible:outline-2 focus-visible:outline-accent">
         <span
           className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-[7px]"
           style={cover ? undefined : { background: fallbackGradient(beat.id) }}
@@ -76,19 +89,19 @@ export function BeatCard({ beat, layout, selected, onSelect, onContextMenu }: Be
         </span>
 
         {beat.missing ? <TriangleAlert className="size-3.5 shrink-0 text-warning" /> : null}
-      </button>
+        </button>
+      </div>
     )
   }
 
   return (
+    <div data-beat-id={beat.id} onContextMenu={onContextMenu} className="relative">
     <TiltCard
       className={cn('rounded-[12px]', beat.missing && 'opacity-55')}
       glare={!beat.missing}
       onClick={onSelect}
-      onContextMenu={onContextMenu}
     >
       <div
-        data-beat-id={beat.id}
         className={cn(
           'group flex h-full flex-col overflow-hidden rounded-[12px] border bg-surface',
           'transition-colors duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
@@ -123,7 +136,7 @@ export function BeatCard({ beat, layout, selected, onSelect, onContextMenu }: Be
           </span>
 
           {beat.missing ? (
-            <span className="absolute top-2 left-2 flex items-center gap-1 rounded-[5px] bg-warning px-1.5 py-0.5 text-[10px] font-semibold text-black">
+            <span className="absolute top-9 left-2 flex items-center gap-1 rounded-[5px] bg-warning px-1.5 py-0.5 text-[10px] font-semibold text-black">
               <TriangleAlert className="size-2.5" />
               MISSING
             </span>
@@ -175,5 +188,7 @@ export function BeatCard({ beat, layout, selected, onSelect, onContextMenu }: Be
         </div>
       </div>
     </TiltCard>
+    {selectionControl ? <span className="absolute top-2 left-2 z-10">{selectionControl}</span> : null}
+    </div>
   )
 }

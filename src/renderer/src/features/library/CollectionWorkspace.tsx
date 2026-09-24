@@ -1,0 +1,211 @@
+import { useEffect, useState, type ReactNode } from 'react'
+import type { LibraryBeat, PresetId } from '@shared/domain'
+import { FAVORITES_COLLECTION_ID, type LibraryCollection, type OrganizationCommand, type OrganizationSnapshot, type SmartCollectionRule } from '@shared/organization'
+import type { BatchSession } from '@shared/batch'
+import { PRESETS } from '@shared/presets'
+import { ipc } from '@/lib/ipc'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Modal } from '@/components/ui/Modal'
+import { toast } from '@/components/ui/Toaster'
+
+type Mode = 'create-manual' | 'create-smart' | 'edit-smart' | 'rename' | 'delete' | 'tag-add' | 'tag-remove' | 'add-members' | 'export' | null
+const EMPTY_RULE: SmartCollectionRule = { version: 1 }
+
+export function CollectionWorkspace({ organization, activeId, library, visible, selectedIds, clearSelection, selectAll,
+  onScope, command, batch, setBatch, defaultPresetId, manualSort }: {
+  organization: OrganizationSnapshot | null
+  activeId: string | null
+  library: LibraryBeat[]
+  visible: LibraryBeat[]
+  selectedIds: ReadonlySet<string>
+  clearSelection: () => void
+  selectAll: () => void
+  onScope: (id: string | null) => Promise<void>
+  command: (command: OrganizationCommand) => Promise<OrganizationSnapshot>
+  batch: BatchSession | null
+  setBatch: (batch: BatchSession | null) => void
+  defaultPresetId: PresetId
+  manualSort: boolean
+}): ReactNode {
+  const [mode, setMode] = useState<Mode>(null)
+  const [name, setName] = useState('')
+  const [tag, setTag] = useState('')
+  const [rules, setRules] = useState<SmartCollectionRule>(EMPTY_RULE)
+  const [targetCollection, setTargetCollection] = useState('')
+  const [preset, setPreset] = useState<PresetId>(defaultPresetId === 'original' ? 'wav-44100-24' : defaultPresetId)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const active = organization?.collections.find(item => item.id === activeId)
+  const manualCollections = organization?.collections.filter(item => item.type === 'manual') ?? []
+  const selected = [...selectedIds]
+  const selectedCount = selected.length
+  const matchingIds = visible.map(beat => beat.id)
+
+  useEffect(() => {
+    if (!batch || batch.status !== 'running') return
+    const timer = window.setInterval(() => {
+      void ipc.invoke('batch:status', batch.id).then(next => { if (next) setBatch(next) }).catch(error => {
+        toast({ kind: 'error', title: 'Batch status unavailable', description: String(error) })
+      })
+    }, 700)
+    return () => window.clearInterval(timer)
+  }, [batch?.id, batch?.status, setBatch])
+
+  const open = (next: Mode): void => {
+    setMode(next); setError(''); setTag(''); setTargetCollection(manualCollections[0]?.id ?? '')
+    setName(active?.name ?? '')
+    setRules(active?.type === 'smart' ? { ...active.rules } : EMPTY_RULE)
+  }
+  const run = async (operation: () => Promise<unknown>, close = true): Promise<void> => {
+    setBusy(true); setError('')
+    try { await operation(); if (close) setMode(null) }
+    catch (failure) {
+      const message = failure instanceof Error ? failure.message : String(failure)
+      setError(message)
+      if (!mode) toast({ kind: 'error', title: 'Collection action failed', description: message })
+    }
+    finally { setBusy(false) }
+  }
+  const startBatch = async (action: 'analyze' | 'export'): Promise<void> => {
+    const snapshot = [...selected]
+    if (!snapshot.length) return
+    if (snapshot.length > 1000) throw new Error('Analyze/export supports up to 1,000 selected beats per batch. Narrow the selection first.')
+    const next = await ipc.invoke('batch:start', { action, beatIds: snapshot, ...(action === 'export' ? { presetId: preset } : {}) })
+    setBatch(next)
+    clearSelection()
+  }
+  const editRules = (patch: Partial<SmartCollectionRule>): void => setRules(current => ({ ...current, ...patch }))
+  const counts = batch ? {
+    pendingSave: batch.items.filter(item => item.status === 'pending-save').length,
+    completed: batch.items.filter(item => item.status === 'completed').length,
+    failed: batch.items.filter(item => item.status === 'failed').length,
+    skipped: batch.items.filter(item => item.status === 'skipped').length,
+    cancelled: batch.items.filter(item => item.status === 'cancelled').length
+  } : null
+
+  return <>
+    <nav aria-label="Library collections" className="flex flex-wrap items-center gap-1.5 rounded-[12px] border border-line bg-surface p-2">
+      <button type="button" aria-label="All audio" aria-current={activeId === null ? 'page' : undefined}
+        onClick={() => void run(() => onScope(null), false)} className={`rounded-[8px] px-2.5 py-1.5 text-[12px] ${activeId === null ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2'}`}>All audio</button>
+      <button type="button" aria-label="Favorites" aria-current={activeId === FAVORITES_COLLECTION_ID ? 'page' : undefined}
+        onClick={() => void run(() => onScope(FAVORITES_COLLECTION_ID), false)} className={`rounded-[8px] px-2.5 py-1.5 text-[12px] ${activeId === FAVORITES_COLLECTION_ID ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2'}`}>Favorites</button>
+      {organization?.collections.map(item => <button key={item.id} type="button" aria-label={`Collection: ${item.name}`}
+        aria-current={activeId === item.id ? 'page' : undefined} onClick={() => void run(() => onScope(item.id), false)}
+        className={`rounded-[8px] px-2.5 py-1.5 text-[12px] ${activeId === item.id ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2'}`}>{item.type === 'smart' ? '✦ ' : ''}{item.name}</button>)}
+      <span className="flex-1" />
+      <Button size="sm" variant="quiet" onClick={() => { setName(''); open('create-manual'); setName('') }}>New collection</Button>
+      <Button size="sm" variant="quiet" onClick={() => { open('create-smart'); setName('') }}>New smart collection</Button>
+      {active ? <>
+        <Button size="sm" variant="ghost" onClick={() => open('rename')}>Rename</Button>
+        {active.type === 'smart' ? <Button size="sm" variant="ghost" onClick={() => open('edit-smart')}>Edit rules</Button> : null}
+        <Button size="sm" variant="ghost" onClick={() => open('delete')}>Delete collection</Button>
+      </> : null}
+    </nav>
+
+    {selectedCount ? <div role="toolbar" aria-label="Selected beats" className="flex flex-wrap items-center gap-2 rounded-[12px] border border-[var(--sonic-accent-line)] bg-accent-softer px-3 py-2">
+      <strong className="text-[12px] text-fg nums">{selectedCount} selected</strong>
+      <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => void run(() => command({ type: 'batch-annotation', beatIds: selected, favorite: true }), false)}>Favorite selected</Button>
+      <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => void run(() => command({ type: 'batch-annotation', beatIds: selected, favorite: false }), false)}>Unfavorite selected</Button>
+      <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => open('tag-add')}>Add tag to selected</Button>
+      <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => open('tag-remove')}>Remove tag from selected</Button>
+      <Button size="sm" variant="quiet" disabled={!manualCollections.length} onClick={() => open('add-members')}>Add to collection</Button>
+      {active?.type === 'manual' ? <Button size="sm" variant="quiet" onClick={() => void run(() => command({ type: 'remove-members', id: active.id, beatIds: selected }), false)}>Remove from this collection</Button> : null}
+      <Button size="sm" variant="quiet" disabled={selectedCount > 1000} onClick={() => void run(() => startBatch('analyze'), false)}>Analyze selected</Button>
+      <Button size="sm" variant="quiet" disabled={selectedCount > 1000} onClick={() => open('export')}>Export selected</Button>
+      {selectedCount > 1000 ? <span className="text-[11px] text-fg-muted">Analyze/export: 1,000 max{selectedCount > 5000 ? '; annotations: 5,000 max' : ''}. Narrow the selection.</span> : null}
+      <span className="flex-1" />
+      {selectedCount !== matchingIds.length ? <Button size="sm" variant="ghost" onClick={selectAll}>Select all {matchingIds.length} matching</Button> : null}
+      <Button size="sm" variant="ghost" onClick={clearSelection}>Clear selection</Button>
+    </div> : <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-fg-subtle">
+      <span>Ctrl/Cmd-click to select · Shift-click for a range</span>
+      {matchingIds.length ? <Button size="sm" variant="ghost" onClick={selectAll}>Select all {matchingIds.length} matching</Button> : null}
+    </div>}
+
+    {active?.type === 'manual' && manualSort && active.beatIds.length > 1 ? <div className="flex flex-wrap items-center gap-2 px-1 text-[11px] text-fg-subtle">
+      <span>Collection order</span>
+      <Button size="sm" variant="ghost" disabled={selectedCount !== 1 || active.beatIds.indexOf(selected[0]) <= 0}
+        onClick={() => void run(() => moveMember(active, selected[0], -1, command), false)}>Move selected up</Button>
+      <Button size="sm" variant="ghost" disabled={selectedCount !== 1 || active.beatIds.indexOf(selected[0]) < 0 || active.beatIds.indexOf(selected[0]) >= active.beatIds.length - 1}
+        onClick={() => void run(() => moveMember(active, selected[0], 1, command), false)}>Move selected down</Button>
+    </div> : null}
+
+    {batch ? <div role="status" className="rounded-[12px] border border-line bg-surface p-3 text-[12px] text-fg-muted">
+      <strong className="text-fg">Batch {batch.request.action}: {batch.status}</strong>{' · '}
+      {counts?.completed} completed · {counts?.pendingSave} pending save · {counts?.failed} failed · {counts?.skipped} skipped · {counts?.cancelled} cancelled
+      <div className="mt-2 flex flex-wrap gap-2">
+        {batch.status === 'running' ? <Button size="sm" variant="secondary" onClick={() => void run(async () => { const next = await ipc.invoke('batch:cancel', batch.id); if (next) setBatch(next) }, false)}>Cancel batch</Button> : null}
+        {batch.status !== 'running' && (counts!.failed + counts!.skipped + counts!.pendingSave + counts!.cancelled) > 0 ? <Button size="sm" variant="secondary" onClick={() => void run(async () => setBatch(await ipc.invoke('batch:retry', batch.id)), false)}>Retry unfinished items</Button> : null}
+        {batch.status !== 'running' ? <Button size="sm" variant="ghost" onClick={() => setBatch(null)}>Dismiss results</Button> : null}
+      </div>
+      {batch.items.filter(item => item.status === 'pending-save' || item.status === 'failed' || item.status === 'skipped' || item.error).map(item =>
+        <p key={item.beatId} className="mt-1 break-all text-danger">
+          {library.find(beat => beat.id === item.beatId)?.title ?? item.beatId}: {item.status === 'pending-save' ? 'Audio was prepared, but the library save is pending. Retry will reconcile this output without creating another copy.' : item.status}
+          {item.error ? ` — ${item.error}` : ''}
+        </p>)}
+    </div> : null}
+
+    <Modal open={mode !== null} onClose={() => { if (!busy) setMode(null) }} title={modeTitle(mode)} size="sm" blocking={busy}
+      footer={<><Button variant="secondary" disabled={busy} onClick={() => setMode(null)}>Cancel</Button>
+        <Button disabled={busy} onClick={() => void run(async () => {
+          if (mode === 'create-manual') await command({ type: 'create-manual', name, beatIds: selected })
+          if (mode === 'create-smart') await command({ type: 'create-smart', name, rules })
+          if (mode === 'edit-smart' && active?.type === 'smart') await command({ type: 'update-smart', id: active.id, rules })
+          if (mode === 'rename' && active) await command({ type: 'rename', id: active.id, name })
+          if (mode === 'delete' && active) { await command({ type: 'delete', id: active.id }); await onScope(null) }
+          if (mode === 'tag-add') await command({ type: 'batch-annotation', beatIds: selected, tagsAdd: [tag] })
+          if (mode === 'tag-remove') await command({ type: 'batch-annotation', beatIds: selected, tagsRemove: [tag] })
+          if (mode === 'add-members') await command({ type: 'add-members', id: targetCollection, beatIds: selected })
+          if (mode === 'export') await startBatch('export')
+        })}>{mode === 'delete' ? 'Delete collection only' : mode === 'export' ? 'Start export' : 'Save'}</Button></>}>
+      {mode === 'create-manual' || mode === 'create-smart' || mode === 'rename' ? <Input aria-label="Collection name" value={name} onChange={event => setName(event.target.value)} placeholder="Collection name" /> : null}
+      {mode === 'delete' ? <p className="text-[12px] text-fg-muted">Delete “{active?.name}”? The library records and audio files remain untouched.</p> : null}
+      {mode === 'tag-add' || mode === 'tag-remove' ? <Input aria-label="User tag" value={tag} onChange={event => setTag(event.target.value)} placeholder="Tag, e.g. good for vocals" /> : null}
+      {mode === 'add-members' ? <label className="text-[12px] text-fg-muted">Manual collection<select aria-label="Target collection" value={targetCollection} onChange={event => setTargetCollection(event.target.value)} className="mt-1 block w-full rounded border border-line bg-surface p-2">{manualCollections.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : null}
+      {mode === 'export' ? <label className="text-[12px] text-fg-muted">Export recipe<select aria-label="Batch export recipe" value={preset} onChange={event => setPreset(event.target.value as PresetId)} className="mt-1 block w-full rounded border border-line bg-surface p-2">{PRESETS.filter(item => item.id !== 'original').map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select><span className="mt-2 block">{selectedCount} selected files will be exported. Imported originals stay untouched.</span></label> : null}
+      {mode === 'create-smart' || mode === 'edit-smart' ? <SmartRuleEditor rules={rules} update={editRules} /> : null}
+      {error ? <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p> : null}
+    </Modal>
+  </>
+}
+
+async function moveMember(collection: Extract<LibraryCollection, { type: 'manual' }>, id: string, direction: -1 | 1,
+  command: (command: OrganizationCommand) => Promise<OrganizationSnapshot>): Promise<void> {
+  const next = [...collection.beatIds]
+  const index = next.indexOf(id)
+  if (index < 0 || index + direction < 0 || index + direction >= next.length) return
+  ;[next[index], next[index + direction]] = [next[index + direction], next[index]]
+  await command({ type: 'reorder-members', id: collection.id, beatIds: next })
+}
+
+function modeTitle(mode: Mode): string {
+  switch (mode) {
+    case 'create-manual': return 'New project collection'
+    case 'create-smart': return 'New smart collection'
+    case 'edit-smart': return 'Edit smart collection rules'
+    case 'rename': return 'Rename collection'
+    case 'delete': return 'Delete collection'
+    case 'tag-add': return 'Add tag to selected'
+    case 'tag-remove': return 'Remove tag from selected'
+    case 'add-members': return 'Add selected to collection'
+    case 'export': return 'Export selected'
+    default: return ''
+  }
+}
+
+function SmartRuleEditor({ rules, update }: { rules: SmartCollectionRule; update: (patch: Partial<SmartCollectionRule>) => void }): ReactNode {
+  const number = (text: string): number | undefined => text.trim() ? Number(text) : undefined
+  return <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-fg-muted">
+    <label className="col-span-2">Search text<Input aria-label="Smart search text" value={rules.query ?? ''} onChange={event => update({ query: event.target.value })} /></label>
+    <label>Minimum BPM<Input aria-label="Smart minimum BPM" type="number" value={rules.bpmMin ?? ''} onChange={event => update({ bpmMin: number(event.target.value) })} /></label>
+    <label>Maximum BPM<Input aria-label="Smart maximum BPM" type="number" value={rules.bpmMax ?? ''} onChange={event => update({ bpmMax: number(event.target.value) })} /></label>
+    <label>Key / Camelot<Input aria-label="Smart key" value={rules.key ?? ''} onChange={event => update({ key: event.target.value || undefined })} /></label>
+    <label>User tags<Input aria-label="Smart user tags" value={rules.tags?.join(', ') ?? ''} onChange={event => update({ tags: event.target.value.split(',').map(tag => tag.trim()).filter(Boolean) })} placeholder="dark, vocals" /></label>
+    <label>Favorite<select aria-label="Smart favorite state" value={rules.favorite == null ? 'any' : String(rules.favorite)} onChange={event => update({ favorite: event.target.value === 'any' ? undefined : event.target.value === 'true' })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="any">Any</option><option value="true">Favorites</option><option value="false">Not favorites</option></select></label>
+    <label>Source<select aria-label="Smart source origin" value={rules.sourceKind ?? 'any'} onChange={event => update({ sourceKind: event.target.value === 'any' ? undefined : event.target.value as SmartCollectionRule['sourceKind'] })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="any">Any</option><option value="local">Local source</option><option value="youtube">YouTube source</option><option value="unknown">Unknown</option></select></label>
+    <label>File ownership<select aria-label="Smart file ownership" value={rules.fileOwnership ?? 'any'} onChange={event => update({ fileOwnership: event.target.value === 'any' ? undefined : event.target.value as SmartCollectionRule['fileOwnership'] })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="any">Any</option><option value="external">Imported original</option><option value="sonic-export">Sonic export</option></select></label>
+    <label>Review<select aria-label="Smart review state" value={rules.reviewState ?? 'all'} onChange={event => update({ reviewState: event.target.value as SmartCollectionRule['reviewState'] })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="all">Any</option><option value="incomplete">Needs review</option><option value="disagreement">Disagreement</option></select></label>
+    <label>File<select aria-label="Smart file state" value={rules.fileState ?? 'all'} onChange={event => update({ fileState: event.target.value as SmartCollectionRule['fileState'] })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="all">Any</option><option value="present">Present</option><option value="missing">Missing</option></select></label>
+    <p className="col-span-2">Unknown BPM or key does not match a BPM or key rule.</p>
+  </div>
+}

@@ -1,8 +1,9 @@
 import MiniSearch from 'minisearch'
 import type { LibraryBeat } from '@shared/domain'
+import type { OrganizationSnapshot, SmartCollectionRule } from '@shared/organization'
 import { parseKeyString } from '@shared/music'
 
-export type LibrarySort = 'relevance' | 'newest' | 'oldest' | 'bpm-asc' | 'bpm-desc' | 'title' | 'producer'
+export type LibrarySort = 'manual' | 'relevance' | 'newest' | 'oldest' | 'bpm-asc' | 'bpm-desc' | 'title' | 'producer'
 export type FileFilter = 'all' | 'present' | 'missing'
 export type ReviewFilter = 'all' | 'incomplete' | 'disagreement'
 
@@ -86,6 +87,7 @@ export function searchLibrary(
 
   const sorted = [...rows]
   switch (options.sort) {
+    case 'manual': break
     case 'relevance':
       if (rank) sorted.sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity))
       else sorted.sort((a, b) => b.addedAt - a.addedAt)
@@ -98,4 +100,26 @@ export function searchLibrary(
     default: sorted.sort((a, b) => b.addedAt - a.addedAt)
   }
   return sorted
+}
+
+/** Smart views use the same search and review predicates as the library filters. */
+export function searchSmartCollection(
+  library: LibraryBeat[], index: MiniSearch<LibraryBeat>, rules: SmartCollectionRule,
+  annotations: OrganizationSnapshot['annotations'], sort: LibrarySort
+): LibraryBeat[] {
+  const searched = searchLibrary(library, index, {
+    query: rules.query ?? '', sort, bands: new Set(), formats: new Set(),
+    fileFilter: rules.fileState ?? 'all', reviewFilter: rules.reviewState ?? 'all',
+    bpm: '', bpmTolerance: 0, includeHalfDouble: false, key: rules.key ?? ''
+  })
+  return searched.filter(beat => {
+    const annotation = Object.prototype.hasOwnProperty.call(annotations, beat.id) ? annotations[beat.id] : undefined
+    if (rules.favorite != null && Boolean(annotation?.favorite) !== rules.favorite) return false
+    if (rules.tags?.length && !rules.tags.every(tag => annotation?.tags.some(value => value.toLocaleLowerCase() === tag.toLocaleLowerCase()))) return false
+    if (rules.bpmMin != null && (beat.bpm == null || beat.bpm < rules.bpmMin)) return false
+    if (rules.bpmMax != null && (beat.bpm == null || beat.bpm > rules.bpmMax)) return false
+    if (rules.sourceKind && beat.sourceKind !== rules.sourceKind) return false
+    if (rules.fileOwnership && beat.fileOwnership !== rules.fileOwnership) return false
+    return true
+  })
 }

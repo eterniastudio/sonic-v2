@@ -6,7 +6,7 @@ import { ensureDir, fileExists, removeFile } from '../lib/fsx'
 import { probeMediaFile, tagsToMetadata } from './ffprobe'
 import { libraryService } from './library'
 import { stagingDir } from './paths'
-import { buildTagContext, publishExport } from './publish'
+import { buildTagContext, PendingPublicationError, publishExport } from './publish'
 import { buildAudioEvidence } from '@shared/metadata'
 import { settingsService } from './settings'
 import { transcode } from './transcode'
@@ -20,6 +20,9 @@ export interface ReexportResult {
   ok: boolean
   outputPath: string | null
   error: string | null
+  /** Files were published but their library revision is still pending. */
+  pendingSave?: boolean
+  publishedBeatId?: string
 }
 
 const active = new Map<string, Promise<ReexportResult>>()
@@ -166,6 +169,15 @@ async function reexportLocked(beatId: string, presetId: PresetId): Promise<Reexp
 
     return { ok: true, outputPath: result.filePath, error: null }
   } catch (error) {
+    if (error instanceof PendingPublicationError) {
+      return {
+        ok: false,
+        outputPath: error.outputPath,
+        error: error.message,
+        pendingSave: true,
+        publishedBeatId: error.beatId
+      }
+    }
     return {
       ok: false,
       outputPath: null,
