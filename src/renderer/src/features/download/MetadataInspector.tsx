@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { CircleAlert, RotateCcw, Sparkles, Wand2, X } from 'lucide-react'
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { CircleAlert, FileAudio2, Music2, RotateCcw, SlidersHorizontal, Wand2, X } from 'lucide-react'
 import type { Job, MetadataDraft, MetadataField } from '@shared/domain'
 import { formatBpm, formatCents, formatDuration } from '@shared/format'
 import { VERDICT_LABEL } from '@shared/verification'
 import { renderTemplate } from '@shared/template'
+import { coverArtFor } from '@shared/url'
 import { cn } from '@/lib/cn'
 import { useApp } from '@/store/app'
 import { Accordion } from '@/components/ui/Accordion'
@@ -29,6 +30,7 @@ function MetaField({
   type?: 'text' | 'number'
   onCommit: (raw: string) => void
 }): ReactNode {
+  const fieldId = useId()
   const external = value == null ? '' : String(value)
   const [local, setLocal] = useState(external)
 
@@ -42,13 +44,14 @@ function MetaField({
   }
 
   return (
-    <Field label={label} hint={hint}>
+    <Field label={label} hint={hint} htmlFor={fieldId}>
       <Input
+        id={fieldId}
         type={type}
         value={local}
         placeholder={placeholder}
         spellCheck={false}
-        className={cn(mono && 'font-mono text-[12.5px]')}
+        className={cn('h-9 text-[12.5px]', mono && 'font-mono')}
         onChange={(event) => setLocal(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -79,6 +82,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
 
   const draft = job.metadata
   const final = draft.final
+  const cover = job.thumbnail ?? coverArtFor(job.url)
 
   const edit = (field: MetadataField, raw: string): void => {
     const numeric = field === 'bpm' || field === 'altBpm' || field === 'detune'
@@ -113,23 +117,34 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
   }, [draft.evidence])
 
   return (
-    <aside className="flex min-h-0 w-[382px] shrink-0 flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-3.5 py-3">
-        <Wand2 className="size-4 text-accent" />
+    <aside aria-label="Download metadata inspector" className="studio-panel relative flex min-h-0 w-[292px] shrink-0 flex-col overflow-hidden xl:w-[320px] 2xl:w-[348px]">
+      <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
+        <SlidersHorizontal className="size-3.5 text-fg-subtle" />
         <h2 className="flex-1 text-[13px] font-semibold tracking-tight text-fg">Metadata</h2>
         {draft.overrides.length > 0 ? (
           <Badge size="sm" tone="accent">
             {draft.overrides.length} manual
           </Badge>
         ) : (
-          <Badge size="sm">parsed</Badge>
+          <span className="text-[10.5px] text-fg-subtle">Source values</span>
         )}
         <IconButton label="Close inspector" size="icon-sm" onClick={() => setSelectedJob(null)}>
           <X />
         </IconButton>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3.5">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        <div className="flex items-center gap-3 border-b border-line pb-4">
+          <div className="relative grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-fg-subtle">
+            <Music2 className="size-4" />
+            {cover ? <img src={cover} alt="" className="absolute inset-0 size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : null}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-[12px] font-medium text-fg">{final.title || job.sourceTitle || 'Untitled'}</p>
+            <p className="mt-0.5 truncate text-[11px] text-fg-subtle">{job.uploader || final.producer || 'Source audio'} · {formatDuration(job.durationSec)}</p>
+          </div>
+        </div>
+        <p className="section-label">Track details</p>
         <MetaField
           label="Title"
           value={final.title}
@@ -144,6 +159,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
           onCommit={(raw) => edit('producer', raw)}
         />
 
+        <p className="section-label border-t border-line pt-4">Musical properties</p>
         <div className="grid grid-cols-2 gap-3">
           <MetaField
             label="BPM"
@@ -188,9 +204,9 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         />
 
         {/* Live filename preview — the exact name the exporter will write. */}
-        <div className="rounded-[10px] border border-line bg-surface-2 p-3">
-          <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.12em] text-fg-subtle uppercase">
-            <Sparkles className="size-3" />
+        <div className="rounded-xl border border-line bg-surface-2/60 p-3.5">
+          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-medium tracking-[0.1em] text-fg-subtle uppercase">
+            <FileAudio2 className="size-3.5" />
             Output file name
           </div>
           <div className="font-mono text-[11.5px] leading-relaxed break-all text-fg">
@@ -276,7 +292,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         <AnalysisPanel job={job} />
       </div>
 
-      <div className="shrink-0 space-y-1.5 border-t border-line p-2.5">
+      <div className="shrink-0 space-y-1.5 border-t border-line bg-surface-2/40 p-3">
         <button
           type="button"
           disabled={draft.overrides.length === 0}

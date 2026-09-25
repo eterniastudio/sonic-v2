@@ -43,9 +43,9 @@ export function EngineBanner(): ReactNode {
     progress?.phase === 'downloading' ? 1 : progress?.phase === 'verifying' ? 2 : setupRunning ? 1 : 0
 
   return (
-    <section className="overflow-hidden rounded-[14px] border border-warning/35 bg-warning/[0.06]">
-      <div className="flex items-start gap-3 p-4">
-        <span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-warning/15 text-warning">
+    <section className="shrink-0 overflow-hidden rounded-xl border border-warning/25 bg-warning/[0.04]">
+      <div className="flex items-start gap-3 px-4 py-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-warning/10 text-warning">
           <Download className="size-4" />
         </span>
 
@@ -53,10 +53,10 @@ export function EngineBanner(): ReactNode {
           <h2 className="text-[13px] font-semibold tracking-tight text-fg">
             {setupRunning ? 'Setting up the media engine' : 'Media engine setup required'}
           </h2>
-          <p className="mt-1 text-[12px] leading-relaxed text-fg-muted">
+          <p className="mt-0.5 text-[11.5px] leading-relaxed text-fg-muted">
             {setupRunning
-              ? 'Sonic is fetching what it needs. This only happens once.'
-              : `Sonic needs ${missing.map((component) => component.name).join(' and ')} before it can download anything. Everything is checksum-verified and installed into Sonic's own folder.`}
+              ? 'Preparing your download tools. This only happens once.'
+              : `Install ${missing.map((component) => component.name).join(' and ')} to start downloading.`}
           </p>
 
           {progress && progress.phase !== 'idle' && progress.phase !== 'done' ? (
@@ -99,7 +99,7 @@ export function EngineBanner(): ReactNode {
           >
             {setupRunning ? 'Setting up…' : 'Set up now'}
           </Button>
-          <span className="flex items-center gap-1 text-[10.5px] text-fg-subtle">
+          <span className="hidden items-center gap-1 text-[10px] text-fg-subtle 2xl:flex">
             <ShieldCheck className="size-3" />
             Verified downloads
           </span>

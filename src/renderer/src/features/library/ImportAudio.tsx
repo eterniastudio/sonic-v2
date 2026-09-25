@@ -211,7 +211,7 @@ export function ImportAudio(): ReactNode {
   const close = (): void => { void dismiss(false) }
 
   return <>
-    <Button variant="secondary" size="md" leading={<Import />} onClick={() => setOpen(true)}>
+    <Button variant="primary" size="md" leading={<Import />} onClick={() => setOpen(true)}>
       Import audio
     </Button>
     <Modal open={open} onClose={close} blocking={busy || phase === 'scanning' || phase === 'importing'}

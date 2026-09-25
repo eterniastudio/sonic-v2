@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react'
-import { Download, Library, Settings as SettingsIcon } from 'lucide-react'
+import { useMemo, type ReactNode } from 'react'
+import { ArrowUpRight, Download, HardDrive, Library, Settings as SettingsIcon } from 'lucide-react'
+import { formatBytes } from '@shared/format'
 import { cn } from '@/lib/cn'
 import { useApp, type ViewId } from '@/store/app'
 import { StatusDot } from '@/components/ui/Badge'
@@ -21,29 +22,20 @@ function NavItem({ icon, label, active, count, onClick, busy }: NavItemProps): R
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left',
-        'transition-[background-color,color] duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
-        active ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
+        'group relative flex h-11 w-full items-center gap-3 rounded-[9px] border px-3 text-left',
+        'transition-[background-color,border-color,color] duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
+        active ? 'border-accent-line bg-accent-softer text-fg' : 'border-transparent text-fg-muted hover:bg-surface-2 hover:text-fg'
       )}
     >
-      {/* Accent rail marks the active view without shifting the label. */}
-      <span
-        aria-hidden
-        className={cn(
-          'absolute top-1/2 -left-2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-accent',
-          'transition-[opacity,transform] duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)]',
-          active ? 'scale-y-100 opacity-100' : 'scale-y-50 opacity-0'
-        )}
-      />
-      <span className={cn('shrink-0 [&>svg]:size-4', active ? 'text-accent' : 'text-fg-subtle')}>
+      <span aria-hidden="true" className={cn('shrink-0 [&>svg]:size-[17px] [&>svg]:stroke-[1.7]', active ? 'text-accent' : 'text-fg-subtle group-hover:text-fg-muted')}>
         {icon}
       </span>
-      <span className="flex-1 truncate text-[13px] font-medium">{label}</span>
+      <span className="flex-1 truncate text-[12.5px] font-medium">{label}</span>
       {count != null && count > 0 ? (
         <span
           className={cn(
-            'shrink-0 rounded-full px-1.5 py-0.5 text-[10.5px] font-medium nums',
-            active ? 'bg-accent/20 text-accent' : 'bg-surface-3 text-fg-subtle'
+            'grid min-w-5 shrink-0 place-items-center rounded-[5px] px-1.5 py-0.5 text-[10px] font-semibold nums',
+            active ? 'bg-accent-soft text-accent' : 'bg-surface-3 text-fg-muted'
           )}
         >
           {count}
@@ -57,7 +49,7 @@ function NavItem({ icon, label, active, count, onClick, busy }: NavItemProps): R
 
 const TERMINAL = new Set(['complete', 'failed', 'cancelled'])
 
-/** Left navigation rail with live queue and library counts. */
+/** Workspace navigation with a live summary of the local audio library. */
 export function Sidebar(): ReactNode {
   const view = useApp((state) => state.view)
   const setView = useApp((state) => state.setView)
@@ -67,12 +59,22 @@ export function Sidebar(): ReactNode {
 
   const activeJobs = jobs.filter((job) => !TERMINAL.has(job.stage)).length
   const engineReady = engine?.ready ?? false
+  const librarySummary = useMemo(() => library.reduce((total, beat) => ({
+    bytes: total.bytes + (Number.isFinite(beat.sizeBytes) ? beat.sizeBytes : 0),
+    duration: total.duration + (Number.isFinite(beat.durationSec) ? beat.durationSec : 0)
+  }), { bytes: 0, duration: 0 }), [library])
+  const audioTime = librarySummary.duration >= 3600
+    ? `${(librarySummary.duration / 3600).toLocaleString(undefined, { maximumFractionDigits: 1 })}h`
+    : librarySummary.duration >= 60
+      ? `${Math.floor(librarySummary.duration / 60)}m`
+      : `${Math.floor(librarySummary.duration)}s`
 
   const go = (next: ViewId): void => setView(next)
 
   return (
-    <nav className="flex w-[218px] shrink-0 flex-col border-r border-line bg-surface/40 px-2.5 py-3">
-      <div className="space-y-0.5">
+    <nav aria-label="Main navigation" className="flex w-[212px] shrink-0 flex-col overflow-y-auto bg-surface px-3 pt-5 pb-3 xl:w-[228px]">
+      <p className="section-label mb-3 px-3">Workspace</p>
+      <div className="space-y-1.5">
         <NavItem
           icon={<Download />}
           label="Download"
@@ -88,6 +90,30 @@ export function Sidebar(): ReactNode {
           count={library.length || undefined}
           onClick={() => go('library')}
         />
+      </div>
+
+      <div className="mx-3 mt-8 border-t border-line pt-5">
+        <p className="section-label mb-4">Your collection</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-[22px] font-medium leading-none tracking-[-0.06em] text-fg nums">{library.length.toLocaleString()}</p>
+            <p className="mt-2 text-[10.5px] text-fg-subtle">Tracks</p>
+          </div>
+          <div>
+            <p className="text-[22px] font-medium leading-none tracking-[-0.06em] text-fg nums">{audioTime}</p>
+            <p className="mt-2 text-[10.5px] text-fg-subtle">Audio time</p>
+          </div>
+        </div>
+        <div className="mt-4 flex items-center gap-1.5 text-[10.5px] text-fg-subtle">
+          <HardDrive aria-hidden="true" className="size-3" />
+          <span>{formatBytes(librarySummary.bytes)} in your library</span>
+        </div>
+      </div>
+
+      <div className="min-h-8 flex-1" />
+
+      <div className="mb-4">
+        <p className="section-label mb-2 px-3">Preferences</p>
         <NavItem
           icon={<SettingsIcon />}
           label="Settings"
@@ -96,29 +122,26 @@ export function Sidebar(): ReactNode {
         />
       </div>
 
-      <div className="flex-1" />
-
       <button
         type="button"
+        aria-label="Media engine status. Open settings"
         onClick={() => go('settings')}
         className={cn(
-          'flex items-center gap-2 rounded-[9px] px-2.5 py-2 text-left',
-          'transition-colors duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
-          'hover:bg-surface-2'
+          'group flex shrink-0 items-center gap-2.5 rounded-[10px] border border-line bg-surface-2/60 px-3 py-3 text-left',
+          'transition-colors duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)] hover:border-line-strong hover:bg-surface-2'
         )}
         title={engine?.lastError ?? (engineReady ? 'Media engine ready' : 'Media engine setup required')}
       >
-        <StatusDot tone={engineReady ? 'success' : 'warning'} pulse={!engineReady} />
+        <StatusDot tone={engineReady ? 'success' : 'warning'} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11.5px] font-medium text-fg-muted">
+          <span className="block truncate text-[11px] font-medium text-fg">
             {engineReady ? 'Engine ready' : 'Setup required'}
           </span>
-          <span className="block truncate text-[10.5px] text-fg-subtle">
-            {engine?.components.find((component) => component.name === 'yt-dlp')?.version
-              ? `yt-dlp ${engine.components.find((component) => component.name === 'yt-dlp')?.version}`
-              : 'yt-dlp not installed'}
+          <span className="mt-0.5 block truncate text-[10px] text-fg-subtle">
+            {engineReady ? 'Ready for downloads' : 'Finish setup in Settings'}
           </span>
         </span>
+        <ArrowUpRight aria-hidden="true" className="size-3.5 shrink-0 text-fg-subtle transition-colors group-hover:text-fg" />
       </button>
     </nav>
   )

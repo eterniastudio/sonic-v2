@@ -2,12 +2,12 @@ import { forwardRef, type InputHTMLAttributes, type ReactNode, type TextareaHTML
 import { cn } from '@/lib/cn'
 
 const fieldSurface = [
-  'w-full bg-surface-2 text-fg placeholder:text-fg-subtle',
-  'border border-line rounded-[10px]',
+  'w-full bg-surface-2/60 text-fg placeholder:text-fg-subtle',
+  'border border-line rounded-[8px]',
   'transition-[border-color,background-color,box-shadow]',
   'duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
   'hover:border-line-strong',
-  'focus:outline-none focus:border-[var(--sonic-accent-line)] focus:bg-surface',
+  'focus:border-accent focus:bg-surface',
   'focus:shadow-[0_0_0_3px_var(--sonic-accent-softer)]',
   'disabled:cursor-not-allowed disabled:opacity-50'
 ].join(' ')
@@ -42,7 +42,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         ref={ref}
         className={cn(
           fieldSurface,
-          'h-9.5 px-3 text-[13.5px]',
+          'h-9 px-3 text-[12.5px]',
           leading && 'pl-9.5',
           trailing && 'pr-9.5',
           invalid && 'border-danger/50',
@@ -68,7 +68,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       ref={ref}
       className={cn(
         fieldSurface,
-        'resize-none px-3 py-2.5 text-[13.5px] leading-relaxed',
+        'resize-none px-3 py-2.5 text-[12.5px] leading-relaxed',
         invalid && 'border-danger/50',
         className
       )}

@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Gauge,
-  HardDrive,
+  ArrowDownUp,
   LayoutGrid,
   List,
   Music4,
@@ -11,7 +10,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   TriangleAlert,
-  Wand2,
   X
 } from 'lucide-react'
 import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
@@ -24,10 +22,7 @@ import { coverArtFor } from '@shared/url'
 import { cn } from '@/lib/cn'
 import { useApp } from '@/store/app'
 import { reconcileWorkspace, useLibraryWorkspace, useWorkspaceField } from '@/store/libraryWorkspace'
-import { AmbientBackground } from '@/components/aceternity/AmbientBackground'
 import { AnimatedTooltip } from '@/components/aceternity/AnimatedTooltip'
-import { BentoCard, BentoGrid } from '@/components/aceternity/BentoGrid'
-import { FlipText } from '@/components/obsidian/FlipText'
 import { Badge } from '@/components/ui/Badge'
 import { Button, IconButton } from '@/components/ui/Button'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
@@ -301,18 +296,6 @@ export function LibraryView(): ReactNode {
     [library]
   )
 
-  const stats = useMemo(() => {
-    const withTempo = library.filter((beat) => beat.bpm != null)
-    return {
-      averageBpm:
-        withTempo.length > 0
-          ? Math.round(withTempo.reduce((total, beat) => total + (beat.bpm ?? 0), 0) / withTempo.length)
-          : null,
-      lossless: library.filter((beat) => beat.format === 'flac' || beat.format === 'wav').length,
-      formats: new Set(library.map((beat) => beat.format)).size
-    }
-  }, [library])
-
   const toggle = (set: Set<string>, value: string, apply: (next: Set<string>) => void): void => {
     const next = new Set(set)
     if (next.has(value)) next.delete(value)
@@ -328,21 +311,26 @@ export function LibraryView(): ReactNode {
   ).length
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-3">
-      <div className="flex shrink-0 flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-[15px] font-semibold tracking-tight text-fg">Beat Library</h1>
-            <span className="text-[11.5px] text-fg-subtle nums">
-              <NumberPop value={library.length} /> beats · {formatBytes(totals.size)}
-            </span>
-          </div>
-
-          <span className="flex-1" />
-
+    <div className="workspace-page flex h-full min-h-0 flex-col gap-4">
+      <header className="page-header flex shrink-0 items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="page-title">Beat Library<span className="ml-3 align-middle text-[13px] font-medium tracking-normal text-fg-subtle nums"><NumberPop value={library.length} /></span></h1>
+          <p className="page-description">Browse, audition, and organize your audio.</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2.5">
+          <span className="mr-1 hidden text-[12px] text-fg-subtle nums xl:inline">{formatBytes(totals.size)} in your library</span>
+          {needsAnalysis > 0 ? <Button variant="secondary" size="md" aria-label="Analyze now" leading={<Sparkles />}
+            title={`${needsAnalysis} tracks ready for BPM and key analysis`} onClick={() => {
+              void analyzeMissing().then(queued => toast({ kind: 'info', title: `Analyzing ${queued} track${queued === 1 ? '' : 's'}`,
+                description: 'Working from the files on disk — nothing is re-downloaded.' }))
+            }}>Analyze <span className="ml-1 text-fg-subtle nums">{needsAnalysis}</span></Button> : null}
           <ImportAudio />
+        </div>
+      </header>
 
-          <div className="w-[260px]">
+      <div className="flex min-h-0 shrink-0 flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <div className="min-w-[160px] flex-1">
             <Input
               value={query}
               onChange={(event) => {
@@ -360,11 +348,11 @@ export function LibraryView(): ReactNode {
               }
             />
           </div>
-
           <Button
             variant={showFilters ? 'quiet' : 'secondary'}
             size="md"
             leading={<SlidersHorizontal />}
+            aria-expanded={showFilters}
             onClick={() => setShowFilters((value) => !value)}
           >
             Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
@@ -373,7 +361,7 @@ export function LibraryView(): ReactNode {
           <Dropdown
             align="end"
             trigger={({ toggle: open }) => (
-              <Button variant="secondary" size="md" onClick={open}>
+              <Button variant="secondary" size="md" leading={<ArrowDownUp />} onClick={open}>
                 {SORTS.find((entry) => entry.key === sort)?.label ?? 'Sort'}
               </Button>
             )}
@@ -420,34 +408,8 @@ export function LibraryView(): ReactNode {
           </IconButton>
         </div>
 
-        {needsAnalysis > 0 ? (
-          <div className="flex flex-wrap items-center gap-2.5 rounded-[12px] border border-line bg-surface px-3.5 py-2.5">
-            <Wand2 className="size-4 shrink-0 text-accent" />
-            <span className="text-[12.5px] text-fg-muted">
-              {needsAnalysis} track{needsAnalysis === 1 ? '' : 's'} have no audio analysis yet.
-            </span>
-            <span className="flex-1" />
-            <Button
-              variant="quiet"
-              size="sm"
-              leading={<Sparkles />}
-              onClick={() => {
-                void analyzeMissing().then((queued) => {
-                  toast({
-                    kind: 'info',
-                    title: `Analyzing ${queued} track${queued === 1 ? '' : 's'}`,
-                    description: 'Working from the files on disk — nothing is re-downloaded.'
-                  })
-                })
-              }}
-            >
-              Analyze now
-            </Button>
-          </div>
-        ) : null}
-
         {showFilters ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-[12px] border border-line bg-surface px-3.5 py-3">
+          <div className="studio-panel flex max-h-[148px] flex-wrap items-center gap-x-5 gap-y-3 overflow-y-auto px-4 py-3">
             <label className="flex items-center gap-1.5 text-[11px] font-medium text-fg-subtle">
               BPM
               <Input type="number" min="1" max="999" step="any" inputMode="decimal"
@@ -474,8 +436,9 @@ export function LibraryView(): ReactNode {
                   key={band.id}
                   type="button"
                   onClick={() => toggle(bands, band.id, setBands)}
+                  aria-pressed={bands.has(band.id)}
                   className={cn(
-                    'rounded-full border px-2 py-0.5 text-[11px] transition-colors duration-[var(--duration-quick)]',
+                    'rounded-[6px] border px-2 py-1 text-[11px] transition-colors duration-[var(--duration-quick)]',
                     bands.has(band.id)
                       ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent'
                       : 'border-line text-fg-muted hover:border-line-strong hover:text-fg'
@@ -493,8 +456,9 @@ export function LibraryView(): ReactNode {
                   key={format}
                   type="button"
                   onClick={() => toggle(formats, format, setFormats)}
+                  aria-pressed={formats.has(format)}
                   className={cn(
-                    'rounded-full border px-2 py-0.5 text-[11px] uppercase transition-colors duration-[var(--duration-quick)]',
+                    'rounded-[6px] border px-2 py-1 text-[11px] uppercase transition-colors duration-[var(--duration-quick)]',
                     formats.has(format)
                       ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent'
                       : 'border-line text-fg-muted hover:border-line-strong hover:text-fg'
@@ -510,7 +474,7 @@ export function LibraryView(): ReactNode {
               {(['all', 'present', 'missing'] as const).map((value) => (
                 <button key={value} type="button" onClick={() => setFileFilter(value)}
                   aria-pressed={fileFilter === value}
-                  className={cn('rounded-full border px-2 py-0.5 text-[11px] capitalize transition-colors',
+                  className={cn('rounded-[6px] border px-2 py-1 text-[11px] capitalize transition-colors',
                     fileFilter === value ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent' : 'border-line text-fg-muted hover:border-line-strong hover:text-fg')}>
                   {value}
                 </button>
@@ -521,7 +485,7 @@ export function LibraryView(): ReactNode {
               {(['all', 'incomplete', 'disagreement'] as const).map((value) => (
                 <button key={value} type="button" onClick={() => setReviewFilter(value)}
                   aria-pressed={reviewFilter === value}
-                  className={cn('rounded-full border px-2 py-0.5 text-[11px] capitalize transition-colors',
+                  className={cn('rounded-[6px] border px-2 py-1 text-[11px] capitalize transition-colors',
                     reviewFilter === value ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent' : 'border-line text-fg-muted hover:border-line-strong hover:text-fg')}>
                   {value}
                 </button>
@@ -567,32 +531,8 @@ export function LibraryView(): ReactNode {
         onScope={changeScope} command={executeOrganization} batch={batch} setBatch={setBatch}
         defaultPresetId={defaultPresetId} manualSort={sort === 'manual'} /> : null}
 
-      {library.length > 0 ? (
-        <BentoGrid className="shrink-0">
-          <BentoCard
-            label="Beats in library"
-            value={<NumberPop value={library.length} />}
-            hint={`${stats.formats} format${stats.formats === 1 ? '' : 's'} · ${totals.missing} missing`}
-            icon={<Music4 />}
-            accent
-          />
-          <BentoCard label="On disk" value={formatBytes(totals.size)} icon={<HardDrive />} />
-          <BentoCard
-            label="Average tempo"
-            value={stats.averageBpm != null ? `${stats.averageBpm}` : '—'}
-            hint={stats.averageBpm != null ? 'BPM' : 'no tempo data'}
-            icon={<Gauge />}
-          />
-          <BentoCard
-            label="Lossless"
-            value={String(stats.lossless)}
-            hint={stats.lossless > 0 ? 'FLAC + WAV' : 'none yet'}
-            icon={<HardDrive />}
-          />
-        </BentoGrid>
-      ) : null}
-
-      <div ref={scrollRef} data-library-scroll className="min-h-0 flex-1 overflow-y-auto"
+      <div className="flex min-h-0 flex-1 gap-4">
+      <div ref={scrollRef} data-library-scroll className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-0.5"
         onScroll={event => {
           if (restoredScroll.current) useLibraryWorkspace.setState({ scrollTop: event.currentTarget.scrollTop })
         }}>
@@ -604,26 +544,16 @@ export function LibraryView(): ReactNode {
             </> : 'Loading Library workspace…'}
           </div>
         ) : library.length === 0 ? (
-          <div className="relative grid h-full min-h-[340px] place-items-center overflow-hidden rounded-[14px] border border-line bg-surface">
-            <AmbientBackground variant="full" intensity={0.7} />
-            <div className="relative max-w-[470px] px-8 text-center">
-              <h2 className="text-[20px] font-semibold tracking-tight text-fg">
-                Your library is{' '}
-                <span className="text-gradient">
-                  <FlipText
-                    words={['empty', 'waiting', 'ready', 'yours to fill']}
-                    intervalMs={2400}
-                  />
-                </span>
-              </h2>
-              <p className="mt-3 text-[12.5px] leading-relaxed text-fg-muted">
-                Import audio you already own, or paste a link in the Download tab.
-                Sonic keeps imported originals in place and saves corrections in your library.
-              </p>
+          <div className="studio-panel grid h-full min-h-[230px] place-items-center px-6 py-8">
+            <div className="max-w-[360px] text-center">
+              <span className="mx-auto mb-5 grid size-14 place-items-center rounded-[16px] border border-line-strong bg-surface-2 text-fg-muted"><Music4 className="size-6" strokeWidth={1.4} /></span>
+              <h2 className="text-[20px] font-semibold tracking-[-0.025em] text-fg">Your next sound starts here</h2>
+              <p className="mt-2 text-[13px] leading-relaxed text-fg-muted">Import audio from your computer, or add a link in Download. Your collection will be ready to explore here.</p>
+              <p className="mt-5 text-[11px] text-fg-subtle">WAV · FLAC · MP3 · M4A · OGG</p>
             </div>
           </div>
         ) : visible.length === 0 ? (
-          <div className="grid h-full min-h-[220px] place-items-center rounded-[14px] border border-line bg-surface text-[12.5px] text-fg-subtle">
+          <div className="studio-panel grid h-full min-h-[180px] place-items-center px-8 text-center text-[13px] text-fg-muted">
             {activeCollection?.type === 'manual' && activeCollection.beatIds.length === 0
               ? 'This collection is empty. Select beats and use Add to collection.'
               : activeScope === FAVORITES_COLLECTION_ID && !library.some(beat => organization && Object.prototype.hasOwnProperty.call(organization.annotations, beat.id) && organization.annotations[beat.id].favorite)
@@ -633,7 +563,7 @@ export function LibraryView(): ReactNode {
                   : 'No beats match those filters.'}
           </div>
         ) : layout === 'grid' ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(212px,1fr))] gap-3 pr-0.5 pb-0.5">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3 pb-1">
             {visible.map((beat) => (
               <div
                 key={beat.id}
@@ -656,7 +586,15 @@ export function LibraryView(): ReactNode {
             ))}
           </div>
         ) : (
-          <div className="space-y-0.5 rounded-[14px] border border-line bg-surface p-1.5">
+          <div className="@container overflow-hidden rounded-[12px] border border-line bg-surface">
+            <div aria-hidden="true" className="flex items-center gap-3 border-b border-line bg-surface-2/60 px-3 py-2 text-[10px] font-medium tracking-[0.09em] text-fg-subtle uppercase">
+              <span className="w-[68px] shrink-0" />
+              <span className="min-w-0 flex-1">Track</span>
+              <span className="hidden w-14 shrink-0 text-right @min-[440px]:block">BPM</span>
+              <span className="hidden w-12 shrink-0 text-right @min-[530px]:block">Key</span>
+              <span className="w-11 shrink-0 text-right">Time</span>
+              <span className="hidden w-12 shrink-0 text-right @min-[620px]:block">Format</span>
+            </div>
             {visible.map((beat) => {
               const cover = coverArtFor(beat.sourceUrl)
               return (
@@ -713,7 +651,9 @@ export function LibraryView(): ReactNode {
       </div>
 
       {selected ? (
+        <aside aria-label="Beat inspector" className="studio-panel min-h-0 w-[292px] max-w-[42%] shrink-0 overflow-y-auto">
         <PreviewTransport
+          key={selected.id}
           beat={selected}
           onClose={() => setSelectedId(null)}
           onRequestDelete={() => {
@@ -726,8 +666,10 @@ export function LibraryView(): ReactNode {
             setExportError('')
           }}
         />
+        {organization ? <AnnotationEditor key={selected.id} beat={selected} annotation={Object.prototype.hasOwnProperty.call(organization.annotations, selected.id) ? organization.annotations[selected.id] : undefined} command={executeOrganization} /> : null}
+        </aside>
       ) : null}
-      {selected && organization ? <AnnotationEditor key={selected.id} beat={selected} annotation={Object.prototype.hasOwnProperty.call(organization.annotations, selected.id) ? organization.annotations[selected.id] : undefined} command={executeOrganization} /> : null}
+      </div>
 
       {menu && library.some(beat => beat.id === menu.id) ? createPortal(
         <div ref={menuRef} role="menu" aria-label="Beat actions" tabIndex={-1}

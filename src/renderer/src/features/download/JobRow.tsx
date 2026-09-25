@@ -1,8 +1,11 @@
 import { useState, type ReactNode } from 'react'
 import {
   CircleAlert,
+  Check,
   ExternalLink,
   FolderOpen,
+  Inbox,
+  Music2,
   Pause,
   Play,
   RefreshCw,
@@ -16,13 +19,12 @@ import { coverArtFor } from '@shared/url'
 import { cn } from '@/lib/cn'
 import { ipc } from '@/lib/ipc'
 import { useApp } from '@/store/app'
-import { Badge, StatusDot } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/Badge'
 import { IconButton } from '@/components/ui/Button'
 import { Dropdown, DropdownItem, DropdownLabel } from '@/components/ui/Dropdown'
 import { ProgressBar } from '@/components/ui/Progress'
 import { ConfirmDialog } from '@/components/ui/Modal'
 import { Tooltip, TextSwap } from '@/components/ui/Tooltip'
-import { CardSpotlight } from '@/components/aceternity/AmbientBackground'
 import { StepPipeline } from '@/components/aceternity/MultiStepLoader'
 
 const PIPELINE = ['Fetch', 'Analyze', 'Convert', 'Tag', 'Publish']
@@ -128,35 +130,33 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
 
   return (
     <>
-      <CardSpotlight
-      className={cn(
-        'group rounded-[12px] border transition-[border-color,background-color] duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
-        selected ? 'border-[var(--sonic-accent-line)] bg-accent-softer' : 'border-line bg-surface hover:border-line-strong',
-        job.stage === 'failed' && 'border-danger/30'
-      )}
-    >
-      <div className="flex gap-3.5 p-3.5" onClick={onSelect}>
+      <div
+        data-job-id={job.id}
+        className={cn(
+          'group border-l-2 transition-[border-color,background-color] duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
+          selected ? 'border-accent bg-accent-softer' : 'border-transparent bg-surface hover:bg-surface-2/70',
+          job.stage === 'failed' && !selected && 'border-danger/60'
+        )}
+      >
+      <div className="flex gap-3.5 px-4 py-4" onClick={onSelect}>
         {/* Cover art doubles as the selection affordance. */}
-        <div className="relative h-[62px] w-[110px] shrink-0 overflow-hidden rounded-[9px] bg-surface-3">
+        <div className="relative size-[52px] shrink-0 overflow-hidden rounded-lg border border-line bg-surface-3">
+          <div className="absolute inset-0 grid place-items-center text-fg-subtle"><Music2 className="size-5" /></div>
           {cover ? (
             <img
               src={cover}
               alt=""
               loading="lazy"
-              className="size-full object-cover"
+              className="relative size-full object-cover"
               onError={(event) => {
                 event.currentTarget.style.display = 'none'
               }}
             />
-          ) : (
-            <div className="grid size-full place-items-center text-fg-subtle">
-              <StatusDot tone="neutral" />
-            </div>
-          )}
+          ) : null}
 
           {job.stage === 'complete' ? (
-            <span className="absolute right-1.5 bottom-1.5 rounded-[4px] bg-success px-1 py-0.5 text-[9.5px] font-semibold text-white">
-              DONE
+            <span className="absolute right-1 bottom-1 grid size-4 place-items-center rounded-full bg-success text-white" title="Exported">
+              <Check className="size-2.5" strokeWidth={3} />
             </span>
           ) : null}
           {running ? (
@@ -171,15 +171,17 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
-              <h3 className="truncate text-[13.5px] font-medium text-fg">
-                {metadata.title || job.sourceTitle || 'Untitled'}
+              <h3 className="truncate text-[13px] font-semibold text-fg">
+                <button type="button" className="block w-full truncate text-left focus-visible:rounded focus-visible:outline-2 focus-visible:outline-accent" onClick={(event) => { event.stopPropagation(); onSelect() }} aria-pressed={selected} title="Inspect metadata">
+                  {metadata.title || job.sourceTitle || 'Untitled'}
+                </button>
               </h3>
               <p className="mt-0.5 truncate text-[11.5px] text-fg-muted">
                 {metadata.producer || job.uploader || 'Unknown producer'}
               </p>
             </div>
 
-            <div onClick={event => event.stopPropagation()} className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-[var(--duration-quick)] group-hover:opacity-100 focus-within:opacity-100">
+            <div onClick={event => event.stopPropagation()} className="flex shrink-0 items-center gap-0.5">
               {job.stage === 'ready' || job.stage === 'failed' || job.stage === 'cancelled' ? (
                 <Tooltip label={job.stage === 'ready' ? 'Download' : 'Retry'}>
                   <IconButton
@@ -239,12 +241,12 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
             </div>
           </div>
 
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             {metadata.bpm != null ? (
-              <Badge size="sm">
+              <span className="text-[11px] text-fg-muted nums">
                 {formatBpm(metadata.bpm)} BPM
                 {analysisSourceFor(job, 'bpm') ? <AudioMark /> : null}
-              </Badge>
+              </span>
             ) : null}
             {metadata.camelot ? (
               <Badge size="sm" tone="accent">
@@ -252,10 +254,10 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
                 {analysisSourceFor(job, 'key') ? <AudioMark /> : null}
               </Badge>
             ) : null}
-            {metadata.key ? <Badge size="sm">{metadata.key}</Badge> : null}
-            {job.durationSec ? <Badge size="sm">{formatDuration(job.durationSec)}</Badge> : null}
+            {metadata.key ? <span className="text-[11px] text-fg-muted">{metadata.key}</span> : null}
+            {job.durationSec ? <span className="text-[11px] text-fg-subtle nums">{formatDuration(job.durationSec)}</span> : null}
 
-            <AnalysisBadge job={job} />
+            {job.metadata.analysis || job.metadata.verification?.summary.mismatch ? <AnalysisBadge job={job} /> : null}
 
             <Dropdown
               disabled={running || job.stage === 'complete' || job.stage === 'probing'}
@@ -268,7 +270,7 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
                     event.stopPropagation()
                     toggle()
                   }}
-                  className="rounded-full border border-line bg-surface-2 px-1.5 py-0.5 text-[10.5px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg"
+                  className="rounded-md border border-line bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg"
                 >
                   {preset.short}
                 </button>
@@ -283,8 +285,8 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
                       selected={entry.id === job.presetId}
                       hint={entry.short}
                       onSelect={async () => {
-                      await setJobPreset(job.id, entry.id as PresetId)
-                      close()
+                        await setJobPreset(job.id, entry.id as PresetId)
+                        close()
                       }}
                     >
                       {entry.label}
@@ -345,7 +347,7 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
           </div>
         </div>
       </div>
-      </CardSpotlight>
+      </div>
 
       <ConfirmDialog
         open={confirmRemove}
@@ -369,5 +371,11 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
 
 /** Empty-state shown before anything has been queued. */
 export function QueueEmptyState({ children }: { children: ReactNode }): ReactNode {
-  return <div className="px-3 py-10 text-center text-[12.5px] text-fg-subtle">{children}</div>
+  return (
+    <div className="flex h-full min-h-[160px] flex-col items-center justify-center px-6 py-7 text-center">
+      <span className="mb-3 grid size-10 place-items-center rounded-xl border border-line bg-surface-2 text-fg-subtle"><Inbox className="size-[18px]" /></span>
+      <h3 className="text-[13px] font-medium text-fg">Ready when you are</h3>
+      <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-fg-subtle">{children}</p>
+    </div>
+  )
 }

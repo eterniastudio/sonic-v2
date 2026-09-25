@@ -1,10 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useIpcEvent, useHotkey } from '@/lib/hooks'
-import { useThemeSync } from '@/lib/theme'
+import { useReducedMotion, useThemeSync } from '@/lib/theme'
 import { useApp } from '@/store/app'
-import { AmbientBackground } from '@/components/aceternity/AmbientBackground'
-import { JellyLoader } from '@/components/obsidian/JellyLoader'
 import { CommandPalette } from '@/components/shell/CommandPalette'
 import { Sidebar } from '@/components/shell/Sidebar'
 import { TitleBar } from '@/components/shell/TitleBar'
@@ -20,15 +18,14 @@ import { SettingsView } from '@/features/settings/SettingsView'
 /** First-paint splash while the main process answers the bootstrap calls. */
 function BootSplash(): ReactNode {
   return (
-    <div className="relative grid h-full place-items-center overflow-hidden bg-bg">
-      <AmbientBackground variant="full" />
-      <div className="relative flex flex-col items-center gap-5">
-        <Logo size={44} />
-        <JellyLoader size={38} />
+    <div className="grid h-full place-items-center bg-bg">
+      <div role="status" className="flex flex-col items-center gap-5">
+        <Logo size={48} />
         <div className="text-center">
-          <div className="text-[15px] font-semibold tracking-tight text-fg">Sonic V2</div>
-          <p className="mt-0.5 text-[12px] text-fg-muted">Warming up the studio…</p>
+          <div className="text-[17px] font-semibold tracking-[-0.04em] text-fg">Sonic V2</div>
+          <p className="mt-1.5 text-[12px] text-fg-muted">Opening your workspace…</p>
         </div>
+        <span aria-hidden="true" className="mt-1 h-0.5 w-12 animate-pulse rounded-full bg-accent/60" />
       </div>
     </div>
   )
@@ -57,11 +54,11 @@ function useMainProcessBridge(): void {
 export function App(): ReactNode {
   useThemeSync()
   useMainProcessBridge()
+  const reduceMotion = useReducedMotion()
 
   const booted = useApp((state) => state.booted)
   const bootstrap = useApp((state) => state.bootstrap)
   const view = useApp((state) => state.view)
-  const commandOpen = useApp((state) => state.commandOpen)
   const setCommandOpen = useApp((state) => state.setCommandOpen)
   const started = useRef(false)
 
@@ -81,21 +78,21 @@ export function App(): ReactNode {
 
   return (
     <PlaybackProvider>
-    <div className="relative flex h-full flex-col overflow-hidden bg-bg text-fg">
+    <div className="relative isolate flex h-full flex-col overflow-hidden bg-surface text-fg">
       <TitleBar />
       <StorageFeedback />
 
       <div className="relative flex min-h-0 flex-1">
         <Sidebar />
 
-        <main className="relative min-w-0 flex-1 overflow-hidden">
+        <main className="relative mr-2 min-w-0 flex-1 overflow-hidden rounded-t-[14px] border-x border-t border-line bg-bg">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={view}
-              initial={{ opacity: 0, y: 6, filter: 'blur(3px)' }}
-              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, y: -6, filter: 'blur(3px)' }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              initial={{ opacity: 0, y: reduceMotion ? 0 : 3 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: reduceMotion ? 0 : 0.14, ease: [0.22, 1, 0.36, 1] }}
               className="h-full"
             >
               {view === 'download' ? <DownloadView /> : null}
@@ -110,7 +107,6 @@ export function App(): ReactNode {
 
       {/* Ctrl+K is handled globally; this keeps the palette mounted for exits. */}
       <CommandPalette />
-      {commandOpen ? null : null}
       <Toaster />
     </div>
     </PlaybackProvider>

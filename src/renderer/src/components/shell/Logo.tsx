@@ -2,35 +2,28 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 
 /**
- * Sonic's mark: a burst of level bars inside a rounded square.
- * Drawn rather than shipped as an asset so it inherits the accent colour.
+ * A compact level-meter mark, drawn with the active theme's accent.
  */
-export function Logo({ size = 22, className }: { size?: number; className?: string }): ReactNode {
+export function Logo({ size = 28, className }: { size?: number; className?: string }): ReactNode {
   const bars = [
-    { x: 3.2, h: 7 },
-    { x: 6.4, h: 12 },
-    { x: 9.6, h: 5.5 },
-    { x: 12.8, h: 14 },
-    { x: 16, h: 9 },
-    { x: 19.2, h: 6 }
+    { x: 6, h: 6 },
+    { x: 9.5, h: 11 },
+    { x: 13, h: 16 },
+    { x: 16.5, h: 10 },
+    { x: 20, h: 5 }
   ]
-  const centre = 10
+  const centre = 14
 
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 22.4 20"
+      viewBox="0 0 28 28"
       fill="none"
       aria-hidden="true"
       className={cn('shrink-0', className)}
     >
-      <defs>
-        <linearGradient id="sonic-mark" x1="0" y1="0" x2="22.4" y2="20" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="var(--sonic-accent)" />
-          <stop offset="100%" stopColor="color-mix(in oklab, var(--sonic-accent) 45%, var(--sonic-cyan))" />
-        </linearGradient>
-      </defs>
+      <rect x="0.5" y="0.5" width="27" height="27" rx="8" fill="var(--sonic-accent-softer)" stroke="var(--sonic-accent-line)" />
       {bars.map((bar, index) => (
         <rect
           key={index}
@@ -39,7 +32,7 @@ export function Logo({ size = 22, className }: { size?: number; className?: stri
           width="2"
           height={bar.h}
           rx="1"
-          fill="url(#sonic-mark)"
+          fill="var(--sonic-accent)"
         />
       ))}
     </svg>
@@ -49,11 +42,12 @@ export function Logo({ size = 22, className }: { size?: number; className?: stri
 /** Logo plus wordmark, used in the title bar. */
 export function Wordmark({ className }: { className?: string }): ReactNode {
   return (
-    <span className={cn('flex items-center gap-2', className)}>
-      <Logo size={19} />
-      <span className="text-[13px] font-semibold tracking-tight text-fg">
-        Sonic <span className="text-fg-subtle">V2</span>
+    <span className={cn('flex items-center gap-2.5', className)}>
+      <Logo size={25} />
+      <span className="text-[15px] font-semibold tracking-[-0.045em] text-fg">
+        Sonic
       </span>
+      <span className="rounded border border-line px-1 py-px text-[9px] font-semibold leading-none tracking-[0.03em] text-fg-subtle">V2</span>
     </span>
   )
 }

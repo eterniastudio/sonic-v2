@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Command, Moon, Sun } from 'lucide-react'
+import { ChevronRight, Command, Moon, Sun } from 'lucide-react'
 import { toast } from '@/components/ui/Toaster'
 import { cn } from '@/lib/cn'
 import { ipc } from '@/lib/ipc'
@@ -68,6 +68,7 @@ export function TitleBar(): ReactNode {
   const cycleTheme = useApp((state) => state.cycleTheme)
   const setCommandOpen = useApp((state) => state.setCommandOpen)
   const themeMode = useApp((state) => state.settings.theme)
+  const view = useApp((state) => state.view)
   const theme = useResolvedTheme()
   const [maximized, setMaximized] = useState(false)
 
@@ -78,20 +79,25 @@ export function TitleBar(): ReactNode {
   useIpcEvent('window:maximized', setMaximized)
 
   return (
-    <header className="drag-region relative z-40 flex h-12 shrink-0 items-end border-b border-line bg-surface/70 backdrop-blur-xl">
-      <div className="flex h-10 min-w-0 flex-1 items-center gap-2 pl-3">
+    <header className="drag-region relative z-40 flex h-[52px] shrink-0 items-end bg-surface">
+      <div className="flex h-11 w-[212px] shrink-0 items-center px-6 xl:w-[228px]">
         <Wordmark />
+      </div>
+      <div className="flex h-11 min-w-0 flex-1 items-center gap-2.5 px-5 text-[11px]">
+        <span className="text-fg-subtle">Studio</span>
+        <ChevronRight aria-hidden="true" className="size-3 text-fg-subtle/60" />
+        <span className="font-medium text-fg-muted">{view === 'download' ? 'Download' : view === 'library' ? 'Library' : 'Settings'}</span>
       </div>
 
       {/* Windows reserves the outer resize border before Chromium hit testing.
-          Keep a visible 8px title strip above the full 40px button hit areas. */}
-      <div className="no-drag flex h-10 items-stretch gap-1 pr-1">
+          Keep a visible 8px title strip above the full 44px button hit areas. */}
+      <div className="no-drag flex h-11 items-stretch gap-1 pr-1">
         <button
           type="button"
           onClick={() => void cycleTheme()}
           title={`Theme: ${THEME_LABELS[themeMode]} — click to cycle`}
           aria-label={`Theme: ${THEME_LABELS[themeMode]}. Click to cycle.`}
-          className="self-center grid size-7 place-items-center rounded-[7px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
+          className="grid size-8 self-center place-items-center rounded-[7px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
         >
           <IconSwap
             swapped={theme === 'light'}
@@ -104,11 +110,11 @@ export function TitleBar(): ReactNode {
         <button
           type="button"
           onClick={() => setCommandOpen(true)}
-          className="self-center flex h-7 items-center gap-2 rounded-[7px] border border-line bg-surface-2 pr-1.5 pl-2 text-[11.5px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg-muted"
+          className="flex h-7 self-center items-center gap-2 rounded-[6px] border border-line bg-surface pr-1.5 pl-2 text-[10.5px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:bg-surface-2 hover:text-fg"
         >
-          <Command className="size-3" />
+          <Command aria-hidden="true" className="size-3 text-fg-subtle" />
           <span>Commands</span>
-          <kbd className="rounded-[4px] border border-line bg-surface px-1 text-[10px] font-medium">
+          <kbd className="rounded-[3px] border border-line bg-surface-2 px-1 text-[9px] font-medium text-fg-subtle">
             Ctrl K
           </kbd>
         </button>

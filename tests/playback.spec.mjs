@@ -209,6 +209,7 @@ test('missing future entry is skipped and removing the active record releases pl
   await invoke('library:remove', current.id, false, { filePath: current.filePath, fingerprint: current.fingerprint })
   await expect(player()).toHaveAttribute('data-playback-beat-id', '')
   await expect(player()).toHaveAttribute('data-playback-state', 'error')
+  await expect(player().getByText('Could not play', { exact: true })).toBeVisible()
   expect(hash(await readFile(current.filePath))).toBe(current.fingerprint)
 })
 
