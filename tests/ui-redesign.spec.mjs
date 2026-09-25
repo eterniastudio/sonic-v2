@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fixtures } from './fixtures.mjs'
 import { createOwnedProfile, launchOwnedApp, readyPage, closeOwnedApp } from './app-lifecycle.mjs'
 
-test('studio workspace stays usable in both themes and compact desktop sizes', async ({}, info) => {
+test('minimal workspace stays usable in both themes and compact desktop sizes', async ({}, info) => {
   const root = await createOwnedProfile(info)
   const source = await fixtures(root, 45)
   const titles = ['Midnight Transit', 'Velvet Hours', 'After the Rain', 'Chrome Hearts', 'Low Tide', 'Nocturne', 'Soft Focus', 'Blue Hour', 'Daylight', 'Northbound', 'Still Life', 'Late Checkout']
@@ -21,6 +21,8 @@ test('studio workspace stays usable in both themes and compact desktop sizes', a
   try {
     page = await readyPage(app, root)
     page.on('pageerror', error => errors.push(error.message))
+    await page.evaluate(() => document.fonts.ready)
+    expect(await page.evaluate(() => [...document.fonts].some(font => font.family.includes('Inter Variable') && font.status === 'loaded'))).toBe(true)
     await invoke('organization:command', { type: 'create-manual', name: 'Next release', beatIds: beats.slice(0, 6).map(beat => beat.id) })
     for (const theme of ['dark', 'light']) {
       await invoke('settings:patch', { theme })
@@ -29,7 +31,7 @@ test('studio workspace stays usable in both themes and compact desktop sizes', a
         await page.setViewportSize(size)
         for (const view of ['Download', 'Library', 'Settings']) {
           await navigate(view)
-          await expect(page.locator('main h1')).toHaveText(view === 'Download' ? 'Downloads' : view === 'Library' ? /^Beat Library/ : 'Settings')
+          await expect(page.locator('main h1')).toHaveText(view === 'Download' ? 'Downloads' : view === 'Library' ? /^Library/ : 'Settings')
           if (view === 'Download') {
             const links = page.getByRole('textbox', { name: 'YouTube beat links', exact: true })
             await links.fill('https://www.youtube.com/watch?v=abcdefghijk')
@@ -43,6 +45,7 @@ test('studio workspace stays usable in both themes and compact desktop sizes', a
             await links.clear()
           }
           if (view === 'Library') {
+            await expect(page.getByRole('tablist', { name: 'Layout' }).getByRole('tab').nth(1)).toHaveAttribute('aria-selected', 'true')
             const first = page.locator('[data-beat-id="design-0"]')
             await expect(first).toBeVisible()
             if (!await page.locator('[data-preview-state]').count()) await first.getByText(titles[0], { exact: true }).click()
@@ -80,6 +83,9 @@ test('studio workspace stays usable in both themes and compact desktop sizes', a
     const bounds = await results.boundingBox()
     expect(bounds.height).toBeGreaterThan(100)
     await expect(page.getByPlaceholder('Search title, producer, BPM, key…')).toBeVisible()
+    await page.getByRole('tablist', { name: 'Layout' }).getByRole('tab').nth(0).click()
+    await expect(page.locator('[data-beat-id="design-0"]')).toBeVisible()
+    await page.screenshot({ path: info.outputPath('library-grid-light-1024.png'), animations: 'disabled' })
     await navigate('Download')
     await page.getByRole('button', { name: 'Close inspector', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Close inspector', exact: true })).toHaveCount(0)

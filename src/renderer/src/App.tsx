@@ -19,13 +19,12 @@ import { SettingsView } from '@/features/settings/SettingsView'
 function BootSplash(): ReactNode {
   return (
     <div className="grid h-full place-items-center bg-bg">
-      <div role="status" className="flex flex-col items-center gap-5">
-        <Logo size={48} />
+      <div role="status" className="flex flex-col items-center gap-3">
+        <Logo size={36} />
         <div className="text-center">
-          <div className="text-[17px] font-semibold tracking-[-0.04em] text-fg">Sonic V2</div>
+          <div className="text-[16px] font-semibold tracking-[-0.035em] text-fg">Sonic</div>
           <p className="mt-1.5 text-[12px] text-fg-muted">Opening your workspace…</p>
         </div>
-        <span aria-hidden="true" className="mt-1 h-0.5 w-12 animate-pulse rounded-full bg-accent/60" />
       </div>
     </div>
   )
@@ -78,21 +77,21 @@ export function App(): ReactNode {
 
   return (
     <PlaybackProvider>
-    <div className="relative isolate flex h-full flex-col overflow-hidden bg-surface text-fg">
+    <div className="relative isolate flex h-full flex-col overflow-hidden bg-bg text-fg">
       <TitleBar />
       <StorageFeedback />
 
       <div className="relative flex min-h-0 flex-1">
         <Sidebar />
 
-        <main className="relative mr-2 min-w-0 flex-1 overflow-hidden rounded-t-[14px] border-x border-t border-line bg-bg">
+        <main className="relative min-w-0 flex-1 overflow-hidden bg-bg">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={view}
-              initial={{ opacity: 0, y: reduceMotion ? 0 : 3 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: reduceMotion ? 0 : 0.14, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: reduceMotion ? 0 : 0.1, ease: [0.22, 1, 0.36, 1] }}
               className="h-full"
             >
               {view === 'download' ? <DownloadView /> : null}

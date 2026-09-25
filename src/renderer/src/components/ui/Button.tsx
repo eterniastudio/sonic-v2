@@ -13,20 +13,20 @@ const button = cva(
   {
     variants: {
       variant: {
-        primary: 'border border-transparent bg-accent text-accent-fg shadow-accent hover:bg-[var(--sonic-accent-hover)]',
+        primary: 'border border-transparent bg-primary text-primary-fg hover:bg-[var(--sonic-primary-hover)]',
         secondary:
-          'border border-line bg-surface text-fg shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-line-strong hover:bg-surface-2',
+          'border border-line-strong/60 bg-transparent text-fg hover:border-line-strong hover:bg-surface-2',
         outline: 'border border-line-strong text-fg hover:bg-surface-2',
         ghost: 'text-fg-muted hover:bg-surface-2 hover:text-fg',
         danger: 'border border-danger/35 bg-danger/12 text-danger hover:bg-danger/20',
-        quiet: 'border border-accent-line bg-accent-softer text-accent hover:bg-accent-soft'
+        quiet: 'border border-transparent bg-surface-2 text-fg hover:bg-surface-3'
       },
       size: {
         xs: 'h-7 rounded-[6px] px-2.5 text-[11px]',
         sm: 'h-8 rounded-[7px] px-3 text-[12px]',
-        md: 'h-9 rounded-[8px] px-3.5 text-[12.5px]',
+        md: 'h-8 rounded-[6px] px-3 text-[12px]',
         lg: 'h-11 rounded-[9px] px-5 text-[14px]',
-        icon: 'h-9 w-9 rounded-[8px]',
+        icon: 'h-8 w-8 rounded-[6px]',
         'icon-sm': 'h-8 w-8 rounded-[8px]',
         'icon-xs': 'h-6.5 w-6.5 rounded-[6px]'
       }

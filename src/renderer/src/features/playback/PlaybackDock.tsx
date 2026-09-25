@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AudioLines, Headphones, Pause, Play, Repeat, SkipBack, SkipForward, Volume2, X } from 'lucide-react'
+import { Pause, Play, Repeat, SkipBack, SkipForward, Volume2, X } from 'lucide-react'
 import { formatDuration } from '@shared/format'
 import { cn } from '@/lib/cn'
 import { IconButton } from '@/components/ui/Button'
@@ -18,6 +18,8 @@ export function PlaybackDock(): ReactNode {
   const seekingAllowed = hasTrack && ['ready', 'playing', 'paused', 'ended'].includes(status)
   const elapsed = Math.max(0, Number.isFinite(current) ? current : 0)
   const length = Math.max(0, Number.isFinite(duration) && duration > 0 ? duration : beat?.durationSec ?? 0)
+  const artist = beat?.producer || beat?.sourceChannel || (beat?.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')
+  const queueLabel = queueContext ? `${queueContext.label} · ${queueContext.index} of ${queueContext.count}` : null
   const statusLabel = playing
     ? 'Now playing'
     : status === 'loading'
@@ -37,35 +39,21 @@ export function PlaybackDock(): ReactNode {
       data-playback-state={status}
       data-playback-beat-id={beatId ?? ''}
       aria-busy={closing && !saveError}
-      className="relative z-10 shrink-0 border-t border-line bg-surface px-5 py-3"
+      className="relative z-10 shrink-0 border-t border-line bg-bg px-5 py-2"
     >
-      <div className="grid min-w-0 grid-cols-[minmax(180px,0.95fr)_112px_minmax(180px,1.3fr)_auto] items-center gap-x-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <div aria-hidden="true" className={cn(
-            'grid size-11 shrink-0 place-items-center rounded-[10px] border',
-            hasTrack ? 'border-accent-line bg-accent-softer text-accent' : 'border-line bg-surface-2 text-fg-subtle'
-          )}>
-            {hasTrack ? <AudioLines className="size-5 stroke-[1.5]" /> : <Headphones className="size-5 stroke-[1.5]" />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className={cn('mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase leading-none tracking-[0.13em]', playing ? 'text-accent' : 'text-fg-subtle')}>
-              {playing ? <span aria-hidden="true" className="size-1 rounded-full bg-accent" /> : null}
-              <span>{statusLabel}</span>
-            </div>
-            <p className="truncate text-[12px] font-medium text-fg" title={beat?.title}>
-              {beat?.title ?? 'Choose a beat to audition'}
-            </p>
-            <p className="mt-0.5 truncate text-[10px] text-fg-subtle">
-              {queueContext
-                ? `${queueContext.label} · ${queueContext.index} of ${queueContext.count}`
-                : beat
-                  ? beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')
-                  : 'Select a track from your Library'}
-            </p>
-          </div>
+      <div className="grid min-w-0 grid-cols-[minmax(160px,0.95fr)_100px_minmax(180px,1.3fr)_auto] items-center gap-x-5">
+        <div className="min-w-0">
+          <span className="sr-only" role="status">{statusLabel}</span>
+          <p className="truncate text-[12px] font-medium text-fg" title={beat?.title}>
+            {beat?.title ?? 'Choose a beat to audition'}
+          </p>
+          <p className="mt-0.5 truncate text-[11px] text-fg-subtle" title={beat ? [artist, queueLabel].filter(Boolean).join(' · ') : undefined}>
+            {beat ? artist : 'Select a track from your Library'}
+            {queueLabel ? <><span aria-hidden="true"> · </span><span>{queueLabel}</span></> : null}
+          </p>
         </div>
 
-        <div className="flex items-center justify-center gap-1">
+        <div className="flex items-center justify-center gap-0.5">
           <IconButton label="Previous track" size="icon-sm" disabled={closing || !hasTrack} onClick={previous}>
             <SkipBack />
           </IconButton>
@@ -75,12 +63,12 @@ export function PlaybackDock(): ReactNode {
             disabled={closing || !hasTrack}
             onClick={toggle}
             className={cn(
-              'grid size-10 shrink-0 place-items-center rounded-full bg-accent text-accent-fg',
+              'grid size-8 shrink-0 place-items-center rounded-full bg-[var(--sonic-primary)] text-[var(--sonic-primary-fg)]',
               'transition-[background-color,transform] duration-[var(--duration-fast)] active:scale-95',
-              'hover:bg-[var(--sonic-accent-hover)] disabled:cursor-not-allowed disabled:bg-surface-3 disabled:text-fg-subtle'
+              'hover:bg-[var(--sonic-primary-hover)] disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-fg-subtle'
             )}
           >
-            {playing ? <Pause className="size-4 fill-current" /> : <Play className="size-4 translate-x-px fill-current" />}
+            {playing ? <Pause className="size-3.5 fill-current" /> : <Play className="size-3.5 translate-x-px fill-current" />}
           </button>
           <IconButton label="Next track" size="icon-sm" disabled={closing || !hasTrack} onClick={next}>
             <SkipForward />
@@ -88,11 +76,11 @@ export function PlaybackDock(): ReactNode {
         </div>
 
         <div className="min-w-0">
-          <div className="relative h-[25px] overflow-hidden">
+          <div className="relative h-[25px] overflow-hidden opacity-65">
             {!hasTrack ? <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px bg-line" /> : null}
             <div className="h-[25px]" data-waveform ref={attachWaveform} />
           </div>
-          <div className="mt-1 flex min-w-0 items-center gap-2 text-[9px] text-fg-subtle nums">
+          <div className="flex min-w-0 items-center gap-2 text-[10px] text-fg-subtle nums">
             <span className="w-8 shrink-0">{formatDuration(elapsed)}</span>
             <input
               aria-label="Seek preview"
@@ -118,7 +106,7 @@ export function PlaybackDock(): ReactNode {
             <input aria-label="Preview volume" type="range" min="0" max="1" step="0.05" value={volume} disabled={closing}
               onChange={event => setVolume(Number(event.target.value))} className="h-6 w-14 cursor-pointer disabled:cursor-default" />
           </div>
-          <IconButton label="Repeat track" size="icon-sm" aria-pressed={repeat} variant={repeat ? 'quiet' : 'ghost'}
+          <IconButton label="Repeat track" size="icon-sm" aria-pressed={repeat} className={repeat ? 'text-accent' : undefined}
             disabled={closing || !hasTrack} onClick={() => setRepeat(!repeat)}><Repeat /></IconButton>
           <IconButton label="Stop playback" size="icon-sm" disabled={closing || (!hasTrack && status !== 'error')} onClick={stop}><X /></IconButton>
         </div>

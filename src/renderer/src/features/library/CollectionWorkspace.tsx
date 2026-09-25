@@ -88,16 +88,16 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
     cancelled: batch.items.filter(item => item.status === 'cancelled').length
   } : null
 
-  return <div className="min-w-0 shrink-0 space-y-3">
-    <nav aria-label="Library collections" className="flex min-w-0 items-center gap-3 border-b border-line pb-2">
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [&_button]:shrink-0">
+  return <div className="min-w-0 shrink-0 space-y-2">
+    <nav aria-label="Library collections" className="flex min-w-0 items-center gap-3 border-b border-line">
+      <div className="flex min-w-0 flex-1 items-center gap-4 overflow-x-auto [&_button]:shrink-0">
         <button type="button" aria-label="All audio" aria-current={activeId === null ? 'page' : undefined}
-          onClick={() => void run(() => onScope(null), false)} className={`flex items-center gap-2 rounded-[7px] px-2.5 py-2 text-[12px] font-medium transition-colors ${activeId === null ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2 hover:text-fg'}`}><Library className="size-3.5" />All audio<span className="text-[10px] opacity-60 nums">{library.length}</span></button>
+          onClick={() => void run(() => onScope(null), false)} className={`flex h-9 items-center border-b-2 text-[12px] font-medium transition-colors ${activeId === null ? 'border-fg-muted text-fg' : 'border-transparent text-fg-subtle hover:text-fg'}`}>All audio</button>
         <button type="button" aria-label="Favorites" aria-current={activeId === FAVORITES_COLLECTION_ID ? 'page' : undefined}
-          onClick={() => void run(() => onScope(FAVORITES_COLLECTION_ID), false)} className={`flex items-center gap-2 rounded-[7px] px-2.5 py-2 text-[12px] font-medium transition-colors ${activeId === FAVORITES_COLLECTION_ID ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2 hover:text-fg'}`}><Star className="size-3.5" />Favorites</button>
+          onClick={() => void run(() => onScope(FAVORITES_COLLECTION_ID), false)} className={`flex h-9 items-center gap-1.5 border-b-2 text-[12px] font-medium transition-colors ${activeId === FAVORITES_COLLECTION_ID ? 'border-fg-muted text-fg' : 'border-transparent text-fg-subtle hover:text-fg'}`}>Favorites</button>
         {organization?.collections.map(item => <button key={item.id} type="button" aria-label={`Collection: ${item.name}`}
           aria-current={activeId === item.id ? 'page' : undefined} onClick={() => void run(() => onScope(item.id), false)}
-          className={`flex max-w-[190px] items-center gap-2 rounded-[7px] px-2.5 py-2 text-[12px] font-medium transition-colors ${activeId === item.id ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2 hover:text-fg'}`}>
+          className={`flex h-9 max-w-[190px] items-center gap-1.5 border-b-2 text-[12px] font-medium transition-colors ${activeId === item.id ? 'border-fg-muted text-fg' : 'border-transparent text-fg-subtle hover:text-fg'}`}>
           {item.type === 'smart' ? <Sparkles className="size-3.5 shrink-0" /> : <Folder className="size-3.5 shrink-0" />}<span className="truncate">{item.name}</span>
         </button>)}
       </div>
@@ -114,7 +114,7 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
       </div>
     </nav>
 
-    {selectedCount ? <div role="toolbar" aria-label="Selected beats" className="flex flex-wrap items-center gap-1.5 rounded-[9px] border border-[var(--sonic-accent-line)] bg-accent-softer px-2.5 py-1.5">
+    {selectedCount ? <div role="toolbar" aria-label="Selected beats" className="flex flex-wrap items-center gap-1.5 rounded-[6px] bg-surface-2 px-2 py-1">
       <strong className="mr-1 shrink-0 text-[11px] font-medium text-fg nums">{selectedCount} selected</strong>
       <Button size="sm" aria-label="Play selected tracks" variant="primary" leading={<Play className="fill-current" />} onClick={onPlaySelected}>Play selected</Button>
       <IconButton label="Play displayed results" title="Play displayed results" size="icon-sm" disabled={!matchingIds.length} onClick={onPlayDisplayed}><Library /></IconButton>
@@ -133,10 +133,9 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
       {selectedCount > 1000 ? <span className="w-full text-[10px] text-fg-muted">Analyze/export: 1,000 max{selectedCount > 5000 ? '; annotations: 5,000 max' : ''}. Narrow the selection.</span> : null}
     </div> : <div className="flex items-center gap-2 text-[11px] text-fg-subtle">
       <span className="mr-1 text-fg-muted nums">{matchingIds.length} track{matchingIds.length === 1 ? '' : 's'}</span>
-      <Button size="sm" variant="ghost" leading={<Play />} disabled={!matchingIds.length} onClick={onPlayDisplayed}>Play displayed results</Button>
+      <Button size="sm" variant="ghost" aria-label="Play displayed results" leading={<Play />} disabled={!matchingIds.length} onClick={onPlayDisplayed}>Play all</Button>
       <span className="flex-1" />
-      <span className="hidden text-[10px] xl:inline">Ctrl / ⌘ + click to select</span>
-      {matchingIds.length ? <Button size="sm" variant="ghost" onClick={selectAll}>Select all {matchingIds.length} matching</Button> : null}
+      {matchingIds.length ? <Button size="sm" variant="ghost" aria-label={`Select all ${matchingIds.length} matching`} onClick={selectAll}>Select all</Button> : null}
     </div>}
     {active?.type === 'manual' && manualSort && active.beatIds.length > 1 ? <div className="flex flex-wrap items-center gap-2 px-1 text-[11px] text-fg-subtle">
       <span>Collection order</span>

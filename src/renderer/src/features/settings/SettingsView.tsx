@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from 'react'
-import { HardDrive, Palette, Settings2, SlidersHorizontal, Wand2 } from 'lucide-react'
 import { MagnetTabs } from '@/components/obsidian/MagnetTabs'
 import { AdvancedSection } from './AdvancedSection'
 import { AppearanceSection } from './AppearanceSection'
@@ -8,11 +7,11 @@ import { ExportSection } from './ExportSection'
 
 type Tab = 'appearance' | 'export' | 'engine' | 'advanced'
 
-const SECTIONS: { value: Tab; label: string; icon: ReactNode }[] = [
-  { value: 'appearance', label: 'Appearance', icon: <Palette /> },
-  { value: 'export', label: 'Export', icon: <Settings2 /> },
-  { value: 'engine', label: 'Media engine', icon: <Wand2 /> },
-  { value: 'advanced', label: 'Advanced', icon: <SlidersHorizontal /> }
+const SECTIONS: { value: Tab; label: string }[] = [
+  { value: 'appearance', label: 'Appearance' },
+  { value: 'export', label: 'Export' },
+  { value: 'engine', label: 'Media engine' },
+  { value: 'advanced', label: 'Advanced' }
 ]
 
 /** Focused preferences with a stable category bar and clearly grouped controls. */
@@ -24,27 +23,18 @@ export function SettingsView(): ReactNode {
 
   return (
     <div className="workspace-page h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-[1040px] pb-8">
-        <header className="page-header mb-6 flex-wrap">
-          <div>
-            <h1 className="page-title">Settings</h1>
-            <p className="page-description">
-              Fine-tune your workspace, audio exports, and local media engine.
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-[11px] text-fg-muted">
-            <HardDrive className="size-3 text-fg-subtle" />
-            Local preferences
-          </div>
+      <div className="mx-auto w-full max-w-[960px] pb-6">
+        <header className="page-header mb-3">
+          <h1 className="page-title">Settings</h1>
         </header>
 
-        <div className="mb-6 border-b border-line pb-4">
+        <div className="border-b border-line">
           <MagnetTabs
             value={tab}
             onChange={(next) => { setTab(next as Tab); localStorage.setItem('settings-tab', next) }}
             ariaLabel="Settings sections"
             tabs={SECTIONS}
-            className="max-w-full [&>button]:px-4 [&>button]:py-2"
+            className="max-w-full gap-6 !rounded-none !border-0 !bg-transparent !p-0 [&>button]:!rounded-none [&>button]:!px-0 [&>button]:!py-3 [&>span]:!top-auto [&>span]:!bottom-[-1px] [&>span]:!h-px [&>span]:!rounded-none [&>span]:!bg-fg [&>span]:!shadow-none"
           />
         </div>
 

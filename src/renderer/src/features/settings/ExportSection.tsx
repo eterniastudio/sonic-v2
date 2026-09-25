@@ -1,9 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ChevronDown, FileAudio2, FolderOpen, Gauge, Repeat2 } from 'lucide-react'
+import { ChevronDown, FolderOpen } from 'lucide-react'
 import type { ChannelMode, PresetId } from '@shared/domain'
 import { PRESETS } from '@shared/presets'
 import { TEMPLATE_TOKEN_HELP, TEMPLATE_TOKENS } from '@shared/template'
-import { cn } from '@/lib/cn'
 import { ipc } from '@/lib/ipc'
 import { useDebounced } from '@/lib/hooks'
 import { useApp } from '@/store/app'
@@ -14,14 +13,12 @@ import { Field, Input } from '@/components/ui/Input'
 import { Segmented } from '@/components/ui/Segmented'
 import { SwitchRow } from '@/components/ui/Switch'
 import { Accordion } from '@/components/ui/Accordion'
-import { FolderPreview } from '@/components/obsidian/FolderPreview'
 import { SettingsPanel } from './SettingsPanel'
 
 export function ExportSection(): ReactNode {
   const settings = useApp((state) => state.settings)
   const patchSettings = useApp((state) => state.patchSettings)
   const chooseDownloadDir = useApp((state) => state.chooseDownloadDir)
-  const library = useApp((state) => state.library)
 
   const [template, setTemplate] = useState(settings.namingTemplate)
   const [preview, setPreview] = useState<{ rendered: string; unknownTokens: string[] } | null>(null)
@@ -48,8 +45,8 @@ export function ExportSection(): ReactNode {
   const preset = PRESETS.find((entry) => entry.id === settings.defaultPresetId) ?? PRESETS[0]
 
   return (
-    <div className="space-y-5">
-      <SettingsPanel title="Destination" description="A home for every finished beat." bodyClassName="space-y-4">
+    <div>
+      <SettingsPanel title="Destination">
         <Field label="Export folder" htmlFor="settings-export-folder" hint="Where finished beats are published">
           <div className="flex gap-2">
             <div className="min-w-0 flex-1">
@@ -66,14 +63,9 @@ export function ExportSection(): ReactNode {
             </Button>
           </div>
         </Field>
-
-        <FolderPreview
-          path={settings.downloadDir}
-          files={library.slice(0, 12).map((beat) => ({ name: beat.fileName, sizeBytes: beat.sizeBytes }))}
-        />
       </SettingsPanel>
 
-      <SettingsPanel title="Naming" description="Keep your exports consistent and easy to find." bodyClassName="space-y-4">
+      <SettingsPanel title="Naming" bodyClassName="space-y-3">
         <Field
           label="File name template"
           htmlFor="settings-naming-template"
@@ -97,20 +89,14 @@ export function ExportSection(): ReactNode {
           />
         </Field>
 
-        <div className="flex items-center gap-3 rounded-xl border border-line bg-bg/60 p-4">
-          <span className="grid size-10 shrink-0 place-items-center rounded-lg border border-line bg-surface text-fg-muted">
-            <FileAudio2 className="size-5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="mb-1.5 text-[10px] font-semibold tracking-[0.12em] text-fg-subtle uppercase">Preview</div>
-            <div className="font-mono text-[12px] break-all text-fg">
-              {preview?.rendered || 'untitled'}.{preset.extension}
-            </div>
+        <div className="flex items-baseline gap-3 text-[11.5px]">
+          <span className="shrink-0 text-fg-subtle">Preview</span>
+          <div className="min-w-0 font-mono break-all text-fg-muted">
+            {preview?.rendered || 'untitled'}.{preset.extension}
           </div>
-          <Badge size="sm">{preset.extension.toUpperCase()}</Badge>
         </div>
 
-        <Accordion title="Available tokens" summary={`${TEMPLATE_TOKEN_HELP.length}`}>
+        <Accordion title="Available tokens" summary={`${TEMPLATE_TOKEN_HELP.length}`} bare className="[&>button]:px-0 [&>button]:py-2">
           <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5">
             {TEMPLATE_TOKEN_HELP.map((entry) => (
               <li key={entry.token} className="flex items-baseline gap-2">
@@ -124,8 +110,8 @@ export function ExportSection(): ReactNode {
         </Accordion>
       </SettingsPanel>
 
-      <SettingsPanel title="Default recipe" description="Your starting point for every new download." bodyClassName="space-y-5">
-        <div className="grid grid-cols-2 gap-5">
+      <SettingsPanel title="Default recipe" description="Applied to new downloads." bodyClassName="space-y-3">
+        <div className="grid grid-cols-2 gap-4">
           <Field label="Format for new downloads">
             <Dropdown
               width="trigger"
@@ -210,9 +196,10 @@ export function ExportSection(): ReactNode {
         </Field>
       </SettingsPanel>
 
-      <SettingsPanel title="Audio analysis" description="Discover tempo and key from your audio, directly on this device." bodyClassName="pt-2">
+      <SettingsPanel title="Audio analysis">
         <div className="divide-y divide-[var(--sonic-border)]">
           <SwitchRow
+            className="pt-0 pb-3"
             title="Analyze downloaded audio automatically"
             description="Estimates tempo and key from the audio itself and fills any field the source did not state. Works locally; nothing is uploaded."
             checked={settings.analyzeOnDownload}
@@ -220,8 +207,7 @@ export function ExportSection(): ReactNode {
           />
         </div>
 
-        <div className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-bg/50 p-4">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-fg-muted"><Gauge className="size-4" /></span>
+        <div className="flex items-center gap-3 border-t border-line py-3">
           <span className="flex-1 text-[12.5px] text-fg-muted">
             Concurrent analyses
             <span className="mt-0.5 block text-[11px] text-fg-subtle">
@@ -242,15 +228,14 @@ export function ExportSection(): ReactNode {
           />
         </div>
 
-        <p className="mt-3 text-[11.5px] leading-relaxed text-fg-subtle">
-          A source's own claim always wins over an audio estimate. When the video title, description or
-          tags disagree with what was measured, both values are kept and the disagreement is shown in
-          the metadata inspector — the estimate only fills fields nothing else supplied.
+        <p className="text-[11.5px] leading-relaxed text-fg-subtle">
+          Source metadata takes priority. Estimates fill missing fields; disagreements stay visible
+          in the metadata inspector.
         </p>
       </SettingsPanel>
 
-      <SettingsPanel title="Tagging and sidecars" description="Choose the metadata that travels with your exports." bodyClassName="py-1">
-        <div className="divide-y divide-[var(--sonic-border)]">
+      <SettingsPanel title="Tagging and sidecars">
+        <div className="divide-y divide-[var(--sonic-border)] [&>div]:py-2.5 [&>div:first-child]:pt-0 [&>div:last-child]:pb-0">
           <SwitchRow
             title="Embed metadata in the file"
             description="Writes title, producer, tempo, key and genre into the container tags."
@@ -286,8 +271,8 @@ export function ExportSection(): ReactNode {
         </div>
       </SettingsPanel>
 
-      <SettingsPanel title="Queue behaviour" description="Control how new links move from review to your library." bodyClassName="pt-2">
-        <div className="divide-y divide-[var(--sonic-border)]">
+      <SettingsPanel title="Queue behaviour">
+        <div className="divide-y divide-[var(--sonic-border)] [&>div]:py-2.5 [&>div:first-child]:pt-0">
           <SwitchRow
             title="Start downloads automatically"
             description="Begin exporting as soon as a pasted link has been inspected, instead of waiting for review."
@@ -302,8 +287,7 @@ export function ExportSection(): ReactNode {
           />
         </div>
 
-        <div className={cn('mt-3 flex items-center gap-3 rounded-xl border border-line bg-bg/50 p-4')}>
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-fg-muted"><Repeat2 className="size-4" /></span>
+        <div className="flex items-center gap-3 border-t border-line pt-3">
           <span className="flex-1 text-[12.5px] text-fg-muted">Concurrent downloads</span>
           <Segmented
             value={String(settings.concurrency)}

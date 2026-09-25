@@ -23,28 +23,27 @@ export function QueueList(): ReactNode {
   const finishedCount = jobs.filter((job) => job.stage === 'complete' || job.stage === 'cancelled').length
 
   return (
-    <section className="studio-panel flex min-h-[260px] flex-1 flex-col overflow-hidden" aria-labelledby="queue-heading">
-      <div className="flex shrink-0 flex-wrap items-center gap-2.5 px-5 py-4">
-        <h2 id="queue-heading" className="text-[15px] font-semibold tracking-tight text-fg">Queue</h2>
-        <span className="rounded-md bg-surface-3 px-1.5 py-0.5 text-[10.5px] font-medium text-fg-muted nums">{jobs.length}</span>
+    <section className="flex min-h-[180px] flex-1 flex-col overflow-hidden" aria-labelledby="queue-heading">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line py-2">
+        <h2 id="queue-heading" className="text-[12px] font-medium text-fg">Queue</h2>
+        <span className="text-[10.5px] text-fg-subtle nums">{jobs.length}</span>
         <span className="flex-1" />
-        <Button variant="ghost" size="sm" leading={<ListChecks />} disabled={finishedCount === 0} onClick={() => void clearFinished()} className="text-[12px]">Clear done</Button>
-        <Button variant="primary" size="sm" leading={<Download />} disabled={readyCount === 0} onClick={() => void startJobs(null)} className="text-[12px] shadow-none">
+        <Button variant="ghost" size="xs" leading={<ListChecks />} disabled={finishedCount === 0} onClick={() => void clearFinished()} className="h-6 px-1.5 text-[11px]">Clear done</Button>
+        <Button variant="primary" size="xs" leading={<Download />} disabled={readyCount === 0} onClick={() => void startJobs(null)} className="h-6 rounded-[4px] px-2 text-[11px] shadow-none">
           Download all{readyCount > 0 ? ` (${readyCount})` : ''}
         </Button>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-y border-line bg-surface-2/45 px-5 py-2">
-        <div className="flex items-center gap-2 text-[11.5px] text-fg-subtle">
-          <span className={paused ? 'size-1.5 rounded-full bg-warning' : activeCount > 0 ? 'size-1.5 rounded-full bg-accent' : 'size-1.5 rounded-full bg-fg-subtle/50'} aria-hidden />
-          {paused ? 'Queue paused' : activeCount > 0 ? `${activeCount} in progress` : 'All caught up'}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line pb-1.5">
+        <div className="text-[10.5px] text-fg-subtle">
+          {paused ? 'Paused' : activeCount > 0 ? `${activeCount} active` : 'Idle'}
         </div>
         <span className="flex-1" />
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-fg-subtle">Parallel</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10.5px] text-fg-subtle">Parallel</span>
           <Segmented size="sm" value={String(concurrency)} onChange={(next) => void setConcurrency(Number(next))} ariaLabel="Concurrent downloads" options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]} />
         </div>
-        <Button variant="ghost" size="sm" onClick={() => void setPaused(!paused)} leading={paused ? <Play /> : <Pause />} className="h-7 px-2 text-[11.5px]">
+        <Button variant="ghost" size="xs" onClick={() => void setPaused(!paused)} leading={paused ? <Play /> : <Pause />} className="h-6 px-1.5 text-[11px]">
           {paused ? 'Resume' : 'Pause'}
         </Button>
       </div>

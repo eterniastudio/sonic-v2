@@ -21,7 +21,7 @@ const DEFAULTS: OrganizationSnapshot = {
   schemaVersion: 1,
   annotations: {},
   collections: [],
-  view: { activeCollectionId: null, layout: 'grid', sort: 'newest' }
+  view: { activeCollectionId: null, layout: 'list', sort: 'newest' }
 }
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)

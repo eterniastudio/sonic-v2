@@ -17,12 +17,10 @@ import type { LibraryBeat, PresetId } from '@shared/domain'
 import { FAVORITES_COLLECTION_ID, type OrganizationCommand, type OrganizationSnapshot } from '@shared/organization'
 import type { BatchSession } from '@shared/batch'
 import { PRESETS } from '@shared/presets'
-import { formatBpm, formatBytes, formatDuration } from '@shared/format'
-import { coverArtFor } from '@shared/url'
 import { cn } from '@/lib/cn'
+import { useReducedMotion } from '@/lib/theme'
 import { useApp } from '@/store/app'
 import { reconcileWorkspace, useLibraryWorkspace, useWorkspaceField } from '@/store/libraryWorkspace'
-import { AnimatedTooltip } from '@/components/aceternity/AnimatedTooltip'
 import { Badge } from '@/components/ui/Badge'
 import { Button, IconButton } from '@/components/ui/Button'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
@@ -32,7 +30,6 @@ import { Dropdown, DropdownItem, DropdownLabel } from '@/components/ui/Dropdown'
 import { Input } from '@/components/ui/Input'
 import { Segmented } from '@/components/ui/Segmented'
 import { Switch } from '@/components/ui/Switch'
-import { NumberPop } from '@/components/ui/NumberPop'
 import { toast } from '@/components/ui/Toaster'
 import { BeatCard } from './BeatCard'
 import { PreviewTransport } from './PreviewTransport'
@@ -62,6 +59,7 @@ const TEMPO_BANDS: { id: string; label: string }[] = [
 
 /** Searchable archive of imported audio and Sonic-created exports. */
 export function LibraryView(): ReactNode {
+  const reducedMotion = useReducedMotion()
   const { playOne, playQueue } = usePlaybackActions()
   const library = useApp((state) => state.library)
   const rescanLibrary = useApp((state) => state.rescanLibrary)
@@ -285,12 +283,11 @@ export function LibraryView(): ReactNode {
     setSelectedId(focusId)
     setLibraryFocus(null)
     const node = cardRefs.current.get(focusId)
-    node?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [focusId, setLibraryFocus, setSelectedId, organization])
+    node?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'instant' : 'smooth' })
+  }, [focusId, setLibraryFocus, setSelectedId, organization, reducedMotion])
 
   const totals = useMemo(
     () => ({
-      size: library.reduce((total, beat) => total + beat.sizeBytes, 0),
       missing: library.filter((beat) => beat.missing).length
     }),
     [library]
@@ -311,15 +308,13 @@ export function LibraryView(): ReactNode {
   ).length
 
   return (
-    <div className="workspace-page flex h-full min-h-0 flex-col gap-4">
+    <div className="workspace-page flex h-full min-h-0 flex-col gap-3">
       <header className="page-header flex shrink-0 items-center justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="page-title">Beat Library<span className="ml-3 align-middle text-[13px] font-medium tracking-normal text-fg-subtle nums"><NumberPop value={library.length} /></span></h1>
-          <p className="page-description">Browse, audition, and organize your audio.</p>
+          <h1 className="page-title">Library<span className="ml-2.5 align-middle text-[12px] font-normal tracking-normal text-fg-subtle nums">{library.length}</span></h1>
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
-          <span className="mr-1 hidden text-[12px] text-fg-subtle nums xl:inline">{formatBytes(totals.size)} in your library</span>
-          {needsAnalysis > 0 ? <Button variant="secondary" size="md" aria-label="Analyze now" leading={<Sparkles />}
+          {needsAnalysis > 0 ? <Button variant="ghost" size="md" aria-label="Analyze now" leading={<Sparkles />}
             title={`${needsAnalysis} tracks ready for BPM and key analysis`} onClick={() => {
               void analyzeMissing().then(queued => toast({ kind: 'info', title: `Analyzing ${queued} track${queued === 1 ? '' : 's'}`,
                 description: 'Working from the files on disk — nothing is re-downloaded.' }))
@@ -330,7 +325,7 @@ export function LibraryView(): ReactNode {
 
       <div className="flex min-h-0 shrink-0 flex-col gap-3">
         <div className="flex items-center gap-2">
-          <div className="min-w-[160px] flex-1">
+          <div className="min-w-[160px] max-w-[340px] flex-1">
             <Input
               value={query}
               onChange={(event) => {
@@ -349,7 +344,7 @@ export function LibraryView(): ReactNode {
             />
           </div>
           <Button
-            variant={showFilters ? 'quiet' : 'secondary'}
+            variant={showFilters ? 'quiet' : 'ghost'}
             size="md"
             leading={<SlidersHorizontal />}
             aria-expanded={showFilters}
@@ -361,7 +356,7 @@ export function LibraryView(): ReactNode {
           <Dropdown
             align="end"
             trigger={({ toggle: open }) => (
-              <Button variant="secondary" size="md" leading={<ArrowDownUp />} onClick={open}>
+              <Button variant="ghost" size="md" leading={<ArrowDownUp />} onClick={open}>
                 {SORTS.find((entry) => entry.key === sort)?.label ?? 'Sort'}
               </Button>
             )}
@@ -385,6 +380,7 @@ export function LibraryView(): ReactNode {
             )}
           </Dropdown>
 
+          <span className="flex-1" />
           <Segmented
             value={layout}
             onChange={changeLayout}
@@ -398,7 +394,7 @@ export function LibraryView(): ReactNode {
 
           <IconButton
             label="Rescan the library"
-            variant="secondary"
+            variant="ghost"
             onClick={() => {
               void rescanLibrary()
               toast({ kind: 'info', title: 'Rescanning the library' })
@@ -409,7 +405,7 @@ export function LibraryView(): ReactNode {
         </div>
 
         {showFilters ? (
-          <div className="studio-panel flex max-h-[148px] flex-wrap items-center gap-x-5 gap-y-3 overflow-y-auto px-4 py-3">
+          <div className="flex max-h-[148px] flex-wrap items-center gap-x-5 gap-y-3 overflow-y-auto border-y border-line py-3">
             <label className="flex items-center gap-1.5 text-[11px] font-medium text-fg-subtle">
               BPM
               <Input type="number" min="1" max="999" step="any" inputMode="decimal"
@@ -546,9 +542,9 @@ export function LibraryView(): ReactNode {
         ) : library.length === 0 ? (
           <div className="studio-panel grid h-full min-h-[230px] place-items-center px-6 py-8">
             <div className="max-w-[360px] text-center">
-              <span className="mx-auto mb-5 grid size-14 place-items-center rounded-[16px] border border-line-strong bg-surface-2 text-fg-muted"><Music4 className="size-6" strokeWidth={1.4} /></span>
-              <h2 className="text-[20px] font-semibold tracking-[-0.025em] text-fg">Your next sound starts here</h2>
-              <p className="mt-2 text-[13px] leading-relaxed text-fg-muted">Import audio from your computer, or add a link in Download. Your collection will be ready to explore here.</p>
+              <Music4 className="mx-auto mb-4 size-6 text-fg-subtle" strokeWidth={1.4} />
+              <h2 className="text-[15px] font-medium text-fg">Your library is empty</h2>
+              <p className="mt-2 text-[12px] leading-relaxed text-fg-muted">Import audio from your computer, or add a link in Downloads.</p>
               <p className="mt-5 text-[11px] text-fg-subtle">WAV · FLAC · MP3 · M4A · OGG</p>
             </div>
           </div>
@@ -563,7 +559,7 @@ export function LibraryView(): ReactNode {
                   : 'No beats match those filters.'}
           </div>
         ) : layout === 'grid' ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3 pb-1">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2 pb-1">
             {visible.map((beat) => (
               <div
                 key={beat.id}
@@ -586,72 +582,38 @@ export function LibraryView(): ReactNode {
             ))}
           </div>
         ) : (
-          <div className="@container overflow-hidden rounded-[12px] border border-line bg-surface">
-            <div aria-hidden="true" className="flex items-center gap-3 border-b border-line bg-surface-2/60 px-3 py-2 text-[10px] font-medium tracking-[0.09em] text-fg-subtle uppercase">
-              <span className="w-[68px] shrink-0" />
+          <div className="@container overflow-hidden">
+            <div aria-hidden="true" className="flex h-8 items-center gap-3 border-b border-line px-2 text-[10.5px] text-fg-subtle">
+              <span className="w-[60px] shrink-0" />
               <span className="min-w-0 flex-1">Track</span>
               <span className="hidden w-14 shrink-0 text-right @min-[440px]:block">BPM</span>
-              <span className="hidden w-12 shrink-0 text-right @min-[530px]:block">Key</span>
+              <span className="hidden w-14 shrink-0 text-right @min-[480px]:block">Key</span>
               <span className="w-11 shrink-0 text-right">Time</span>
               <span className="hidden w-12 shrink-0 text-right @min-[620px]:block">Format</span>
             </div>
-            {visible.map((beat) => {
-              const cover = coverArtFor(beat.sourceUrl)
-              return (
-                <AnimatedTooltip
-                  key={beat.id}
-                  trigger={
-                    <BeatCard
-                      beat={beat}
-                      layout="list"
-                      selected={selectedId === beat.id}
-                      batchSelected={selectedIds.has(beat.id)}
-                      onToggleSelection={() => toggleSelectedId(beat.id)}
-                      onSelect={(event) => selectCard(event, beat)}
-                      onPlay={() => playOne(beat.id)}
-                      onContextMenu={(event) => openMenu(event, beat)}
-                    />
-                  }
-                  content={
-                    <div>
-                      <div className="relative aspect-video w-full overflow-hidden bg-surface-3">
-                        {cover ? (
-                          <img src={cover} alt="" className="size-full scale-[1.34] object-cover" />
-                        ) : null}
-                        <span className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-                      </div>
-                      <div className="p-3">
-                        <div className="text-[12.5px] font-medium text-fg">{beat.title}</div>
-                        <div className="mt-0.5 text-[11px] text-fg-muted">
-                          {beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')}
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {beat.bpm != null ? <Badge size="sm">{formatBpm(beat.bpm)} BPM</Badge> : null}
-                          {beat.camelot ? (
-                            <Badge size="sm" tone="accent">
-                              {beat.camelot}
-                            </Badge>
-                          ) : null}
-                          {beat.key ? <Badge size="sm">{beat.key}</Badge> : null}
-                          <Badge size="sm" tone="outline">
-                            {formatDuration(beat.durationSec)}
-                          </Badge>
-                        </div>
-                        <div className="mt-2 truncate font-mono text-[10px] text-fg-subtle">
-                          {beat.fileName}
-                        </div>
-                      </div>
-                    </div>
-                  }
+            {visible.map((beat) => (
+              <div key={beat.id} ref={node => {
+                if (node) cardRefs.current.set(beat.id, node)
+                else cardRefs.current.delete(beat.id)
+              }}>
+                <BeatCard
+                  beat={beat}
+                  layout="list"
+                  selected={selectedId === beat.id}
+                  batchSelected={selectedIds.has(beat.id)}
+                  onToggleSelection={() => toggleSelectedId(beat.id)}
+                  onSelect={(event) => selectCard(event, beat)}
+                  onPlay={() => playOne(beat.id)}
+                  onContextMenu={(event) => openMenu(event, beat)}
                 />
-              )
-            })}
+              </div>
+            ))}
           </div>
         )}
       </div>
 
       {selected ? (
-        <aside aria-label="Beat inspector" className="studio-panel min-h-0 w-[292px] max-w-[42%] shrink-0 overflow-y-auto">
+        <aside aria-label="Beat inspector" className="min-h-0 w-[268px] max-w-[42%] shrink-0 overflow-y-auto border-l border-line">
         <PreviewTransport
           key={selected.id}
           beat={selected}

@@ -84,32 +84,31 @@ export function PreviewTransport({
   }
 
   return (
-    <div data-preview-state="inspecting" className="p-4">
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <span className="section-label">TRACK DETAILS</span>
+    <div data-preview-state="inspecting" className="px-4 pt-1 pb-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span className="section-label">Details</span>
         <IconButton label="Close preview" size="icon-xs" onClick={onClose}><X /></IconButton>
       </div>
-      <h2 className="text-[17px] leading-snug font-semibold tracking-[-0.025em] break-words text-fg">{beat.title}</h2>
+      <h2 className="text-[14px] leading-snug font-semibold tracking-[-0.015em] break-words text-fg">{beat.title}</h2>
       <p className="mt-1 text-[12px] text-fg-muted">{beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')}</p>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10.5px] text-fg-subtle nums">
         <span>{beat.format.toUpperCase()}</span><span>·</span><span>{formatDuration(beat.durationSec)}</span><span>·</span><span>{formatBytes(beat.sizeBytes)}</span>
       </div>
+      {beat.missing ? <p className="mt-3 text-[11px] leading-relaxed text-warning">Audio file is missing. Restore it to its original location, then rescan the library.</p> : null}
 
-      <div className="my-4 grid grid-cols-[0.8fr_1.2fr] divide-x divide-line border-y border-line py-3.5">
-        <div className="pr-3">
-          <span className="block text-[10px] font-medium tracking-[0.08em] text-fg-subtle uppercase">Tempo</span>
-          <span className="mt-1 block text-[25px] leading-tight font-medium tracking-[-0.04em] text-fg nums">{beat.bpm != null ? formatBpm(beat.bpm) : '—'}<span className="ml-1 text-[10px] tracking-normal text-fg-subtle">BPM</span></span>
-          {beat.bpm != null ? <OriginMark origin={bpmDecision.origin} /> : null}
+      <div className="my-4 space-y-2.5 text-[11.5px]">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-fg-subtle">Tempo</span>
+          <span className="flex items-center gap-2 text-fg-muted nums">{beat.bpm != null ? `${formatBpm(beat.bpm)} BPM` : '—'}{beat.bpm != null ? <OriginMark origin={bpmDecision.origin} /> : null}</span>
         </div>
-        <div className="pl-4">
-          <span className="block text-[10px] font-medium tracking-[0.08em] text-fg-subtle uppercase">Musical key</span>
-          <span className="mt-2 block text-[15px] leading-tight font-medium tracking-tight text-fg">{beat.key || 'Not analyzed'}{beat.camelot ? <span className="ml-2 text-[11px] text-accent">{beat.camelot}</span> : null}</span>
-          {beat.key ? <OriginMark origin={keyDecision.origin} /> : null}
+        <div className="flex items-center justify-between gap-3">
+          <span className="shrink-0 text-fg-subtle">Key</span>
+          <span className="flex flex-wrap items-center justify-end gap-2 text-fg-muted">{beat.key || 'Not analyzed'}{beat.camelot ? <span className="text-[10px] text-fg-subtle">{beat.camelot}</span> : null}{beat.key ? <OriginMark origin={keyDecision.origin} /> : null}</span>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <Button variant="primary" className="flex-1" leading={<Play className="fill-current" />} disabled={beat.missing} onClick={() => playOne(beat.id)}>Play this beat</Button>
+        <Button variant="secondary" className="flex-1" leading={<Play className="fill-current" />} disabled={beat.missing} onClick={() => playOne(beat.id)}>Play this beat</Button>
         <Dropdown align="end" trigger={({ toggle }) => <IconButton label="Beat actions" variant="secondary" onClick={toggle}><MoreHorizontal /></IconButton>}>
           {close => <>
             <DropdownItem icon={<FolderOpen />} onSelect={async () => { await ipc.invoke('library:revealFile', beat.id); close() }}>Reveal in folder</DropdownItem>
@@ -169,7 +168,7 @@ function OriginMark({ origin }: { origin: FieldOrigin }): ReactNode {
   return (
     <span
       title={origin === 'legacy' ? 'Origin was not saved for this older record' : `Source: ${label}`}
-      className="mt-1 inline-block text-[9px] tracking-wide text-fg-subtle capitalize"
+      className="inline-block text-[9px] text-fg-subtle capitalize"
     >
       {label}
     </span>
@@ -235,7 +234,7 @@ function AnalyzeButton({ beat }: { beat: LibraryBeat }): ReactNode {
           }
         })
       }}
-      className="h-7 rounded-[8px] bg-accent-soft px-2.5 text-[11.5px] font-medium text-accent transition-colors duration-[var(--duration-quick)] hover:bg-[var(--sonic-accent-line)] disabled:pointer-events-none disabled:opacity-40"
+      className="h-7 rounded-[6px] px-2 text-[11px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
     >
       {reanalyze ? 'Re-analyze' : 'Analyze audio'}
     </button>

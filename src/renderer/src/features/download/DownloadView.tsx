@@ -1,5 +1,4 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { ArrowDownToLine } from 'lucide-react'
 import { useApp, selectSelectedJob } from '@/store/app'
 import { EngineBanner } from './EngineBanner'
 import { IntakePanel } from './IntakePanel'
@@ -26,20 +25,14 @@ export function DownloadView(): ReactNode {
 
   return (
     <div className="workspace-page flex h-full min-h-0 flex-col">
-      <header className="page-header shrink-0 pb-4">
-        <div className="min-w-0">
-          <h1 className="page-title">Downloads</h1>
-          <p className="page-description">Add source links, review metadata, and export your audio.</p>
-        </div>
+      <header className="flex shrink-0 items-center gap-3 pb-3">
+        <h1 className="text-[20px] leading-7 font-semibold tracking-tight text-fg">Downloads</h1>
         {completedCount > 0 ? (
-          <div className="hidden items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] text-fg-muted sm:flex">
-            <ArrowDownToLine className="size-3.5 text-success" />
-            <span><span className="font-medium text-fg nums">{completedCount}</span> exported</span>
-          </div>
+          <span className="text-[11px] text-fg-subtle nums">{completedCount} exported</span>
         ) : null}
       </header>
-      <div className="relative flex min-h-0 flex-1 gap-4">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto pb-0.5">
+      <div className="flex min-h-0 flex-1 gap-4">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pb-0.5">
           <EngineBanner />
           <IntakePanel />
           <QueueList />

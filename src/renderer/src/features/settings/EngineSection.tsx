@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { CheckCircle2, ChevronDown, CircleDashed, Cpu, FolderOpen, RefreshCw, Wand2 } from 'lucide-react'
+import { CheckCircle2, ChevronDown, CircleDashed, FolderOpen, RefreshCw, Wand2 } from 'lucide-react'
 import type { Settings } from '@shared/domain'
 import { formatBytes } from '@shared/format'
 import { cn } from '@/lib/cn'
@@ -48,11 +48,11 @@ export function EngineSection(): ReactNode {
     BROWSERS.find((entry) => entry.value === settings.cookiesFromBrowser)?.label ?? 'Do not use cookies'
 
   return (
-    <div className="space-y-5">
+    <div>
       <SettingsPanel
         title="Media engine"
-        description="The tools that download, convert, and prepare your audio."
-        bodyClassName="space-y-5"
+        description="Download and conversion tools."
+        bodyClassName="space-y-3"
         accessory={engine?.ready ? (
             <Badge tone="success" size="sm" icon={<CheckCircle2 />}>
               Ready
@@ -63,21 +63,8 @@ export function EngineSection(): ReactNode {
             </Badge>
           )}
       >
-        <div className="flex items-start gap-4 rounded-xl border border-line bg-bg/50 p-4">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-line bg-surface text-fg-muted">
-            <Cpu className="size-5" />
-          </span>
-          <div>
-            <p className="text-[13px] font-medium text-fg">{engine?.ready ? 'Ready for your next download' : 'Prepare your media engine'}</p>
-            <p className="mt-1 text-[12px] leading-relaxed text-fg-muted">
-              Sonic keeps its media tools in a dedicated folder and verifies downloaded tools.
-              Your system&apos;s FFmpeg can also be used.
-            </p>
-          </div>
-        </div>
-
         {progress && progress.phase !== 'idle' && progress.phase !== 'done' ? (
-          <div className="space-y-2 rounded-[10px] border border-line bg-surface-2 p-3">
+          <div className="space-y-2">
             <div className="flex items-center justify-between text-[11.5px] text-fg-muted">
               <span>{progress.message}</span>
               <span className="nums">
@@ -90,11 +77,11 @@ export function EngineSection(): ReactNode {
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-xl border border-line divide-y divide-[var(--sonic-border)]">
+        <div className="divide-y divide-[var(--sonic-border)]">
           {(engine?.components ?? []).map((component) => (
             <div
               key={component.name}
-              className="flex items-center gap-3 bg-surface px-4 py-3.5"
+              className="flex items-center gap-3 py-2 first:pt-0"
             >
               <span
                 className={cn(
@@ -108,7 +95,7 @@ export function EngineSection(): ReactNode {
                 {component.origin ? ` · ${component.origin}` : ''}
               </span>
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="xs"
                 onClick={() => void pickTool(component.name)}
                 title="Use a specific executable"
@@ -120,7 +107,7 @@ export function EngineSection(): ReactNode {
         </div>
 
         {running ? (
-          <div className="rounded-[10px] border border-line bg-surface p-3.5">
+          <div className="py-2">
             <MultiStepLoader
               steps={SETUP_STEPS}
               currentIndex={currentStep}
@@ -150,6 +137,13 @@ export function EngineSection(): ReactNode {
           >
             Open engine folder
           </Button>
+          <IconButton
+            label="Re-check the engine"
+            variant="ghost"
+            onClick={() => void ipc.invoke('engine:status').then((status) => useApp.setState({ engine: status }))}
+          >
+            <RefreshCw />
+          </IconButton>
           {engine?.engineDir ? (
             <span className="mt-1 block w-full truncate font-mono text-[10.5px] text-fg-subtle">
               {engine.engineDir}
@@ -158,7 +152,7 @@ export function EngineSection(): ReactNode {
         </div>
       </SettingsPanel>
 
-      <SettingsPanel title="Acquisition" description="Adjust access and limits for the sources you download." bodyClassName="space-y-6">
+      <SettingsPanel title="Acquisition" bodyClassName="space-y-4">
         <Field
           label="Use cookies from a browser"
           hint="Only when a source needs a signed-in session"
@@ -214,13 +208,6 @@ export function EngineSection(): ReactNode {
               }}
               className="w-28 nums"
             />
-            <IconButton
-              label="Re-check the engine"
-              variant="secondary"
-              onClick={() => void ipc.invoke('engine:status').then((status) => useApp.setState({ engine: status }))}
-            >
-              <RefreshCw />
-            </IconButton>
           </div>
         </Field>
       </SettingsPanel>

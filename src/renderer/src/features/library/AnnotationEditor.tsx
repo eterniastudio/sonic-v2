@@ -35,16 +35,16 @@ export function AnnotationEditor({ beat, annotation, command }: {
   }
   return <section aria-label="Your annotations" className="border-t border-line px-4 py-4 text-[12px] text-fg-muted">
     <div className="flex items-center gap-2">
-      <strong className="section-label">NOTES &amp; TAGS</strong>
+      <strong className="section-label">Notes &amp; tags</strong>
       <span className="flex-1" />
       <button type="button" aria-label={current.favorite ? `Unfavorite ${beat.title}` : `Favorite ${beat.title}`}
         aria-pressed={current.favorite} disabled={pending} onClick={() => void save({ favorite: !current.favorite })}
-        className="flex items-center gap-1.5 rounded-[6px] px-1.5 py-1 text-[11px] text-accent transition-colors hover:bg-accent-soft"><Star className="size-3.5" fill={current.favorite ? 'currentColor' : 'none'} />Favorite</button>
+        className="flex items-center gap-1.5 rounded-[6px] px-1.5 py-1 text-[11px] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"><Star className="size-3.5" fill={current.favorite ? 'currentColor' : 'none'} />Favorite</button>
     </div>
     <div className="mt-3 grid gap-3">
       <label className="text-[11px] text-fg-muted"><span className="mb-1.5 block">User tags</span><Input aria-label="User tags" value={tags} maxLength={1200} disabled={pending} onChange={event => setDraft(previous => ({ ...previous, tags: event.target.value }))} placeholder="dark, good for vocals" /></label>
       <label className="text-[11px] text-fg-muted">Notes<textarea aria-label="Notes" value={notes} maxLength={4000} disabled={pending} onChange={event => setDraft(previous => ({ ...previous, notes: event.target.value }))} placeholder="Good hook section at 0:48"
-        className="mt-1.5 block min-h-[76px] w-full resize-y rounded-[8px] border border-line bg-surface-2/60 px-2.5 py-2 text-[12px] leading-relaxed text-fg placeholder:text-fg-subtle focus:border-accent" /></label>
+        className="mt-1.5 block min-h-[64px] w-full resize-y rounded-[6px] border border-line-strong/60 bg-transparent px-2.5 py-2 text-[12px] leading-relaxed text-fg placeholder:text-fg-subtle focus:border-accent" /></label>
     </div>
     <div className="mt-3 space-y-2">
       <Button size="sm" variant="secondary" className="w-full" disabled={pending || (draft.tags === null && draft.notes === null)} onClick={() => {

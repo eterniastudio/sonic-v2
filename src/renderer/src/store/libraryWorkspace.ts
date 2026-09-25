@@ -24,7 +24,7 @@ interface LibraryWorkspace {
 }
 
 export const useLibraryWorkspace = create<LibraryWorkspace>(() => ({
-  query: '', layout: 'grid', sort: 'newest', bands: new Set(), formats: new Set(),
+  query: '', layout: 'list', sort: 'newest', bands: new Set(), formats: new Set(),
   fileFilter: 'all', reviewFilter: 'all', bpmFilter: '', bpmTolerance: 3,
   includeHalfDouble: false, keyFilter: '', selectedId: null, selectedIds: new Set(),
   selectionAnchor: null, selectionScope: null, showFilters: false, scrollTop: 0

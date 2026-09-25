@@ -1,12 +1,11 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { ArrowRight, ChevronDown, ClipboardPaste, Link2, TriangleAlert, X } from 'lucide-react'
+import { ArrowRight, ChevronDown, ClipboardPaste, TriangleAlert, X } from 'lucide-react'
 import { extractVideoUrls } from '@shared/url'
 import { PRESETS } from '@shared/presets'
 import { cn } from '@/lib/cn'
 import { ipc } from '@/lib/ipc'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
 import { Textarea } from '@/components/ui/Input'
 import { StatefulButton } from '@/components/aceternity/StatefulButton'
 import { Switch } from '@/components/ui/Switch'
@@ -50,21 +49,9 @@ export function IntakePanel(): ReactNode {
   }
 
   return (
-    <section className="studio-panel shrink-0 overflow-hidden" aria-labelledby="intake-heading">
-      <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-surface-2 text-fg-muted">
-          <Link2 className="size-[18px]" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 id="intake-heading" className="text-[15px] font-semibold tracking-tight text-fg">Add beats</h2>
-          <p className="mt-0.5 text-[12px] text-fg-subtle">One link or a whole batch. Drop them here.</p>
-        </div>
-        {acceptedCount > 0 ? (
-          <Badge tone="accent" size="sm">{acceptedCount} link{acceptedCount === 1 ? '' : 's'} ready</Badge>
-        ) : null}
-      </div>
-
-      <div className="px-4 pb-3">
+    <section className="shrink-0" aria-labelledby="intake-heading">
+      <h2 id="intake-heading" className="sr-only">Add beats</h2>
+      <div>
         <div
           onDragOver={(event) => {
             event.preventDefault()
@@ -73,8 +60,8 @@ export function IntakePanel(): ReactNode {
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
           className={cn(
-            'relative rounded-xl border border-line bg-surface-2 transition-colors focus-within:border-[var(--sonic-accent-line)] focus-within:ring-2 focus-within:ring-accent-softer',
-            dragging && 'border-[var(--sonic-accent-line)] bg-accent-softer ring-2 ring-accent-softer'
+            'relative rounded-[5px] border border-line bg-transparent transition-colors focus-within:border-line-strong',
+            dragging && 'border-line-strong bg-surface-2'
           )}
         >
           <Textarea
@@ -90,26 +77,26 @@ export function IntakePanel(): ReactNode {
             }}
             rows={2}
             spellCheck={false}
-            placeholder={'Paste YouTube beat links — one per line, or all at once.\nhttps://www.youtube.com/watch?v=…'}
+            placeholder="Paste YouTube beat links — one per line, or all at once."
             className={cn(
-              'min-h-[64px] border-0 bg-transparent px-3.5 pt-3 pb-2 text-[12.5px] leading-relaxed focus:bg-transparent focus:shadow-none',
+              'min-h-[54px] rounded-none border-0 bg-transparent px-2.5 pt-2.5 pb-1 text-[12px] leading-relaxed focus:bg-transparent focus:shadow-none',
               shakeKey > 0 && acceptedCount === 0 && 't-input is-shaking is-error'
             )}
           />
-          <div className="flex items-center gap-1 border-t border-line px-2.5 py-2">
+          <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
             <Button
               variant="ghost"
-              size="sm"
+              size="xs"
               leading={<ClipboardPaste />}
               onClick={() => void ipc.invoke('app:readClipboard').then((value) => value && setText(value)).catch(error => toast({ kind: 'error', title: 'Could not paste', description: String(error) }))}
             >
               Paste
             </Button>
             {text.length > 0 ? (
-              <Button variant="ghost" size="sm" leading={<X />} onClick={() => setText('')}>Clear</Button>
+              <Button variant="ghost" size="xs" leading={<X />} onClick={() => setText('')}>Clear</Button>
             ) : null}
             <span className="flex-1" />
-            <span className="mr-2 hidden text-[10px] text-fg-subtle sm:block" aria-hidden>
+            <span className="mr-2 hidden text-[10px] text-fg-subtle min-[1350px]:block" aria-hidden>
               <kbd className="font-sans">Ctrl</kbd> + <kbd className="font-sans">Enter</kbd>
             </span>
             <StatefulButton
@@ -119,13 +106,13 @@ export function IntakePanel(): ReactNode {
               loadingLabel="Queueing…"
               successLabel="Queued"
               size="sm"
-              className="shadow-none"
+              className="h-7 rounded-[4px] px-2.5 text-[11.5px] shadow-none"
             >
               Add to queue
             </StatefulButton>
           </div>
           {dragging ? (
-            <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-xl bg-surface/95 text-[13px] font-medium text-accent">Drop links here</div>
+            <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[5px] bg-surface/95 text-[12px] font-medium text-fg">Drop links here</div>
           ) : null}
         </div>
 
@@ -141,13 +128,13 @@ export function IntakePanel(): ReactNode {
         ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-line bg-surface-2/40 px-4 py-2">
-        <div className="flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5">
+        <div className="flex items-center gap-1">
           <span className="text-[11px] text-fg-subtle">Export as</span>
           <Dropdown
             align="start"
             trigger={({ toggle }) => (
-              <Button variant="ghost" size="sm" onClick={toggle} title="Default export format" trailing={<ChevronDown />} className="h-7 px-2 text-[12px] text-fg">
+              <Button variant="ghost" size="xs" onClick={toggle} title="Default export format" trailing={<ChevronDown />} className="h-6 px-1.5 text-[11px] text-fg-muted">
                 {preset.label}
               </Button>
             )}
@@ -170,9 +157,9 @@ export function IntakePanel(): ReactNode {
             )}
           </Dropdown>
         </div>
-        <span className="hidden text-[11px] text-fg-subtle 2xl:block">{preset.sizeHint}</span>
-        <div className="ml-auto flex items-center gap-2.5">
-          <span className="text-[11.5px] text-fg-muted">Auto-start</span>
+        {acceptedCount > 0 ? <span className="text-[10.5px] text-fg-subtle" role="status">{acceptedCount} ready</span> : null}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[11px] text-fg-subtle">Auto-start</span>
           <Switch checked={settings.autoStart} onChange={(next) => void patchSettings({ autoStart: next })} label="Start downloads automatically" />
         </div>
       </div>

@@ -10,7 +10,7 @@ interface SettingsPanelProps {
   bodyClassName?: string
 }
 
-/** Consistent, readable preference groups with room for labels and controls. */
+/** Flat preference rows, with section labels aligned beside their controls. */
 export function SettingsPanel({
   title,
   description,
@@ -20,17 +20,15 @@ export function SettingsPanel({
   bodyClassName
 }: SettingsPanelProps): ReactNode {
   return (
-    <section className={cn('studio-panel overflow-hidden', className)}>
-      <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-        <div className="min-w-0">
-          <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-fg">{title}</h3>
-          {description ? (
-            <p className="mt-1 text-[12px] leading-relaxed text-fg-muted">{description}</p>
-          ) : null}
-        </div>
-        {accessory ? <div className="shrink-0 pt-0.5">{accessory}</div> : null}
+    <section className={cn('grid gap-4 border-b border-line py-5 min-[1000px]:grid-cols-[180px_minmax(0,1fr)] min-[1000px]:gap-8', className)}>
+      <div className="min-w-0">
+        <h3 className="text-[13px] font-medium text-fg">{title}</h3>
+        {description ? (
+          <p className="mt-1 text-[11.5px] leading-relaxed text-fg-subtle">{description}</p>
+        ) : null}
+        {accessory ? <div className="mt-2">{accessory}</div> : null}
       </div>
-      <div className={cn('p-5', bodyClassName)}>{children}</div>
+      <div className={cn('min-w-0', bodyClassName)}>{children}</div>
     </section>
   )
 }

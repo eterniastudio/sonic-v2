@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 
 /**
- * A compact level-meter mark, drawn with the active theme's accent.
+ * Sonic's monochrome level-meter mark.
  */
 export function Logo({ size = 28, className }: { size?: number; className?: string }): ReactNode {
   const bars = [
@@ -23,7 +23,6 @@ export function Logo({ size = 28, className }: { size?: number; className?: stri
       aria-hidden="true"
       className={cn('shrink-0', className)}
     >
-      <rect x="0.5" y="0.5" width="27" height="27" rx="8" fill="var(--sonic-accent-softer)" stroke="var(--sonic-accent-line)" />
       {bars.map((bar, index) => (
         <rect
           key={index}
@@ -32,7 +31,7 @@ export function Logo({ size = 28, className }: { size?: number; className?: stri
           width="2"
           height={bar.h}
           rx="1"
-          fill="var(--sonic-accent)"
+          fill="var(--sonic-fg)"
         />
       ))}
     </svg>
@@ -42,12 +41,11 @@ export function Logo({ size = 28, className }: { size?: number; className?: stri
 /** Logo plus wordmark, used in the title bar. */
 export function Wordmark({ className }: { className?: string }): ReactNode {
   return (
-    <span className={cn('flex items-center gap-2.5', className)}>
-      <Logo size={25} />
-      <span className="text-[15px] font-semibold tracking-[-0.045em] text-fg">
+    <span className={cn('flex items-center gap-1.5', className)}>
+      <Logo size={23} />
+      <span className="text-[14px] font-semibold tracking-[-0.035em] text-fg">
         Sonic
       </span>
-      <span className="rounded border border-line px-1 py-px text-[9px] font-semibold leading-none tracking-[0.03em] text-fg-subtle">V2</span>
     </span>
   )
 }

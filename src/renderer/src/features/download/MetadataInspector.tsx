@@ -1,10 +1,9 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
-import { CircleAlert, FileAudio2, Music2, RotateCcw, SlidersHorizontal, Wand2, X } from 'lucide-react'
+import { CircleAlert, RotateCcw, Wand2, X } from 'lucide-react'
 import type { Job, MetadataDraft, MetadataField } from '@shared/domain'
 import { formatBpm, formatCents, formatDuration } from '@shared/format'
 import { VERDICT_LABEL } from '@shared/verification'
 import { renderTemplate } from '@shared/template'
-import { coverArtFor } from '@shared/url'
 import { cn } from '@/lib/cn'
 import { useApp } from '@/store/app'
 import { Accordion } from '@/components/ui/Accordion'
@@ -51,7 +50,7 @@ function MetaField({
         value={local}
         placeholder={placeholder}
         spellCheck={false}
-        className={cn('h-9 text-[12.5px]', mono && 'font-mono')}
+        className={cn('h-7 rounded-[4px] bg-transparent px-2 text-[12px] focus:bg-transparent', mono && 'font-mono')}
         onChange={(event) => setLocal(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -82,7 +81,6 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
 
   const draft = job.metadata
   const final = draft.final
-  const cover = job.thumbnail ?? coverArtFor(job.url)
 
   const edit = (field: MetadataField, raw: string): void => {
     const numeric = field === 'bpm' || field === 'altBpm' || field === 'detune'
@@ -117,34 +115,20 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
   }, [draft.evidence])
 
   return (
-    <aside aria-label="Download metadata inspector" className="studio-panel relative flex min-h-0 w-[292px] shrink-0 flex-col overflow-hidden xl:w-[320px] 2xl:w-[348px]">
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
-        <SlidersHorizontal className="size-3.5 text-fg-subtle" />
-        <h2 className="flex-1 text-[13px] font-semibold tracking-tight text-fg">Metadata</h2>
+    <aside aria-label="Download metadata inspector" className="flex min-h-0 w-[292px] shrink-0 flex-col overflow-hidden border-l border-line pl-4 xl:w-[300px]">
+      <div className="flex shrink-0 items-center gap-2 pb-2">
+        <h2 className="flex-1 text-[12px] font-medium text-fg">Metadata</h2>
         {draft.overrides.length > 0 ? (
-          <Badge size="sm" tone="accent">
-            {draft.overrides.length} manual
-          </Badge>
+          <span className="text-[10.5px] text-fg-subtle">{draft.overrides.length} manual</span>
         ) : (
           <span className="text-[10.5px] text-fg-subtle">Source values</span>
         )}
-        <IconButton label="Close inspector" size="icon-sm" onClick={() => setSelectedJob(null)}>
+        <IconButton label="Close inspector" size="icon-xs" onClick={() => setSelectedJob(null)}>
           <X />
         </IconButton>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-        <div className="flex items-center gap-3 border-b border-line pb-4">
-          <div className="relative grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-fg-subtle">
-            <Music2 className="size-4" />
-            {cover ? <img src={cover} alt="" className="absolute inset-0 size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : null}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-[12px] font-medium text-fg">{final.title || job.sourceTitle || 'Untitled'}</p>
-            <p className="mt-0.5 truncate text-[11px] text-fg-subtle">{job.uploader || final.producer || 'Source audio'} · {formatDuration(job.durationSec)}</p>
-          </div>
-        </div>
-        <p className="section-label">Track details</p>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
         <MetaField
           label="Title"
           value={final.title}
@@ -159,8 +143,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
           onCommit={(raw) => edit('producer', raw)}
         />
 
-        <p className="section-label border-t border-line pt-4">Musical properties</p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 border-t border-line pt-3">
           <MetaField
             label="BPM"
             hint={
@@ -204,12 +187,11 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         />
 
         {/* Live filename preview — the exact name the exporter will write. */}
-        <div className="rounded-xl border border-line bg-surface-2/60 p-3.5">
-          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-medium tracking-[0.1em] text-fg-subtle uppercase">
-            <FileAudio2 className="size-3.5" />
+        <div className="border-t border-line py-3">
+          <div className="mb-1.5 text-[11px] text-fg-subtle">
             Output file name
           </div>
-          <div className="font-mono text-[11.5px] leading-relaxed break-all text-fg">
+          <div className="font-mono text-[11px] leading-relaxed break-all text-fg-muted">
             {preview.rendered || 'untitled'}
           </div>
           {preview.unknownTokens.length > 0 ? (
@@ -221,6 +203,8 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         </div>
 
         <Accordion
+          bare
+          className="border-t border-line [&>button]:px-0 [&>button]:py-2 [&_.t-acc-panel-inner>div]:px-0"
           title="Evidence"
           summary={`${draft.evidence.length}`}
           defaultOpen={draft.evidence.length > 0}
@@ -253,7 +237,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         </Accordion>
 
         {draft.conflicts.length > 0 ? (
-          <Accordion title="Conflicts" summary={`${draft.conflicts.length}`} defaultOpen>
+          <Accordion bare className="border-t border-line [&>button]:px-0 [&>button]:py-2 [&_.t-acc-panel-inner>div]:px-0" title="Conflicts" summary={`${draft.conflicts.length}`} defaultOpen>
             <ul className="space-y-2">
               {draft.conflicts.map((conflict) => (
                 <li key={conflict.field} className="flex items-start gap-2 text-[11.5px]">
@@ -270,7 +254,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
           </Accordion>
         ) : null}
 
-        <Accordion title="Source" summary={job.uploader ?? undefined}>
+        <Accordion bare className="border-t border-line [&>button]:px-0 [&>button]:py-2 [&_.t-acc-panel-inner>div]:px-0" title="Source" summary={job.uploader ?? undefined}>
           <dl className="space-y-2 text-[11.5px]">
             <div className="flex justify-between gap-3">
               <dt className="text-fg-subtle">Duration</dt>
@@ -292,12 +276,12 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         <AnalysisPanel job={job} />
       </div>
 
-      <div className="shrink-0 space-y-1.5 border-t border-line bg-surface-2/40 p-3">
+      <div className="shrink-0 border-t border-line pt-2">
         <button
           type="button"
           disabled={draft.overrides.length === 0}
           onClick={() => void updateJob(job.id, { clearOverrides: draft.overrides })}
-          className="flex w-full items-center justify-center gap-1.5 rounded-[9px] border border-line bg-surface-2 px-3 py-2 text-[12px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+          className="flex h-7 w-full items-center justify-center gap-1.5 rounded-[4px] px-2 text-[11px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
         >
           <RotateCcw className="size-3.5" />
           Clear {draft.overrides.length} manual override{draft.overrides.length === 1 ? '' : 's'}
@@ -326,6 +310,8 @@ function AnalysisPanel({ job }: { job: Job }): ReactNode {
 
   return (
     <Accordion
+      bare
+      className="border-t border-line [&>button]:px-0 [&>button]:py-2 [&_.t-acc-panel-inner>div]:px-0"
       title="Audio analysis"
       summary={analysis ? describeStatus(analysis) : 'not run'}
       defaultOpen={analysis != null}
@@ -403,7 +389,7 @@ function AnalysisPanel({ job }: { job: Job }): ReactNode {
             <button
               type="button"
               onClick={() => void updateJob(job.id, { adoptAnalyzed: [...adoptable] })}
-              className="flex w-full items-center justify-center gap-1.5 rounded-[8px] bg-accent-soft px-3 py-1.5 text-[11.5px] font-medium text-accent transition-colors duration-[var(--duration-quick)] hover:bg-[var(--sonic-accent-line)]"
+              className="flex w-full items-center justify-center gap-1.5 rounded-[4px] border border-line px-2 py-1.5 text-[11px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
             >
               <Wand2 className="size-3.5" />
               Use detected {adoptable.join(' + ')}

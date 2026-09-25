@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight, Command, Moon, Sun } from 'lucide-react'
+import { Command, Moon, Sun } from 'lucide-react'
 import { toast } from '@/components/ui/Toaster'
 import { cn } from '@/lib/cn'
 import { ipc } from '@/lib/ipc'
@@ -68,7 +68,6 @@ export function TitleBar(): ReactNode {
   const cycleTheme = useApp((state) => state.cycleTheme)
   const setCommandOpen = useApp((state) => state.setCommandOpen)
   const themeMode = useApp((state) => state.settings.theme)
-  const view = useApp((state) => state.view)
   const theme = useResolvedTheme()
   const [maximized, setMaximized] = useState(false)
 
@@ -79,14 +78,9 @@ export function TitleBar(): ReactNode {
   useIpcEvent('window:maximized', setMaximized)
 
   return (
-    <header className="drag-region relative z-40 flex h-[52px] shrink-0 items-end bg-surface">
-      <div className="flex h-11 w-[212px] shrink-0 items-center px-6 xl:w-[228px]">
+    <header className="drag-region relative z-40 flex h-[52px] shrink-0 items-end bg-bg shadow-[inset_0_-1px_0_var(--sonic-border)]">
+      <div className="flex h-11 min-w-0 flex-1 items-center px-5">
         <Wordmark />
-      </div>
-      <div className="flex h-11 min-w-0 flex-1 items-center gap-2.5 px-5 text-[11px]">
-        <span className="text-fg-subtle">Studio</span>
-        <ChevronRight aria-hidden="true" className="size-3 text-fg-subtle/60" />
-        <span className="font-medium text-fg-muted">{view === 'download' ? 'Download' : view === 'library' ? 'Library' : 'Settings'}</span>
       </div>
 
       {/* Windows reserves the outer resize border before Chromium hit testing.
@@ -97,7 +91,7 @@ export function TitleBar(): ReactNode {
           onClick={() => void cycleTheme()}
           title={`Theme: ${THEME_LABELS[themeMode]} — click to cycle`}
           aria-label={`Theme: ${THEME_LABELS[themeMode]}. Click to cycle.`}
-          className="grid size-8 self-center place-items-center rounded-[7px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
+          className="grid size-8 self-center place-items-center rounded-[5px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
         >
           <IconSwap
             swapped={theme === 'light'}
@@ -110,16 +104,16 @@ export function TitleBar(): ReactNode {
         <button
           type="button"
           onClick={() => setCommandOpen(true)}
-          className="flex h-7 self-center items-center gap-2 rounded-[6px] border border-line bg-surface pr-1.5 pl-2 text-[10.5px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:bg-surface-2 hover:text-fg"
+          className="flex h-7 self-center items-center gap-2 rounded-[5px] px-2 text-[11px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
         >
           <Command aria-hidden="true" className="size-3 text-fg-subtle" />
           <span>Commands</span>
-          <kbd className="rounded-[3px] border border-line bg-surface-2 px-1 text-[9px] font-medium text-fg-subtle">
+          <kbd className="ml-1 text-[10px] font-medium text-fg-subtle">
             Ctrl K
           </kbd>
         </button>
 
-        <span className="self-center mx-1 h-5 w-px bg-line" />
+        <span aria-hidden="true" className="w-2" />
 
         <WindowButton kind="minimize" label="Minimize" onClick={() => ipc.invoke('window:minimize')} />
         <WindowButton

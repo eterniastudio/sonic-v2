@@ -2,8 +2,8 @@ import { forwardRef, type InputHTMLAttributes, type ReactNode, type TextareaHTML
 import { cn } from '@/lib/cn'
 
 const fieldSurface = [
-  'w-full bg-surface-2/60 text-fg placeholder:text-fg-subtle',
-  'border border-line rounded-[8px]',
+  'w-full bg-transparent text-fg placeholder:text-fg-subtle',
+  'border border-line-strong/60 rounded-[6px]',
   'transition-[border-color,background-color,box-shadow]',
   'duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
   'hover:border-line-strong',
@@ -42,7 +42,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         ref={ref}
         className={cn(
           fieldSurface,
-          'h-9 px-3 text-[12.5px]',
+          'h-8 px-2.5 text-[12px]',
           leading && 'pl-9.5',
           trailing && 'pr-9.5',
           invalid && 'border-danger/50',
