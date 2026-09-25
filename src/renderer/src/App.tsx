@@ -13,6 +13,8 @@ import { Toaster, toast } from '@/components/ui/Toaster'
 import { Logo } from '@/components/shell/Logo'
 import { DownloadView } from '@/features/download/DownloadView'
 import { LibraryView } from '@/features/library/LibraryView'
+import { PlaybackDock } from '@/features/playback/PlaybackDock'
+import { PlaybackProvider } from '@/features/playback/playbackSession'
 import { SettingsView } from '@/features/settings/SettingsView'
 
 /** First-paint splash while the main process answers the bootstrap calls. */
@@ -78,6 +80,7 @@ export function App(): ReactNode {
   if (!booted) return <BootSplash />
 
   return (
+    <PlaybackProvider>
     <div className="relative flex h-full flex-col overflow-hidden bg-bg text-fg">
       <TitleBar />
       <StorageFeedback />
@@ -103,10 +106,13 @@ export function App(): ReactNode {
         </main>
       </div>
 
+      <PlaybackDock />
+
       {/* Ctrl+K is handled globally; this keeps the palette mounted for exits. */}
       <CommandPalette />
       {commandOpen ? null : null}
       <Toaster />
     </div>
+    </PlaybackProvider>
   )
 }

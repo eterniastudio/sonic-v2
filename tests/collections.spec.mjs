@@ -307,7 +307,7 @@ test('selection follows displayed order while preview and text-input shortcuts r
   await expect(page.getByText('3 selected', { exact: true })).toBeVisible()
 
   await page.locator(`[data-beat-id="${beats[0].id}"]`).click()
-  await expect(page.locator('[data-preview-state]')).toHaveAttribute('data-preview-state', 'ready')
+  await expect(page.locator('[data-preview-state]')).toHaveAttribute('data-preview-state', 'inspecting')
   await expect(page.locator('[data-preview-state]')).toContainText(beats[0].title)
   const keyboardCheckbox = page.locator(`[data-beat-id="${ordered[2]}"]`).getByRole('checkbox')
   await keyboardCheckbox.focus()

@@ -35,10 +35,10 @@ export async function fileSize(target: string): Promise<number> {
 }
 
 /** Streaming SHA-256 of a file, used as the identity fingerprint for exports. */
-export function sha256File(target: string): Promise<string> {
+export function sha256File(target: string, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256')
-    const stream = createReadStream(target)
+    const stream = createReadStream(target, { signal })
     stream.on('error', reject)
     stream.on('data', (chunk) => hash.update(chunk))
     stream.on('end', () => resolve(hash.digest('hex')))

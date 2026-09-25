@@ -3,9 +3,11 @@ import type { StorageStatus } from '@shared/ipc'
 import { ipc } from '@/lib/ipc'
 import { useIpcEvent } from '@/lib/hooks'
 import { useApp } from '@/store/app'
+import { usePlaybackActions } from '@/features/playback/playbackSession'
 
 /** Persistent feedback survives toast expiry and is reconstructed from committed library state. */
 export function StorageFeedback(): React.JSX.Element | null {
+  const { retrySave: retryPlaybackSave } = usePlaybackActions()
   const [stores, setStores] = useState<StorageStatus[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -20,7 +22,12 @@ export function StorageFeedback(): React.JSX.Element | null {
     setBusy(true)
     setError(null)
     try {
-      setStores(await ipc.invoke('storage:retry'))
+      // A playback failure also leaves a serialized renderer revision queued.
+      // Retrying only the main store would leave that queue blocked at close.
+      if (failures.some(store => /[\\/]playback-session\.json$/i.test(store.file))) {
+        await retryPlaybackSave()
+        setStores(await ipc.invoke('storage:status'))
+      } else setStores(await ipc.invoke('storage:retry'))
       for (const beat of sidecars) useApp.setState({ library: await ipc.invoke('library:retrySidecar', beat.id) })
     } catch (e) { setError(String(e)) } finally { setBusy(false) }
   }

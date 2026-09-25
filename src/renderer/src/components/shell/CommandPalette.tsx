@@ -16,9 +16,11 @@ import { PRESETS } from '@shared/presets'
 import { formatBpm } from '@shared/format'
 import { useApp } from '@/store/app'
 import { toast } from '@/components/ui/Toaster'
+import { usePlaybackActions } from '@/features/playback/playbackSession'
 
 /** The ⌘K surface: navigation, queue control, appearance and beat search. */
 export function CommandPalette(): ReactNode {
+  const { playOne } = usePlaybackActions()
   const open = useApp((state) => state.commandOpen)
   const setCommandOpen = useApp((state) => state.setCommandOpen)
   const setView = useApp((state) => state.setView)
@@ -167,10 +169,19 @@ export function CommandPalette(): ReactNode {
           setLibraryFocus(beat.id)
         }
       })
+      if (!beat.missing) list.push({
+        id: `play-beat-${beat.id}`,
+        group: 'Play beats',
+        label: `Play ${beat.title}`,
+        hint: meta || undefined,
+        icon: <Play />,
+        keywords: `${beat.producer ?? ''} ${beat.fileName} audition listen`,
+        onSelect: () => playOne(beat.id)
+      })
     }
 
     return list
-  }, [jobs, library, paused, settings.defaultPresetId, settings.downloadDir, settings.theme, setLibraryFocus, setView])
+  }, [jobs, library, paused, settings.defaultPresetId, settings.downloadDir, settings.theme, setLibraryFocus, setView, playOne])
 
   return (
     <AppleSpotlight

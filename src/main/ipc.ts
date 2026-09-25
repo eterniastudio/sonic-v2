@@ -15,6 +15,7 @@ import { libraryService } from './services/library'
 import { localImportService } from './services/localImport'
 import { organizationService, validateOrganizationCommand } from './services/organization'
 import { batchOperations } from './services/batchOperations'
+import { playbackSessionService, validatePlaybackCheckpoint } from './services/playbackSession'
 import { validateBatchRequest } from '@shared/batch'
 import { defaultDownloadDir } from './services/paths'
 import { probeUrl } from './services/probe'
@@ -41,7 +42,9 @@ function handle<K extends IpcChannel>(channel: K, handler: Handler<K>): void {
     assertValidArguments(channel, args)
     const readOnly = /:(get|list|snapshot|status|info|isMaximized|readClipboard|previewTemplate|parse|openSidecar)$/.test(channel)
     if (channel.startsWith('window:') || channel === 'storage:status' || channel === 'storage:retry') return handler(...(args as IpcMap[K]['args']))
-    if (!readOnly) assertAccepting()
+    // The shell's close handshake must be able to finish already pending
+    // listening checkpoints after new work has been refused.
+    if (!readOnly && channel !== 'playback:checkpoint') assertAccepting()
     return ownOperation(async () => {
       const result = await handler(...(args as IpcMap[K]['args']))
       // Queue progress is optimistic/debounced; user-command acknowledgement is a disk commit.
@@ -117,14 +120,14 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
   const [a, b, c] = args
   let valid = false
   switch (channel) {
-    case 'storage:status': case 'storage:retry': case 'app:readClipboard': case 'app:info':
+    case 'playback:get': case 'storage:status': case 'storage:retry': case 'app:readClipboard': case 'app:info':
     case 'window:minimize': case 'window:toggleMaximize': case 'window:close': case 'window:isMaximized':
     case 'engine:status': case 'engine:setup': case 'settings:get': case 'settings:chooseDir': case 'queue:snapshot':
     case 'queue:clearFinished': case 'library:list': case 'library:rescan': case 'import:chooseFiles':
     case 'organization:snapshot':
     case 'analysis:queueMissing': case 'analysis:clearCache': case 'analysis:status':
       valid = args.length === 0; break
-    case 'library:retrySidecar': case 'queue:remove': case 'queue:cancel': case 'queue:retry':
+    case 'playback:identity': case 'library:retrySidecar': case 'queue:remove': case 'queue:cancel': case 'queue:retry':
     case 'queue:revealOutput': case 'queue:openOutput': case 'library:openSource':
     case 'library:refreshSource': case 'library:revealFile': case 'library:openFile':
     case 'library:openSidecarFile': case 'analysis:cancel':
@@ -132,6 +135,8 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
       valid = args.length === 1 && isId(a); break
     case 'organization:command':
       valid = args.length === 1 && validateOrganizationCommand(a); break
+    case 'playback:checkpoint':
+      valid = args.length === 1 && validatePlaybackCheckpoint(a); break
     case 'batch:start':
       if (args.length === 1) {
         try { validateBatchRequest(a); valid = true } catch { valid = false }
@@ -189,6 +194,9 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
 }
 
 export function registerIpcHandlers(): void {
+  handle('playback:get', () => playbackSessionService.snapshot())
+  handle('playback:identity', beatId => playbackSessionService.identity(beatId))
+  handle('playback:checkpoint', command => playbackSessionService.checkpoint(command))
   handle('storage:status', () => storageStatus())
   handle('storage:retry', () => {
     queueService.flush()

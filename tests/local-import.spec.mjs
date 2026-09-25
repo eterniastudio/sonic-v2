@@ -103,7 +103,9 @@ test('file import supports review, audition, correction, analysis, export, resta
   const card = page.locator(`[data-beat-id="${record.id}"]`)
   await expect(card).toBeVisible()
   await card.click()
-  await expect(page.locator('[data-preview-state]')).toHaveAttribute('data-preview-state', 'ready')
+  await expect(page.locator('[data-preview-state]')).toHaveAttribute('data-preview-state', 'inspecting')
+  await page.getByRole('button', { name: 'Play this beat', exact: true }).click()
+  await expect(page.locator('[data-playback-dock]')).toHaveAttribute('data-playback-state', 'playing')
 
   const corrected = (await invoke('library:updateMetadata', record.id, { bpm: 136, key: 'F# minor' })).find(beat => beat.id === record.id)
   expect(corrected.bpm).toBe(136)
