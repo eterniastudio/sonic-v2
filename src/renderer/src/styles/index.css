@@ -14,19 +14,18 @@
 [data-theme='light'] {
   color-scheme: light;
 
-  --sonic-bg: #ffffff;
-  --sonic-bg-deep: #f8f8f9;
+  --sonic-bg: #f8f9fb;
+  --sonic-bg-deep: #eceff4;
   --sonic-surface: #ffffff;
-  --sonic-surface-2: #f5f5f6;
-  --sonic-surface-3: #ededee;
-  --sonic-border: #ededee;
-  --sonic-border-strong: #d6d6da;
-  --sonic-fg: #242428;
-  --sonic-fg-muted: #606068;
-  --sonic-fg-subtle: #717179;
-  --sonic-primary: #28282d;
-  --sonic-primary-fg: #ffffff;
-  --sonic-primary-hover: #404048;
+  --sonic-surface-2: #edf0f5;
+  --sonic-surface-3: #e3e8f0;
+  --sonic-border: #e0e5ed;
+  --sonic-border-strong: #c2cad7;
+  --sonic-fg: #202838;
+  --sonic-fg-muted: #536074;
+  --sonic-fg-subtle: #647086;
+  --sonic-transport: #ffffff;
+  --sonic-artwork-bg: #e5eaf1;
   --sonic-overlay: rgba(11, 14, 25, 0.4);
   --sonic-fg-on-accent: #ffffff;
 
@@ -50,19 +49,18 @@
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --sonic-bg: #171719;
-  --sonic-bg-deep: #121214;
-  --sonic-surface: #1b1b1e;
-  --sonic-surface-2: #232326;
-  --sonic-surface-3: #2d2d31;
-  --sonic-border: #29292d;
-  --sonic-border-strong: #424248;
-  --sonic-fg: #ededf0;
-  --sonic-fg-muted: #a3a3ac;
-  --sonic-fg-subtle: #92929c;
-  --sonic-primary: #e5e5e9;
-  --sonic-primary-fg: #202024;
-  --sonic-primary-hover: #ffffff;
+  --sonic-bg: #191b22;
+  --sonic-bg-deep: #101217;
+  --sonic-surface: #22252e;
+  --sonic-surface-2: #2a2e39;
+  --sonic-surface-3: #353b48;
+  --sonic-border: #2d323e;
+  --sonic-border-strong: #495365;
+  --sonic-fg: #f0f2f7;
+  --sonic-fg-muted: #b2bacb;
+  --sonic-fg-subtle: #9da8bd;
+  --sonic-transport: #20232b;
+  --sonic-artwork-bg: #2c313d;
   --sonic-overlay: rgba(3, 4, 7, 0.68);
   --sonic-fg-on-accent: #ffffff;
 
@@ -112,6 +110,9 @@
 [data-theme='dark'][data-accent='rose'] { --sonic-accent-fg: #351421; }
 
 :root {
+  --sonic-primary: var(--sonic-accent);
+  --sonic-primary-fg: var(--sonic-accent-fg);
+  --sonic-primary-hover: var(--sonic-accent-hover);
   --sonic-accent-soft: color-mix(in oklab, var(--sonic-accent) 12%, transparent);
   --sonic-accent-softer: color-mix(in oklab, var(--sonic-accent) 6%, transparent);
   --sonic-accent-ring: color-mix(in oklab, var(--sonic-accent) 45%, transparent);
@@ -366,7 +367,7 @@
 
   .page-title {
     color: var(--sonic-fg);
-    font-size: 20px;
+    font-size: 23px;
     line-height: 1.2;
     letter-spacing: -0.025em;
     font-weight: 600;
@@ -385,7 +386,7 @@
 
   @media (max-width: 1199px), (max-height: 760px) {
     .workspace-page { padding: 16px 18px; }
-    .page-title { font-size: 20px; }
+    .page-title { font-size: 22px; }
     .page-description { font-size: 12px; }
   }
 

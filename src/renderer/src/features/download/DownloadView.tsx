@@ -26,9 +26,9 @@ export function DownloadView(): ReactNode {
   return (
     <div className="workspace-page flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 items-center gap-3 pb-3">
-        <h1 className="text-[20px] leading-7 font-semibold tracking-tight text-fg">Downloads</h1>
+        <h1 className="page-title">Downloads</h1>
         {completedCount > 0 ? (
-          <span className="text-[11px] text-fg-subtle nums">{completedCount} exported</span>
+          <span className="text-[11.5px] text-fg-subtle nums">{completedCount} exported</span>
         ) : null}
       </header>
       <div className="flex min-h-0 flex-1 gap-4">

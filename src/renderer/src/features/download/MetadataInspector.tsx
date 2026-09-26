@@ -6,6 +6,7 @@ import { VERDICT_LABEL } from '@shared/verification'
 import { renderTemplate } from '@shared/template'
 import { cn } from '@/lib/cn'
 import { useApp } from '@/store/app'
+import { TrackArtwork } from '@/components/audio/TrackArtwork'
 import { Accordion } from '@/components/ui/Accordion'
 import { Badge } from '@/components/ui/Badge'
 import { IconButton } from '@/components/ui/Button'
@@ -50,7 +51,7 @@ function MetaField({
         value={local}
         placeholder={placeholder}
         spellCheck={false}
-        className={cn('h-7 rounded-[4px] bg-transparent px-2 text-[12px] focus:bg-transparent', mono && 'font-mono')}
+        className={cn('h-7 rounded-[4px] bg-transparent px-2 text-[12.5px] focus:bg-transparent', mono && 'font-mono')}
         onChange={(event) => setLocal(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -115,13 +116,13 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
   }, [draft.evidence])
 
   return (
-    <aside aria-label="Download metadata inspector" className="flex min-h-0 w-[292px] shrink-0 flex-col overflow-hidden border-l border-line pl-4 xl:w-[300px]">
-      <div className="flex shrink-0 items-center gap-2 pb-2">
-        <h2 className="flex-1 text-[12px] font-medium text-fg">Metadata</h2>
+    <aside aria-label="Download metadata inspector" className="flex min-h-0 w-[292px] shrink-0 flex-col overflow-hidden rounded-[10px] bg-surface p-4 xl:w-[300px]">
+      <div className="flex shrink-0 items-center gap-2 pb-3">
+        <h2 className="flex-1 text-[13px] font-medium text-fg">Metadata</h2>
         {draft.overrides.length > 0 ? (
-          <span className="text-[10.5px] text-fg-subtle">{draft.overrides.length} manual</span>
+          <span className="text-[11px] text-fg-subtle">{draft.overrides.length} manual</span>
         ) : (
-          <span className="text-[10.5px] text-fg-subtle">Source values</span>
+          <span className="text-[11px] text-fg-subtle">Source values</span>
         )}
         <IconButton label="Close inspector" size="icon-xs" onClick={() => setSelectedJob(null)}>
           <X />
@@ -129,6 +130,13 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
+        <div className="flex min-w-0 items-center gap-3 pb-1">
+          <TrackArtwork sourceUrl={job.url} title={final.title || job.sourceTitle || 'Untitled'} className="size-11 rounded-[6px]" iconClassName="size-5" />
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-medium text-fg">{final.title || job.sourceTitle || 'Untitled'}</p>
+            <p className="mt-0.5 truncate text-[11.5px] text-fg-subtle">{final.producer || job.uploader || 'Unknown producer'}</p>
+          </div>
+        </div>
         <MetaField
           label="Title"
           value={final.title}
@@ -188,10 +196,10 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
 
         {/* Live filename preview — the exact name the exporter will write. */}
         <div className="border-t border-line py-3">
-          <div className="mb-1.5 text-[11px] text-fg-subtle">
+          <div className="mb-1.5 text-[11.5px] text-fg-subtle">
             Output file name
           </div>
-          <div className="font-mono text-[11px] leading-relaxed break-all text-fg-muted">
+          <div className="font-mono text-[11.5px] leading-relaxed break-all text-fg-muted">
             {preview.rendered || 'untitled'}
           </div>
           {preview.unknownTokens.length > 0 ? (

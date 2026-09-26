@@ -12,7 +12,7 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
     <div className="flex items-baseline justify-between gap-4 py-2">
       <span className="shrink-0 text-[12px] text-fg-muted">{label}</span>
       <span
-        className={`min-w-0 truncate text-right text-[11.5px] text-fg ${mono ? 'font-mono text-[10.5px]' : ''}`}
+        className={`min-w-0 truncate text-right text-[12px] text-fg ${mono ? 'font-mono' : ''}`}
         title={value}
       >
         {value}
@@ -75,7 +75,7 @@ export function AdvancedSection(): ReactNode {
           hint="seconds · 0 disables it"
           note="Checks whether recorded files still exist on your device."
           htmlFor="settings-rescan-interval"
-          className="mt-4 border-t border-line pt-4"
+          className="mt-4 border-t border-line pt-4 [&>div>span]:text-[12px] [&>div:last-child]:text-[12px]"
         >
           <Input
             type="number"

@@ -20,6 +20,7 @@ import { formatBitrate, formatBpm, formatBytes, formatChannelCount, formatDurati
 import { ipc } from '@/lib/ipc'
 import { useIpcEvent, useNow } from '@/lib/hooks'
 import { useApp } from '@/store/app'
+import { TrackArtwork } from '@/components/audio/TrackArtwork'
 import { Badge } from '@/components/ui/Badge'
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/Dropdown'
 import { Button, IconButton } from '@/components/ui/Button'
@@ -84,28 +85,35 @@ export function PreviewTransport({
   }
 
   return (
-    <div data-preview-state="inspecting" className="px-4 pt-1 pb-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
+    <div data-preview-state="inspecting" className="p-4 [@media(max-height:760px)]:p-3">
+      <div className="mb-3 flex items-center justify-between gap-2 [@media(max-height:760px)]:mb-2">
         <span className="section-label">Details</span>
         <IconButton label="Close preview" size="icon-xs" onClick={onClose}><X /></IconButton>
       </div>
-      <h2 className="text-[14px] leading-snug font-semibold tracking-[-0.015em] break-words text-fg">{beat.title}</h2>
-      <p className="mt-1 text-[12px] text-fg-muted">{beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10.5px] text-fg-subtle nums">
+      <div className="[@media(max-height:760px)]:flex [@media(max-height:760px)]:items-start [@media(max-height:760px)]:gap-3">
+        <TrackArtwork sourceUrl={beat.sourceUrl} title={beat.title} className="mb-3.5 h-[140px] w-full rounded-[5px] [@media(max-height:760px)]:mb-0 [@media(max-height:760px)]:size-[72px]" iconClassName="size-7" />
+        <div className="min-w-0">
+          <h2 title={beat.title} className="text-[17px] leading-[1.35] font-semibold tracking-[-0.02em] break-words text-fg [@media(max-height:760px)]:line-clamp-3 [@media(max-height:760px)]:text-[15px] [@media(max-height:760px)]:leading-[1.3]">{beat.title}</h2>
+          <p className="mt-1.5 text-[12.5px] leading-snug text-fg-muted [@media(max-height:760px)]:mt-1 [@media(max-height:760px)]:truncate [@media(max-height:760px)]:text-[12px]">{beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')}</p>
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-subtle nums">
         <span>{beat.format.toUpperCase()}</span><span>·</span><span>{formatDuration(beat.durationSec)}</span><span>·</span><span>{formatBytes(beat.sizeBytes)}</span>
       </div>
       {beat.missing ? <p className="mt-3 text-[11px] leading-relaxed text-warning">Audio file is missing. Restore it to its original location, then rescan the library.</p> : null}
 
-      <div className="my-4 space-y-2.5 text-[11.5px]">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-fg-subtle">Tempo</span>
-          <span className="flex items-center gap-2 text-fg-muted nums">{beat.bpm != null ? `${formatBpm(beat.bpm)} BPM` : '—'}{beat.bpm != null ? <OriginMark origin={bpmDecision.origin} /> : null}</span>
+      <dl className="my-4 grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-x-5 border-y border-line py-3.5 [@media(max-height:760px)]:my-2 [@media(max-height:760px)]:gap-x-4 [@media(max-height:760px)]:py-2">
+        <div className="min-w-0 [@media(max-height:760px)]:grid [@media(max-height:760px)]:grid-cols-[auto_minmax(0,1fr)]">
+          <dt className="text-[11px] text-fg-subtle">Tempo</dt>
+          <dd className="mt-1 text-[21px] leading-tight font-medium tracking-[-0.025em] text-fg nums [@media(max-height:760px)]:col-span-2">{beat.bpm != null ? formatBpm(beat.bpm) : '—'}<span className="ml-1.5 text-[11px] font-normal tracking-normal text-fg-muted">BPM</span></dd>
+          {beat.bpm != null ? <dd className="mt-1 [@media(max-height:760px)]:col-start-2 [@media(max-height:760px)]:row-start-1 [@media(max-height:760px)]:mt-0 [@media(max-height:760px)]:justify-self-end"><OriginMark origin={bpmDecision.origin} /></dd> : null}
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="shrink-0 text-fg-subtle">Key</span>
-          <span className="flex flex-wrap items-center justify-end gap-2 text-fg-muted">{beat.key || 'Not analyzed'}{beat.camelot ? <span className="text-[10px] text-fg-subtle">{beat.camelot}</span> : null}{beat.key ? <OriginMark origin={keyDecision.origin} /> : null}</span>
+        <div className="min-w-0 [@media(max-height:760px)]:grid [@media(max-height:760px)]:grid-cols-[auto_minmax(0,1fr)]">
+          <dt className="text-[11px] text-fg-subtle">Key</dt>
+          <dd className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[16px] leading-tight font-medium tracking-[-0.015em] text-fg [@media(max-height:760px)]:col-span-2 [@media(max-height:760px)]:mt-1">{beat.key || '—'}{beat.camelot ? <span className="text-[11px] font-normal tracking-normal text-fg-muted">{beat.camelot}</span> : null}</dd>
+          {beat.key ? <dd className="mt-1.5 [@media(max-height:760px)]:col-start-2 [@media(max-height:760px)]:row-start-1 [@media(max-height:760px)]:mt-0 [@media(max-height:760px)]:justify-self-end"><OriginMark origin={keyDecision.origin} /></dd> : null}
         </div>
-      </div>
+      </dl>
 
       <div className="flex items-center gap-2">
         <Button variant="secondary" className="flex-1" leading={<Play className="fill-current" />} disabled={beat.missing} onClick={() => playOne(beat.id)}>Play this beat</Button>
@@ -132,7 +140,7 @@ export function PreviewTransport({
         <Tooltip label="Double the tempo"><IconButton label="Double the tempo" size="icon-sm" disabled={beat.bpm == null || beat.bpm * 2 > MAX_BPM} onClick={() => applyBpm((beat.bpm ?? 0) * 2)}><span className="text-[11px] font-medium">2×</span></IconButton></Tooltip>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
         <AnalysisStatusBadge beat={beat} />
         <span className="flex-1" />
         <AnalyzeButton beat={beat} />
@@ -168,7 +176,7 @@ function OriginMark({ origin }: { origin: FieldOrigin }): ReactNode {
   return (
     <span
       title={origin === 'legacy' ? 'Origin was not saved for this older record' : `Source: ${label}`}
-      className="inline-block text-[9px] text-fg-subtle capitalize"
+      className="inline-block text-[10.5px] leading-none text-fg-subtle capitalize"
     >
       {label}
     </span>

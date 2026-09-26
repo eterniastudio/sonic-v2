@@ -1,53 +1,53 @@
-# Sonic minimal workspace UI
+# Sonic music workspace UI
 
-Sonic uses a flat, monochrome workspace with compact controls and locally bundled Inter typography. The layout covers Library, Downloads, Settings, and the persistent player at both standard and minimum desktop sizes.
+Updated September 25, 2026. Sonic keeps compact navigation and an efficient Library while giving artwork, musical metadata, and the persistent audio transport a clearer hierarchy.
 
 ## What changed
 
-- The 180px sidebar and unframed content area use neutral surfaces, quiet selection states, thin dividers, and compact headings. The persistent player is 66px high in its normal state.
-- Library opens in a 52px-row list for new workspaces. Existing saved layout preferences remain intact. Collection tabs use underlines; metadata, corrections, notes, and tags sit in a separate scrolling inspector. Grid view uses compact horizontal tiles and real source artwork when available.
-- Downloads has one outlined link composer, inline export preferences and setup status, 68px queue rows, and a flat metadata inspector. The inspector remains beside the composer at 1024 × 680 and stays dismissed until another job becomes available.
-- Settings uses plain preference rows and compact theme choices. Shared buttons, inputs, segments, focus outlines, and light/dark colors follow the same restrained system. Inter and its OFL license are included in the built app, so typography does not depend on a network connection.
+- The 180px sidebar and title bar form a darker outer shell. A lighter workspace, distinct inspector, and dedicated transport surface provide tonal depth. Light theme uses the same hierarchy. Page titles and track names have stronger emphasis; secondary labels remain readable. Inter is bundled locally with its OFL license.
+- Library retains 52px rows and saved layout preferences. Batch selection uses checked boxes and a restrained accent tint; inspection adds an edge marker and detail icon; playback has an explicit Playing/Paused label; hovering reveals the play action. Keyboard focus has a visible outline. Missing files retain readable labels and an accessible warning.
+- The inspector leads with actual source artwork and track identity, followed by prominent BPM/key and recorded provenance. At shorter window heights, 72px artwork sits beside the title so metadata and Play remain visible. Corrections, file details, notes, and tags remain below. Distinct React keys also fix duplicate inspector content when switching tracks directly.
+- The 77px player includes 52px artwork, track/producer identity, readable BPM/key with recorded provenance, a clear accent play button, and the existing audio-derived waveform. The single playback owner and waveform mount remain intact. Library subscribes only to track/status changes, avoiding rerenders on every playhead update.
+- Downloads adopts the same tonal inspector and clearer typography, retaining 68px queue rows. Settings retains straightforward preference rows with clearer labels. Primary actions, playback progress, focus, and selection use the selected accent; other controls remain quiet.
 
-The four implementation areas were delegated to separate agents. Integration, screenshot review, and verification were performed together. [Hallmark's skill](https://github.com/nutlope/hallmark/blob/main/skills/hallmark/SKILL.md) and its relevant design guidance were read remotely. No skill was downloaded, installed, or copied into the repository.
+Artwork uses the app's existing source-thumbnail capability. Absent or failed images show a neutral audio icon. This change does not add embedded-cover extraction. Metadata provenance follows the existing decision model; unknown values remain unknown. There are no fabricated analysis results, confidence values, decorative waveforms, gradients, or glowing panels.
 
-## Behavior and scope
+The Library and player were implemented and visually inspected in the running Electron app before the direction was propagated to Downloads and Settings. Four agents handled bounded implementation areas; a further read-only review checked playback ownership, independent states, accessibility, and provenance. [Hallmark's skill](https://github.com/nutlope/hallmark/blob/main/skills/hallmark/SKILL.md) and relevant guidance were read remotely, without downloading or installing the skill.
 
-This PR is stacked on the Library workspace continuity change in PR #7. Library search, filters, selection, range anchor, scroll, and inspector restoration remain separate from the captured playback queue. Navigation does not submit pending metadata/annotation drafts or reopen action dialogs. Import, export, correction, collection, queue, theme, and native-window controls retain their operations and accessible names.
+## Before and after
 
-The only main-process change is the default Library layout for a new organization record, from grid to list. Existing persisted views are not rewritten. IPC contracts, storage formats, download services, and analysis algorithms are unchanged. Missing tracks show an accessible explanation, and command-palette scrolling respects the effective reduced-motion preference.
+The baseline is commit `b91931a`. Both sets use the same 14-track fixture library: real image elements supplied with clearly labelled original test artwork, absent artwork, a deliberately failed image, a long title, unknown BPM/key, a missing audio file, active playback, multiple selections, and an open inspector. The compared states play Midnight Transit, inspect The Last Train Home, and batch-select two other tracks. Playback time differs because the revised test also exercises seeking.
 
-## Verification
+| Theme and window | Before | After |
+| --- | --- | --- |
+| Dark, 1440 × 960 | [Before](assets/ui-overhaul/comparison/before-library-dark-1440.png) | [After](assets/ui-overhaul/comparison/after-library-dark-1440.png) |
+| Dark, 1024 × 680 | [Before](assets/ui-overhaul/comparison/before-library-dark-1024.png) | [After](assets/ui-overhaul/comparison/after-library-dark-1024.png) |
+| Light, 1440 × 960 | [Before](assets/ui-overhaul/comparison/before-library-light-1440.png) | [After](assets/ui-overhaul/comparison/after-library-light-1440.png) |
+| Light, 1024 × 680 | [Before](assets/ui-overhaul/comparison/before-library-light-1024.png) | [After](assets/ui-overhaul/comparison/after-library-light-1024.png) |
 
-Typechecking and the production build passed. The final regression run passed 43 cases in 4.6 minutes, with one native Windows pointer test skipped and no retries or unexpected failures. This includes eight component cases, all five Library workspace cases, collections, real playback, interaction checks, and both visual/contrast cases. Local report: `test-results/reports/1790302056233-b0dfcafb-24c4-4590-85be-bc70db0ff126.json`.
+All four comparisons were visually inspected. The first pass revealed that large inspector artwork pushed metadata below the fold at minimum size; the compact arrangement fixes that. Additional captures cover absent/failed artwork, missing-file controls, unknown metadata, and simultaneous focus/hover. Test artwork is intercepted offline, and the audio is generated WAV content. These are fixtures, not the user's library; displayed musical values are explicitly manual annotations, not measurements of the generated audio.
 
-The native pointer test could not acquire Windows foreground input. Chromium pointer tests for window controls, including button edges, passed. Primary-button text exceeded 4.5:1 contrast in all 20 theme/accent/hover combinations, and keyboard focus retained a visible 2px outline.
+![Library with distinct artwork, inspection, selection, and playback](assets/ui-overhaul/library-dark-1440.png)
+
+![Minimum-size Library and transport in light theme](assets/ui-overhaul/library-light-1024.png)
+
+![Downloads at minimum window size](assets/ui-overhaul/download-dark-1024.png)
+
+![Settings with clearer preference rows](assets/ui-overhaul/settings-dark-1440.png)
+
+## Behavior and verification
+
+This PR is stacked on Library workspace continuity PR #7. Search, filters, selection, range anchor, scroll, and inspector restoration remain separate from the captured playback queue. Import, export, correction, collections, queue management, theme settings, reduced motion, and native window controls retain their behavior. The only main-process change in the complete PR remains the default layout for new Library workspaces, from grid to list; existing saved views are preserved. IPC contracts, storage formats, and analysis algorithms are unchanged.
+
+Typechecking and the production build passed. The final regression run passed 44 cases in 5.4 minutes, with one Windows OS pointer case skipped and no retries or failures. It covers eight component cases, five Library workspace cases, collections, playback, interactions, and three visual/contrast cases. Local report: `test-results/reports/music-workspace-final-20260925.json`.
+
+Windows foreground locking prevented the OS pointer case from receiving input. Chromium pointer coverage for window controls, including their edges, passed. A subsequent focused run passed after adding a keyboard-modality assertion for the selection checkbox's visible 2px outline in both themes; report: `test-results/reports/music-workspace-focus-20260925.json`. Captures show [dark keyboard focus with hover](assets/ui-overhaul/comparison/after-focus-hover-dark-1024.png), [light keyboard focus with hover](assets/ui-overhaul/comparison/after-focus-hover-light-1024.png), and [unknown metadata in the player](assets/ui-overhaul/comparison/after-player-unknown-light-1024.png).
 
 ```powershell
 npm run typecheck
 npm run build
 node scripts/build-component-harness.mjs
-npx playwright test tests/ui-redesign.spec.mjs tests/components.spec.mjs tests/library-workspace.spec.mjs tests/interactions.spec.mjs tests/collections.spec.mjs tests/playback.spec.mjs
+npx playwright test tests/music-workspace.spec.mjs tests/ui-redesign.spec.mjs tests/components.spec.mjs tests/library-workspace.spec.mjs tests/interactions.spec.mjs tests/collections.spec.mjs tests/playback.spec.mjs
 ```
 
-The UI cases use isolated temporary profiles and generated WAV fixtures. They check both themes at 1440 × 960 and 1024 × 680, default list selection, locally loaded Inter, horizontal overflow, unobstructed queue submission, visible player controls, theme-control containment, slider targets of at least 24px, inspector dismissal/reopening, and primary-button contrast across all five accents at rest and on hover. This is targeted contrast coverage, not a full accessibility audit. Packaged/installed-app execution is outside this verification.
-
-## Screenshots
-
-These captures show the running Electron app with generated fixture audio and sample titles, not the user's music library.
-
-Library, dark theme, 1440 × 960:
-
-![Dark Library with compact track rows and inspector](assets/ui-overhaul/library-dark-1440.png)
-
-Library, light theme, minimum window:
-
-![Light Library at 1024 by 680](assets/ui-overhaul/library-light-1024.png)
-
-Downloads, minimum window:
-
-![Downloads at 1024 by 680](assets/ui-overhaul/download-dark-1024.png)
-
-Settings, dark theme:
-
-![Settings with compact preference rows](assets/ui-overhaul/settings-dark-1440.png)
+The visual tests cover both themes at 1440 × 960 and 1024 × 680, independent playing/inspected/selected tracks, direct inspector switching, play/pause/seek, image fallback, unknown metadata, missing-file restrictions, visible metadata and Play at minimum size, local fonts, horizontal overflow, unobstructed controls, inspector dismissal/reopening, slider targets of at least 24px, and primary-button contrast across all five accents at rest and on hover. Primary-button text passed 4.5:1 in all 20 combinations. This is targeted contrast coverage, not a full accessibility audit. Packaged/installed-app execution is outside this verification.

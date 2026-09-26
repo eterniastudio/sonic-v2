@@ -48,7 +48,7 @@ export function AppearanceSection(): ReactNode {
               title={accent.label}
               onClick={() => void patchSettings({ accent: accent.id })}
               className={cn(
-                'inline-flex h-8 items-center gap-1.5 rounded-md border px-2 text-[11.5px] transition-colors',
+                'inline-flex h-8 items-center gap-1.5 rounded-md border px-2 text-[12px] transition-colors',
                 settings.accent === accent.id ? 'border-line-strong bg-surface-2 text-fg' : 'border-transparent text-fg-muted hover:bg-surface-2'
               )}
             >

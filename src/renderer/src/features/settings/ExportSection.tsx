@@ -47,14 +47,14 @@ export function ExportSection(): ReactNode {
   return (
     <div>
       <SettingsPanel title="Destination">
-        <Field label="Export folder" htmlFor="settings-export-folder" hint="Where finished beats are published">
+        <Field label="Export folder" htmlFor="settings-export-folder" hint="Where finished beats are published" className="[&>div>span]:text-[12px]">
           <div className="flex gap-2">
             <div className="min-w-0 flex-1">
               <Input
                 id="settings-export-folder"
                 value={settings.downloadDir}
                 readOnly
-                className="font-mono text-[11.5px]"
+                className="font-mono text-[12px]"
                 leading={<FolderOpen />}
               />
             </div>
@@ -68,6 +68,7 @@ export function ExportSection(): ReactNode {
       <SettingsPanel title="Naming" bodyClassName="space-y-3">
         <Field
           label="File name template"
+          className="[&>div>span]:text-[12px] [&>div:last-child]:text-[12px]"
           htmlFor="settings-naming-template"
           hint={`${TEMPLATE_TOKENS.length} tokens available`}
           note={
@@ -89,7 +90,7 @@ export function ExportSection(): ReactNode {
           />
         </Field>
 
-        <div className="flex items-baseline gap-3 text-[11.5px]">
+        <div className="flex items-baseline gap-3 text-[12px]">
           <span className="shrink-0 text-fg-subtle">Preview</span>
           <div className="min-w-0 font-mono break-all text-fg-muted">
             {preview?.rendered || 'untitled'}.{preset.extension}
@@ -100,10 +101,10 @@ export function ExportSection(): ReactNode {
           <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5">
             {TEMPLATE_TOKEN_HELP.map((entry) => (
               <li key={entry.token} className="flex items-baseline gap-2">
-                <code className="shrink-0 rounded-[4px] bg-surface-3 px-1 py-0.5 font-mono text-[10.5px] text-accent">
+                <code className="shrink-0 rounded-[4px] bg-surface-3 px-1 py-0.5 font-mono text-[12px] text-fg">
                   {`{${entry.token}}`}
                 </code>
-                <span className="truncate text-[11px] text-fg-muted">{entry.description}</span>
+                <span className="truncate text-[12px] text-fg-muted">{entry.description}</span>
               </li>
             ))}
           </ul>
@@ -156,10 +157,11 @@ export function ExportSection(): ReactNode {
           </Field>
         </div>
 
-        <p className="text-[11.5px] leading-relaxed text-fg-subtle">{preset.description}</p>
+        <p className="text-[12px] leading-relaxed text-fg-subtle">{preset.description}</p>
 
         <Field
           label="Loudness normalisation"
+          className="[&>div>span]:text-[12px] [&>div:last-child]:text-[12px]"
           hint="Off by default — on changes the audio"
           note="Leave this off unless your destination asks for a specific loudness target."
         >
@@ -187,7 +189,7 @@ export function ExportSection(): ReactNode {
                   onChange={(event) => void patchSettings({ normalizeLufs: Number(event.target.value) })}
                   className="w-32 accent-[var(--sonic-accent)]"
                 />
-                <Badge tone="accent" size="sm">
+                <Badge tone="neutral" size="sm" className="h-6 text-[12px]">
                   {settings.normalizeLufs} LUFS
                 </Badge>
               </div>
@@ -210,7 +212,7 @@ export function ExportSection(): ReactNode {
         <div className="flex items-center gap-3 border-t border-line py-3">
           <span className="flex-1 text-[12.5px] text-fg-muted">
             Concurrent analyses
-            <span className="mt-0.5 block text-[11px] text-fg-subtle">
+            <span className="mt-0.5 block text-[12px] text-fg-subtle">
               One at a time keeps your workspace responsive.
             </span>
           </span>
@@ -228,7 +230,7 @@ export function ExportSection(): ReactNode {
           />
         </div>
 
-        <p className="text-[11.5px] leading-relaxed text-fg-subtle">
+        <p className="text-[12px] leading-relaxed text-fg-subtle">
           Source metadata takes priority. Estimates fill missing fields; disagreements stay visible
           in the metadata inspector.
         </p>

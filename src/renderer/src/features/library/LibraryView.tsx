@@ -37,7 +37,7 @@ import { ImportAudio } from './ImportAudio'
 import { createLibraryIndex, searchLibrary, searchSmartCollection, type LibrarySort } from './librarySearch'
 import { CollectionWorkspace } from './CollectionWorkspace'
 import { AnnotationEditor } from './AnnotationEditor'
-import { usePlaybackActions } from '@/features/playback/playbackSession'
+import { usePlaybackActions, usePlaybackIdentity } from '@/features/playback/playbackSession'
 
 const SORTS: { key: LibrarySort; label: string }[] = [
   { key: 'manual', label: 'Collection order' },
@@ -61,6 +61,7 @@ const TEMPO_BANDS: { id: string; label: string }[] = [
 export function LibraryView(): ReactNode {
   const reducedMotion = useReducedMotion()
   const { playOne, playQueue } = usePlaybackActions()
+  const { beatId: playbackBeatId, status: playbackStatus } = usePlaybackIdentity()
   const library = useApp((state) => state.library)
   const rescanLibrary = useApp((state) => state.rescanLibrary)
   const removeBeat = useApp((state) => state.removeBeat)
@@ -571,6 +572,7 @@ export function LibraryView(): ReactNode {
                 <BeatCard
                   beat={beat}
                   layout="grid"
+                  playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
                   selected={selectedId === beat.id}
                   batchSelected={selectedIds.has(beat.id)}
                   onToggleSelection={() => toggleSelectedId(beat.id)}
@@ -583,8 +585,8 @@ export function LibraryView(): ReactNode {
           </div>
         ) : (
           <div className="@container overflow-hidden">
-            <div aria-hidden="true" className="flex h-8 items-center gap-3 border-b border-line px-2 text-[10.5px] text-fg-subtle">
-              <span className="w-[60px] shrink-0" />
+            <div aria-hidden="true" className="mb-1 flex h-8 items-center gap-3 border-b border-line px-2 text-[11px] text-fg-subtle">
+              <span className="w-[64px] shrink-0" />
               <span className="min-w-0 flex-1">Track</span>
               <span className="hidden w-14 shrink-0 text-right @min-[440px]:block">BPM</span>
               <span className="hidden w-14 shrink-0 text-right @min-[480px]:block">Key</span>
@@ -599,6 +601,7 @@ export function LibraryView(): ReactNode {
                 <BeatCard
                   beat={beat}
                   layout="list"
+                  playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
                   selected={selectedId === beat.id}
                   batchSelected={selectedIds.has(beat.id)}
                   onToggleSelection={() => toggleSelectedId(beat.id)}
@@ -613,9 +616,9 @@ export function LibraryView(): ReactNode {
       </div>
 
       {selected ? (
-        <aside aria-label="Beat inspector" className="min-h-0 w-[268px] max-w-[42%] shrink-0 overflow-y-auto border-l border-line">
+        <aside aria-label="Beat inspector" className="min-h-0 w-[300px] max-w-[39%] shrink-0 overflow-y-auto rounded-[10px] bg-surface">
         <PreviewTransport
-          key={selected.id}
+          key={`preview-${selected.id}`}
           beat={selected}
           onClose={() => setSelectedId(null)}
           onRequestDelete={() => {
@@ -628,7 +631,7 @@ export function LibraryView(): ReactNode {
             setExportError('')
           }}
         />
-        {organization ? <AnnotationEditor key={selected.id} beat={selected} annotation={Object.prototype.hasOwnProperty.call(organization.annotations, selected.id) ? organization.annotations[selected.id] : undefined} command={executeOrganization} /> : null}
+        {organization ? <AnnotationEditor key={`annotations-${selected.id}`} beat={selected} annotation={Object.prototype.hasOwnProperty.call(organization.annotations, selected.id) ? organization.annotations[selected.id] : undefined} command={executeOrganization} /> : null}
         </aside>
       ) : null}
       </div>

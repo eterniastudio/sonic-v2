@@ -60,7 +60,7 @@ export function IntakePanel(): ReactNode {
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
           className={cn(
-            'relative rounded-[5px] border border-line bg-transparent transition-colors focus-within:border-line-strong',
+            'relative rounded-[8px] border border-line bg-surface transition-colors focus-within:border-line-strong',
             dragging && 'border-line-strong bg-surface-2'
           )}
         >
@@ -79,7 +79,7 @@ export function IntakePanel(): ReactNode {
             spellCheck={false}
             placeholder="Paste YouTube beat links — one per line, or all at once."
             className={cn(
-              'min-h-[54px] rounded-none border-0 bg-transparent px-2.5 pt-2.5 pb-1 text-[12px] leading-relaxed focus:bg-transparent focus:shadow-none',
+              'min-h-[54px] rounded-none border-0 bg-transparent px-3 pt-3 pb-1 text-[13px] leading-relaxed focus:bg-transparent focus:shadow-none',
               shakeKey > 0 && acceptedCount === 0 && 't-input is-shaking is-error'
             )}
           />
@@ -96,7 +96,7 @@ export function IntakePanel(): ReactNode {
               <Button variant="ghost" size="xs" leading={<X />} onClick={() => setText('')}>Clear</Button>
             ) : null}
             <span className="flex-1" />
-            <span className="mr-2 hidden text-[10px] text-fg-subtle min-[1350px]:block" aria-hidden>
+            <span className="mr-2 hidden text-[11px] text-fg-subtle min-[1350px]:block" aria-hidden>
               <kbd className="font-sans">Ctrl</kbd> + <kbd className="font-sans">Enter</kbd>
             </span>
             <StatefulButton
@@ -112,7 +112,7 @@ export function IntakePanel(): ReactNode {
             </StatefulButton>
           </div>
           {dragging ? (
-            <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[5px] bg-surface/95 text-[12px] font-medium text-fg">Drop links here</div>
+            <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[8px] bg-surface/95 text-[13px] font-medium text-fg">Drop links here</div>
           ) : null}
         </div>
 
@@ -130,11 +130,11 @@ export function IntakePanel(): ReactNode {
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5">
         <div className="flex items-center gap-1">
-          <span className="text-[11px] text-fg-subtle">Export as</span>
+          <span className="text-[11.5px] text-fg-subtle">Export as</span>
           <Dropdown
             align="start"
             trigger={({ toggle }) => (
-              <Button variant="ghost" size="xs" onClick={toggle} title="Default export format" trailing={<ChevronDown />} className="h-6 px-1.5 text-[11px] text-fg-muted">
+              <Button variant="ghost" size="xs" onClick={toggle} title="Default export format" trailing={<ChevronDown />} className="h-6 px-1.5 text-[11.5px] text-fg-muted">
                 {preset.label}
               </Button>
             )}
@@ -157,9 +157,9 @@ export function IntakePanel(): ReactNode {
             )}
           </Dropdown>
         </div>
-        {acceptedCount > 0 ? <span className="text-[10.5px] text-fg-subtle" role="status">{acceptedCount} ready</span> : null}
+        {acceptedCount > 0 ? <span className="text-[11.5px] text-fg-subtle" role="status">{acceptedCount} ready</span> : null}
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[11px] text-fg-subtle">Auto-start</span>
+          <span className="text-[11.5px] text-fg-subtle">Auto-start</span>
           <Switch checked={settings.autoStart} onChange={(next) => void patchSettings({ autoStart: next })} label="Start downloads automatically" />
         </div>
       </div>

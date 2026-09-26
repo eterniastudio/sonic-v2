@@ -41,7 +41,7 @@ export function Sidebar(): ReactNode {
   const go = (next: ViewId): void => setView(next)
 
   return (
-    <nav aria-label="Main navigation" className="flex w-[180px] shrink-0 flex-col overflow-y-auto border-r border-line bg-bg px-2.5 py-3">
+    <nav aria-label="Main navigation" className="flex w-[180px] shrink-0 flex-col overflow-y-auto bg-bg-deep px-2.5 py-3">
       <div className="space-y-1">
         <NavItem
           icon={<Download />}

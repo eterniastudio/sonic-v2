@@ -54,18 +54,18 @@ export function EngineSection(): ReactNode {
         description="Download and conversion tools."
         bodyClassName="space-y-3"
         accessory={engine?.ready ? (
-            <Badge tone="success" size="sm" icon={<CheckCircle2 />}>
+            <Badge tone="success" size="sm" className="h-6 text-[12px]" icon={<CheckCircle2 />}>
               Ready
             </Badge>
           ) : (
-            <Badge tone="warning" size="sm" icon={<CircleDashed />}>
+            <Badge tone="warning" size="sm" className="h-6 text-[12px]" icon={<CircleDashed />}>
               Incomplete
             </Badge>
           )}
       >
         {progress && progress.phase !== 'idle' && progress.phase !== 'done' ? (
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-[11.5px] text-fg-muted">
+            <div className="flex items-center justify-between text-[12px] text-fg-muted">
               <span>{progress.message}</span>
               <span className="nums">
                 {progress.totalBytes
@@ -90,13 +90,14 @@ export function EngineSection(): ReactNode {
                 )}
               />
               <span className="w-20 shrink-0 font-mono text-[12px] font-medium text-fg">{component.name}</span>
-              <span className="min-w-0 flex-1 truncate text-[11px] text-fg-subtle" title={component.path ?? ''}>
+              <span className="min-w-0 flex-1 truncate text-[12px] text-fg-subtle" title={component.path ?? ''}>
                 {component.version ? `v${component.version}` : 'not found'}
                 {component.origin ? ` · ${component.origin}` : ''}
               </span>
               <Button
                 variant="ghost"
                 size="xs"
+                className="text-[12px]"
                 onClick={() => void pickTool(component.name)}
                 title="Use a specific executable"
               >
@@ -118,7 +119,7 @@ export function EngineSection(): ReactNode {
         ) : null}
 
         {engine?.lastError ? (
-          <p className="text-[11.5px] leading-relaxed text-danger">{engine.lastError}</p>
+          <p className="text-[12px] leading-relaxed text-danger">{engine.lastError}</p>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
@@ -145,7 +146,7 @@ export function EngineSection(): ReactNode {
             <RefreshCw />
           </IconButton>
           {engine?.engineDir ? (
-            <span className="mt-1 block w-full truncate font-mono text-[10.5px] text-fg-subtle">
+            <span className="mt-1 block w-full truncate font-mono text-[12px] text-fg-subtle">
               {engine.engineDir}
             </span>
           ) : null}
@@ -155,6 +156,7 @@ export function EngineSection(): ReactNode {
       <SettingsPanel title="Acquisition" bodyClassName="space-y-4">
         <Field
           label="Use cookies from a browser"
+          className="[&>div>span]:text-[12px] [&>div:last-child]:text-[12px]"
           hint="Only when a source needs a signed-in session"
           note="Sonic reads the browser's own cookie store through yt-dlp. Leave this off unless a specific link fails with a sign-in prompt."
         >
@@ -189,6 +191,7 @@ export function EngineSection(): ReactNode {
 
         <Field
           label="Maximum source length"
+          className="[&>div>span]:text-[12px] [&>div:last-child]:text-[12px]"
           htmlFor="settings-source-length"
           hint="minutes · 0 disables the limit"
           note="A guard against accidentally queueing an hour-long upload."

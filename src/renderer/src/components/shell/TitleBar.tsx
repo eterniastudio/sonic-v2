@@ -78,7 +78,7 @@ export function TitleBar(): ReactNode {
   useIpcEvent('window:maximized', setMaximized)
 
   return (
-    <header className="drag-region relative z-40 flex h-[52px] shrink-0 items-end bg-bg shadow-[inset_0_-1px_0_var(--sonic-border)]">
+    <header className="drag-region relative z-40 flex h-[52px] shrink-0 items-end bg-bg-deep">
       <div className="flex h-11 min-w-0 flex-1 items-center px-5">
         <Wordmark />
       </div>

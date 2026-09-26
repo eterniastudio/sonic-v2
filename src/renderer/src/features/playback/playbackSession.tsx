@@ -33,6 +33,8 @@ interface PlaybackActions {
 
 const ActionsContext = createContext<PlaybackActions | null>(null)
 const StateContext = createContext<PlaybackState | null>(null)
+type PlaybackIdentity = Pick<PlaybackState, 'beatId' | 'status'>
+const IdentityContext = createContext<PlaybackIdentity | null>(null)
 
 function colors(): { wave: string; progress: string; cursor: string } {
   const styles = getComputedStyle(document.documentElement)
@@ -179,6 +181,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }): ReactNo
   }, [controller, theme, accent])
 
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
+  const identity = useMemo<PlaybackIdentity>(() => ({ beatId: state.beatId, status: state.status }), [state.beatId, state.status])
   const actions = useMemo<PlaybackActions>(() => ({
     playOne: id => { userTouched.current = true; controller.playOne(id) },
     playQueue: (ids, startId, label) => { userTouched.current = true; controller.playQueue(ids, startId, label) },
@@ -195,7 +198,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }): ReactNo
     retrySave: () => retryRef.current()
   }), [controller])
 
-  return <ActionsContext.Provider value={actions}><StateContext.Provider value={state}>{children}</StateContext.Provider></ActionsContext.Provider>
+  return <ActionsContext.Provider value={actions}><IdentityContext.Provider value={identity}><StateContext.Provider value={state}>{children}</StateContext.Provider></IdentityContext.Provider></ActionsContext.Provider>
+}
+
+/** Track/status changes only: Library rows do not subscribe to the moving playhead. */
+export function usePlaybackIdentity(): PlaybackIdentity {
+  const identity = useContext(IdentityContext)
+  if (!identity) throw new Error('Playback identity must be inside PlaybackProvider.')
+  return identity
 }
 
 /** Commands-only subscription: a moving playhead cannot rerender Library search/cards. */
