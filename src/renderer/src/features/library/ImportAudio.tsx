@@ -79,7 +79,7 @@ export function ImportAudio(): ReactNode {
     const reportKey = `${review.sessionId}:${phase}`
     if (reportedSession.current === reportKey) return
     reportedSession.current = reportKey
-    void ipc.invoke('library:list').then(library => useApp.setState({ library }))
+    void ipc.invoke('library:list').then(library => useApp.getState().setLibrarySnapshot(library))
       .catch(failure => setError(failure instanceof Error ? failure.message : String(failure)))
     const imported = count(review.items, 'imported')
     const failed = review.items.filter(item => item.status === 'failed' || item.status === 'unreadable').length
@@ -211,7 +211,7 @@ export function ImportAudio(): ReactNode {
   const close = (): void => { void dismiss(false) }
 
   return <>
-    <Button variant="secondary" size="md" leading={<Import />} onClick={() => setOpen(true)}>
+    <Button variant="primary" size="md" leading={<Import />} onClick={() => setOpen(true)}>
       Import audio
     </Button>
     <Modal open={open} onClose={close} blocking={busy || phase === 'scanning' || phase === 'importing'}

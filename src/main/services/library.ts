@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync } from 'node:fs'
-import { readFile, writeFile, unlink, rename, lstat, link, open } from 'node:fs/promises'
+import { readFile, writeFile, unlink, rename, lstat, link, open, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type {
   AnalysisStatus,
@@ -15,10 +15,12 @@ import { renderExportStem, resolveCollision } from '@shared/template'
 import { buildAudioEvidence } from '@shared/metadata'
 import { verifyMetadata } from '@shared/verification'
 import { JsonStore, storageDiagnostic, storageStatus } from '../lib/jsonStore'
-import { fileExists, fileSize, pathExists, sha256File } from '../lib/fsx'
+import { fileExists, sha256File } from '../lib/fsx'
 import { libraryFile } from './paths'
 import { settingsService } from './settings'
 import { isStopping } from '../lifecycle'
+import { capturePhysicalIdentity, samePhysicalFile } from '../lib/fileIdentity'
+import { validOwnershipEvidence, type RecoveryInfo, type ExportOwnershipEvidence } from '@shared/recovery'
 
 /** Fields a manual library edit can address, and therefore can override. */
 const FIELD_KEYS = new Set<string>([
@@ -32,6 +34,9 @@ const FIELD_KEYS = new Set<string>([
   'tuning',
   'genre'
 ])
+
+const SCAN_CONCURRENCY = 8
+type FileObservation = { exists: boolean; isFile: boolean; size: number; error?: string }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -76,6 +81,11 @@ function normalizeLibrary(raw: unknown): LibraryBeat[] {
       filePath,
       fileName: typeof entry.fileName === 'string' ? entry.fileName : path.basename(filePath),
       fileOwnership,
+      ownershipEvidence: fileOwnership === 'sonic-export' && validOwnershipEvidence(entry.ownershipEvidence) ? entry.ownershipEvidence : undefined,
+      recoveryInfo: isRecord(entry.recoveryInfo) && typeof entry.recoveryInfo.recoveredAt === 'number' &&
+        typeof entry.recoveryInfo.previousPath === 'string' && ['retained', 'read-only'].includes(String(entry.recoveryInfo.ownership)) &&
+        ['verified', 'unresolved', 'not-applicable'].includes(String(entry.recoveryInfo.sidecar))
+        ? entry.recoveryInfo as unknown as RecoveryInfo : undefined,
       sidecarPath: fileOwnership === 'external' ? null : typeof entry.sidecarPath === 'string' ? entry.sidecarPath : null,
       sidecarSync: fileOwnership === 'sonic-export' && isRecord(entry.sidecarSync) && ['pending', 'synced', 'error'].includes(String(entry.sidecarSync.status))
         ? entry.sidecarSync as LibraryBeat['sidecarSync'] : undefined,
@@ -87,12 +97,14 @@ function normalizeLibrary(raw: unknown): LibraryBeat[] {
       channels: typeof entry.channels === 'number' ? entry.channels : null,
       sourceUrl: typeof entry.sourceUrl === 'string' ? entry.sourceUrl : null,
       sourceChannel: restoredChannel,
+      thumbnail: typeof entry.thumbnail === 'string' ? entry.thumbnail : null,
       namingTemplate: typeof entry.namingTemplate === 'string' ? entry.namingTemplate : null,
       namingIndex: typeof entry.namingIndex === 'number' ? entry.namingIndex : null,
       sourceKind: (typeof entry.sourceKind === 'string' ? entry.sourceKind : 'unknown') as SourceKind,
       addedAt: typeof entry.addedAt === 'number' ? entry.addedAt : Date.now(),
       fingerprint: typeof entry.fingerprint === 'string' ? entry.fingerprint : '',
       missing: entry.missing === true,
+      fileAccessError: typeof entry.fileAccessError === 'string' ? entry.fileAccessError : null,
       // Records written before analysis existed simply have no analysis, and no
       // knowledge of which fields were hand-edited is invented for them. Analysis
       // only ever fills empty fields, so nothing is lost by defaulting to none.
@@ -205,12 +217,33 @@ export interface DeleteResult {
   reason: string | null
 }
 
+/** Metadata edits are intentionally excluded: recovery always merges into the newest record. */
+export function recoveryRecordKey(beat: LibraryBeat): string {
+  return JSON.stringify([beat.id, beat.filePath, beat.fileName, beat.fingerprint, beat.fileOwnership,
+    beat.ownershipEvidence?.audio ?? null, beat.sidecarPath, beat.sourceKind, beat.sourceUrl])
+}
+
+export interface RecoveryCommit {
+  id: string
+  expected: string
+  filePath: string
+  sizeBytes: number
+  fileOwnership: LibraryBeat['fileOwnership']
+  ownershipEvidence?: ExportOwnershipEvidence
+  sidecarPath: string | null
+  recoveryInfo: RecoveryInfo
+}
+
 class LibraryService extends EventEmitter {
   private store = new JsonStore<LibraryBeat[]>(libraryFile(), [], normalizeLibrary)
   private rescanTimer: NodeJS.Timeout | null = null
   private stopped = false
   private readonly sidecarTasks = new Map<string, Promise<void>>()
   private readonly scanTasks = new Set<Promise<LibraryBeat[]>>()
+  private rescanTask: Promise<LibraryBeat[]> | null = null
+  private viewRecords: LibraryBeat[] | null = null
+  private orderedRecords: LibraryBeat[] | null = null
+  private readonly recordsById = new Map<string, LibraryBeat>()
   private readonly deleting = new Set<string>()
   private readonly beatMutations = new Map<string, Promise<unknown>>()
 
@@ -222,13 +255,90 @@ class LibraryService extends EventEmitter {
     return task
   }
 
+  private refreshViews(): LibraryBeat[] {
+    const records = this.store.read()
+    // JsonStore replaces its committed snapshot on every successful write,
+    // including storage retries, so views never include an unsaved revision.
+    if (records !== this.viewRecords) {
+      this.viewRecords = records
+      this.orderedRecords = null
+      this.recordsById.clear()
+      for (const beat of records) {
+        if (!this.recordsById.has(beat.id)) this.recordsById.set(beat.id, beat)
+      }
+    }
+    return records
+  }
+
+  /** Reserve all affected records together; single-record renames/analysis use these same locks. */
+  withRecoveryMutation<T>(ids: string[], operation: () => Promise<T>): Promise<T> {
+    const previous = [...new Set(ids.map(id => this.beatMutations.get(id)).filter(Boolean))]
+    const task = Promise.allSettled(previous).then(async () => {
+      const sidecars = ids.map(id => this.get(id)?.sidecarPath).filter((value): value is string => !!value)
+      await Promise.allSettled(sidecars.map(file => this.sidecarTasks.get(path.resolve(file).toLowerCase())))
+      return operation()
+    })
+    for (const id of ids) this.beatMutations.set(id, task)
+    void task.finally(() => {
+      for (const id of ids) if (this.beatMutations.get(id) === task) this.beatMutations.delete(id)
+    }).catch(() => undefined)
+    return task
+  }
+
+  recoveryRecord(id: string, expected: string): LibraryBeat {
+    const current = this.get(id)
+    if (!current || this.deleting.has(id) || recoveryRecordKey(current) !== expected) {
+      throw new Error('This record was removed or its file identity/location changed after review. Inspect it again.')
+    }
+    return current
+  }
+
+  pendingRevision(): number | null {
+    const state = storageStatus().find(entry => path.resolve(entry.file).toLowerCase() === path.resolve(this.store.path).toLowerCase())
+    return state?.error ? state.revision : null
+  }
+
+  private assertWritable(): void {
+    if (this.pendingRevision() !== null) throw new Error('A library save is pending. Retry saving before changing files or records.')
+  }
+
+  /** One synchronous revision, after async validation. No audio or sidecar bytes are changed. */
+  commitRecovery(changes: RecoveryCommit[], signal: AbortSignal, prepareRetry: () => Promise<void>): void {
+    signal.throwIfAborted()
+    if (this.stopped || isStopping()) throw new Error('Sonic is closing; recovery was not applied.')
+    this.assertWritable()
+    for (const change of changes) this.recoveryRecord(change.id, change.expected)
+    const byId = new Map(changes.map(change => [change.id, change]))
+    const next = this.store.read().map(beat => {
+      const change = byId.get(beat.id)
+      if (!change) return beat
+      if (beat.fileOwnership === 'external' && change.fileOwnership !== 'external') throw new Error('Recovery cannot grant ownership of an imported original.')
+      return { ...beat, filePath: change.filePath, fileName: path.basename(change.filePath), sizeBytes: change.sizeBytes,
+        missing: false, fileAccessError: null, fileOwnership: change.fileOwnership, ownershipEvidence: change.ownershipEvidence,
+        sidecarPath: change.sidecarPath,
+        sidecarSync: change.sidecarPath ? { status: 'pending' as const, error: null } : undefined,
+        recoveryInfo: change.recoveryInfo }
+    })
+    this.store.write(next, { prepareRetry })
+    this.emitChanged()
+  }
+
+  async discardRecoveryPending(revision: number): Promise<void> {
+    await this.store.settleRetry()
+    // A successful retry may have committed before cancellation was received.
+    if (this.pendingRevision() !== null) this.store.discardPending(revision)
+  }
+
   list(): LibraryBeat[] {
-    // Newest first is the only sensible default for a download library.
-    return [...this.store.read()].sort((a, b) => b.addedAt - a.addedAt)
+    const records = this.refreshViews()
+    // Sort once per committed revision; retain a fresh array for each caller.
+    this.orderedRecords ??= [...records].sort((a, b) => b.addedAt - a.addedAt)
+    return [...this.orderedRecords]
   }
 
   get(id: string): LibraryBeat | null {
-    return this.store.read().find((beat) => beat.id === id) ?? null
+    this.refreshViews()
+    return this.recordsById.get(id) ?? null
   }
 
   add(beat: LibraryBeat): LibraryBeat[] {
@@ -267,6 +377,7 @@ class LibraryService extends EventEmitter {
    */
   async remove(id: string, deleteFiles: boolean): Promise<DeleteResult & { library: LibraryBeat[] }> {
     if (this.stopped || this.deleting.has(id)) return { ok: false, reason: 'This record is closing or already being deleted.', library: this.list() }
+    this.assertWritable()
     this.deleting.add(id)
     const removed: string[] = []
     try {
@@ -288,6 +399,7 @@ class LibraryService extends EventEmitter {
   }
 
   private async removeVerified(id: string, deleteFiles: boolean, removed: string[]): Promise<DeleteResult & { library: LibraryBeat[] }> {
+    this.assertWritable()
     const beat = this.get(id)
     if (!beat) return { ok: false, reason: 'That record is no longer in the library.', library: this.list() }
 
@@ -304,9 +416,13 @@ class LibraryService extends EventEmitter {
         if (info.isSymbolicLink() || sidecar.schema !== 'sonic-v2/beat' || sidecar.output.filePath !== beat.fileName || sidecar.output.fingerprint !== beat.fingerprint) {
           return { ok: false, reason: 'The sidecar no longer belongs to this export. Files were left untouched.', library: this.list() }
         }
+        await this.assertSidecarReceipt(beat, sidecar, beat.sidecarPath)
       }
       const stillThere = await fileExists(beat.filePath)
       if (stillThere) {
+        if (beat.ownershipEvidence && !samePhysicalFile(beat.ownershipEvidence.audio, await capturePhysicalIdentity(beat.filePath))) {
+          throw new Error('Ownership of this file can no longer be verified. The file was left untouched.')
+        }
         if (beat.fingerprint) {
           const current = await sha256File(beat.filePath)
           if (current !== beat.fingerprint) {
@@ -319,6 +435,7 @@ class LibraryService extends EventEmitter {
         }
         if ((await lstat(beat.filePath)).isSymbolicLink()) throw new Error('Refusing to delete a linked audio file.')
         if (this.get(id) !== beat) throw new Error('The record changed during verification. Review it and try again.')
+        this.assertWritable()
         await unlink(beat.filePath)
         removed.push('Audio')
       }
@@ -338,9 +455,12 @@ class LibraryService extends EventEmitter {
   purgeMissing(): Promise<LibraryBeat[]> {
     if (this.stopped) return Promise.resolve(this.list())
     return this.trackScan(async () => {
+      const records = this.store.read()
+      const observations = await this.observeFiles(records)
+      if (this.stopped || isStopping()) return this.list()
       const missing = new Set<LibraryBeat>()
-      for (const beat of this.store.read()) {
-        if (!await pathExists(beat.filePath)) missing.add(beat)
+      for (const beat of records) {
+        if (observations.get(beat)?.exists === false) missing.add(beat)
       }
       // A rescan must never overwrite metadata committed while stat was awaiting.
       const current = this.store.read()
@@ -353,25 +473,71 @@ class LibraryService extends EventEmitter {
   /** Re-checks every record against the filesystem and refreshes sizes. */
   rescan(): Promise<LibraryBeat[]> {
     if (this.stopped) return Promise.resolve(this.list())
-    return this.trackScan(async () => {
-      const observations = new Map<string, { path: string; fingerprint: string; missing: boolean; size: number }>()
-      for (const beat of this.store.read()) {
-        const exists = await fileExists(beat.filePath)
+    if (this.rescanTask) return this.rescanTask
+    const task = this.trackScan(async () => {
+      const records = this.store.read()
+      const files = await this.observeFiles(records)
+      if (this.stopped || isStopping()) return this.list()
+      const observations = new Map<string, { path: string; fingerprint: string; missing: boolean; size: number; error: string | null }>()
+      for (const beat of records) {
+        const file = files.get(beat)
+        // An inaccessible drive or permission error is not evidence of loss.
+        if (!file) continue
         observations.set(beat.id, { path: beat.filePath, fingerprint: beat.fingerprint,
-          missing: !exists, size: exists ? await fileSize(beat.filePath) : beat.sizeBytes })
+          missing: file.error ? false : !file.isFile, size: file.isFile ? file.size : beat.sizeBytes, error: file.error ?? null })
       }
       let changed = false
       const next = this.store.read().map(beat => {
         const seen = observations.get(beat.id)
         if (!seen || seen.path !== beat.filePath || seen.fingerprint !== beat.fingerprint) return beat
-        const sizeBytes = seen.size > 0 ? seen.size : beat.sizeBytes
-        if (seen.missing === beat.missing && sizeBytes === beat.sizeBytes) return beat
+        const sizeBytes = seen.size
+        if (seen.missing === beat.missing && sizeBytes === beat.sizeBytes && seen.error === (beat.fileAccessError ?? null)) return beat
         changed = true
-        return { ...beat, missing: seen.missing, sizeBytes }
+        return { ...beat, missing: seen.missing, sizeBytes, fileAccessError: seen.error }
       })
       if (changed) { this.store.write(next); this.emitChanged() }
       return this.list()
     })
+    this.rescanTask = task
+    void task.then(() => { if (this.rescanTask === task) this.rescanTask = null },
+      () => { if (this.rescanTask === task) this.rescanTask = null })
+    return task
+  }
+
+  /** One stat per record, with bounded work even for a large library. */
+  private async observeFiles(records: LibraryBeat[]): Promise<Map<LibraryBeat, FileObservation>> {
+    const observations = new Map<LibraryBeat, FileObservation>()
+    let cursor = 0
+    let failures = 0
+    let firstError: string | null = null
+    const rootChecks = new Map<string, Promise<string | null>>()
+    const rootError = (file: string): Promise<string | null> => {
+      const root = path.parse(path.resolve(file)).root
+      if (!rootChecks.has(root)) rootChecks.set(root, stat(root).then(() => null,
+        error => `The drive or network share is unavailable: ${root}. ${String(error)}`))
+      return rootChecks.get(root)!
+    }
+    await Promise.all(Array.from({ length: Math.min(SCAN_CONCURRENCY, records.length) }, async () => {
+      while (cursor < records.length) {
+        const beat = records[cursor++]
+        try {
+          const info = await stat(beat.filePath)
+          observations.set(beat, { exists: true, isFile: info.isFile(), size: info.size })
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code
+          const accessError = code === 'ENOENT' || code === 'ENOTDIR' ? await rootError(beat.filePath) : String(error)
+          if (!accessError) {
+            observations.set(beat, { exists: false, isFile: false, size: beat.sizeBytes })
+          } else {
+            failures++
+            firstError ??= `${beat.filePath}: ${String(error)}`
+            observations.set(beat, { exists: true, isFile: false, size: beat.sizeBytes, error: accessError })
+          }
+        }
+      }
+    }))
+    if (failures) this.emit('storage-error', `Could not check ${failures} library file(s); their records were kept. ${firstError}`)
+    return observations
   }
 
   private trackScan(operation: () => Promise<LibraryBeat[]>): Promise<LibraryBeat[]> {
@@ -597,6 +763,7 @@ class LibraryService extends EventEmitter {
 
   /** Commit a new basename without ever replacing someone else's export. */
   private async commitBeatWithName(previous: LibraryBeat, updated: LibraryBeat): Promise<void> {
+    this.assertWritable()
     if (previous.fileOwnership === 'external') {
       // An imported path belongs to the user, even when its metadata changes.
       updated.fileOwnership = 'external'
@@ -621,6 +788,9 @@ class LibraryService extends EventEmitter {
     }
     if (!previous.fingerprint || (await sha256File(previous.filePath)) !== previous.fingerprint ||
       (await lstat(previous.filePath)).isSymbolicLink()) throw new Error('The audio file changed on disk; its name was left untouched.')
+    if (previous.ownershipEvidence && !samePhysicalFile(previous.ownershipEvidence.audio, await capturePhysicalIdentity(previous.filePath))) {
+      throw new Error('Ownership of this file can no longer be verified. Its name was left untouched.')
+    }
     let parsed: BeatSidecar | null = null
     if (previous.sidecarPath) {
       try {
@@ -631,6 +801,7 @@ class LibraryService extends EventEmitter {
           parsed.output.filePath !== previous.fileName || parsed.output.fingerprint !== previous.fingerprint) {
           throw new Error('The sidecar changed on disk.')
         }
+        await this.assertSidecarReceipt(previous, parsed, previous.sidecarPath)
       } catch (error) {
         // The library correction is authoritative. An optional, damaged sidecar
         // must not make a user's change disappear; sync will report the error.
@@ -667,6 +838,10 @@ class LibraryService extends EventEmitter {
       updated.fileName = candidate
       updated.sidecarPath = nextSidecar
       updated.namingTemplate = template
+      if (previous.ownershipEvidence) updated.ownershipEvidence = {
+        audio: await capturePhysicalIdentity(nextAudio),
+        ...(parsed && nextSidecar ? { sidecar: { id: parsed.id, file: await capturePhysicalIdentity(nextSidecar) } } : {})
+      }
       const storeKey = path.resolve(this.store.path).toLowerCase()
       const beforeRevision = storageStatus().find(state => path.resolve(state.file).toLowerCase() === storeKey)?.revision ?? 0
       try {
@@ -694,6 +869,15 @@ class LibraryService extends EventEmitter {
     }
   }
 
+  private async assertSidecarReceipt(beat: LibraryBeat, parsed: BeatSidecar, file: string): Promise<void> {
+    if (!beat.ownershipEvidence) return
+    const receipt = beat.ownershipEvidence.sidecar
+    if (!receipt || receipt.id !== parsed.id || parsed.source?.kind !== beat.sourceKind || parsed.source?.url !== beat.sourceUrl ||
+      !samePhysicalFile(receipt.file, await capturePhysicalIdentity(file))) {
+      throw new Error('Sidecar ownership no longer matches the saved receipt. The file was left untouched.')
+    }
+  }
+
   /** Serialize the entire read/merge/replace, using fresh authoritative state. */
   private synchronizeSidecar(id: string, sidecarPath: string): Promise<void> {
     const key = path.resolve(sidecarPath).toLowerCase()
@@ -713,6 +897,7 @@ class LibraryService extends EventEmitter {
         if (parsed.schema !== 'sonic-v2/beat' || parsed.output?.filePath !== beat.fileName || parsed.output?.fingerprint !== beat.fingerprint) {
           throw new Error('The sidecar no longer belongs to this export.')
         }
+        await this.assertSidecarReceipt(beat, parsed, sidecarPath)
         parsed.schemaVersion = 2
         parsed.metadata = { ...parsed.metadata, title: beat.title, producer: beat.producer,
           bpm: beat.bpm, altBpm: beat.altBpm, key: beat.key, camelot: beat.camelot, detune: beat.detune }
@@ -722,16 +907,24 @@ class LibraryService extends EventEmitter {
         parsed.overrides = [...beat.overrides]
         parsed.sources = beat.sources
         parsed.embedded = beat.embedded
-        if (parsed.source) parsed.source.channel = beat.sourceChannel ?? null
+        if (parsed.source) {
+          parsed.source.channel = beat.sourceChannel ?? null
+          parsed.source.thumbnail = beat.thumbnail ?? null
+        }
         temporary = `${sidecarPath}.${process.pid}.${randomUUID()}.tmp`
         stage = 'write'
         await writeFile(temporary, JSON.stringify(parsed, null, 2), { encoding: 'utf8', flag: 'wx' })
         const latest = this.get(id)
         if (!latest || latest.fileOwnership !== 'sonic-export' || latest.sidecarPath !== sidecarPath || this.deleting.has(id)) return
+        await this.assertSidecarReceipt(latest, parsed, sidecarPath)
         stage = 'replace'
         await rename(temporary, sidecarPath)
         stage = 'save-sync-status'
-        if (JSON.stringify(this.get(id)) === JSON.stringify(beat)) this.update(id, { sidecarSync: { status: 'synced', error: null } })
+        if (JSON.stringify(this.get(id)) === JSON.stringify(beat)) this.update(id, {
+          sidecarSync: { status: 'synced', error: null },
+          ...(beat.ownershipEvidence ? { ownershipEvidence: { ...beat.ownershipEvidence,
+            sidecar: { id: parsed.id, file: await capturePhysicalIdentity(sidecarPath) } } } : {})
+        })
       } catch (error) {
         const current = this.get(id)
         const message = `Library saved; sidecar synchronization failed: ${String(error)}`

@@ -55,7 +55,7 @@ export function Modal({
         aria-hidden
 
         className={cn(
-          'absolute inset-0 bg-overlay backdrop-blur-[3px]',
+          'absolute inset-0 bg-overlay backdrop-blur-[5px]',
           'transition-opacity duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
           phase === 'open' ? 'opacity-100' : 'opacity-0'
         )}
@@ -68,15 +68,15 @@ export function Modal({
         aria-label={title}
         tabIndex={-1}
         className={cn(
-          't-modal relative w-full rounded-[16px] border border-line bg-surface shadow-pop outline-none',
+          't-modal relative max-h-[calc(100dvh-48px)] w-full overflow-y-auto rounded-[16px] border border-line-strong bg-surface shadow-pop outline-none',
           SIZES[size],
           phase === 'open' && 'is-open',
           phase === 'closing' && 'is-closing'
         )}
       >
-        <div className="flex items-start justify-between gap-4 px-5 pt-4.5 pb-3">
+        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold tracking-tight text-fg">{title}</h2>
+            <h2 className="text-[17px] font-semibold tracking-tight text-fg">{title}</h2>
             {description ? (
               <p className="mt-1 text-[12.5px] leading-relaxed text-fg-muted">{description}</p>
             ) : null}
@@ -86,10 +86,10 @@ export function Modal({
           </IconButton>
         </div>
 
-        {children ? <div className="px-5 pb-4">{children}</div> : null}
+        {children ? <div className="px-6 pb-5">{children}</div> : null}
 
         {footer ? (
-          <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3.5">
+          <div className="flex items-center justify-end gap-2 rounded-b-[16px] border-t border-line bg-surface-2/50 px-6 py-4">
             {footer}
           </div>
         ) : null}

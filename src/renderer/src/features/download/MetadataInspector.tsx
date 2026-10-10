@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { CircleAlert, RotateCcw, Sparkles, Wand2, X } from 'lucide-react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { CircleAlert, RotateCcw, Wand2, X } from 'lucide-react'
 import type { Job, MetadataDraft, MetadataField } from '@shared/domain'
 import { formatBpm, formatCents, formatDuration } from '@shared/format'
 import { VERDICT_LABEL } from '@shared/verification'
 import { renderTemplate } from '@shared/template'
 import { cn } from '@/lib/cn'
 import { useApp } from '@/store/app'
+import { TrackArtwork } from '@/components/audio/TrackArtwork'
 import { Accordion } from '@/components/ui/Accordion'
 import { Badge } from '@/components/ui/Badge'
 import { IconButton } from '@/components/ui/Button'
@@ -27,38 +28,69 @@ function MetaField({
   placeholder?: string
   mono?: boolean
   type?: 'text' | 'number'
-  onCommit: (raw: string) => void
+  onCommit: (raw: string) => Promise<void>
 }): ReactNode {
+  const fieldId = useId()
   const external = value == null ? '' : String(value)
   const [local, setLocal] = useState(external)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  const dirty = useRef(false)
+  const saving = useRef(false)
 
   // Adopt external changes (probe results, resets) without stomping typing.
   useEffect(() => {
-    setLocal(external)
-  }, [external])
+    if (!dirty.current) setLocal(external)
+  }, [external, pending])
 
-  const commit = (): void => {
-    if (local !== external) onCommit(local)
+  const commit = async (): Promise<void> => {
+    if (saving.current || local === external) return
+    saving.current = true
+    setPending(true)
+    setError('')
+    try {
+      await onCommit(local)
+      dirty.current = false
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      saving.current = false
+      setPending(false)
+    }
   }
 
   return (
-    <Field label={label} hint={hint}>
+    <Field label={label} hint={hint} htmlFor={fieldId}>
       <Input
+        id={fieldId}
         type={type}
         value={local}
+        disabled={pending}
+        aria-busy={pending || undefined}
+        aria-invalid={Boolean(error) || undefined}
+        aria-describedby={error ? `${fieldId}-error` : undefined}
         placeholder={placeholder}
         spellCheck={false}
-        className={cn(mono && 'font-mono text-[12.5px]')}
-        onChange={(event) => setLocal(event.target.value)}
-        onBlur={commit}
+        className={cn('h-7 rounded-[4px] bg-transparent px-2 text-[12.5px] focus:bg-transparent', mono && 'font-mono')}
+        onChange={(event) => {
+          dirty.current = event.target.value !== external
+          setLocal(event.target.value)
+          setError('')
+        }}
+        onBlur={() => void commit()}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault()
-            commit()
+            void commit()
           }
-          if (event.key === 'Escape') setLocal(external)
+          if (event.key === 'Escape') {
+            dirty.current = false
+            setLocal(external)
+            setError('')
+          }
         }}
       />
+      {error ? <p id={`${fieldId}-error`} role="alert" className="text-[11px] text-danger">{error}</p> : null}
     </Field>
   )
 }
@@ -80,14 +112,14 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
   const draft = job.metadata
   const final = draft.final
 
-  const edit = (field: MetadataField, raw: string): void => {
+  const edit = async (field: MetadataField, raw: string): Promise<void> => {
     const numeric = field === 'bpm' || field === 'altBpm' || field === 'detune'
     let value: string | number | null = raw.trim() === '' ? null : raw
     if (numeric) {
       const parsed = Number(raw)
       value = raw.trim() === '' || !Number.isFinite(parsed) ? null : parsed
     }
-    void updateJob(job.id, { metadataEdit: { field, value } })
+    await updateJob(job.id, { metadataEdit: { field, value } })
   }
 
   const preview = useMemo(
@@ -113,23 +145,27 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
   }, [draft.evidence])
 
   return (
-    <aside className="flex min-h-0 w-[382px] shrink-0 flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-3.5 py-3">
-        <Wand2 className="size-4 text-accent" />
-        <h2 className="flex-1 text-[13px] font-semibold tracking-tight text-fg">Metadata</h2>
+    <aside aria-label="Download metadata inspector" className="flex min-h-0 w-[292px] shrink-0 flex-col overflow-hidden rounded-[10px] bg-surface p-4 xl:w-[300px]">
+      <div className="flex shrink-0 items-center gap-2 pb-3">
+        <h2 className="flex-1 text-[13px] font-medium text-fg">Metadata</h2>
         {draft.overrides.length > 0 ? (
-          <Badge size="sm" tone="accent">
-            {draft.overrides.length} manual
-          </Badge>
+          <span className="text-[11px] text-fg-subtle">{draft.overrides.length} manual</span>
         ) : (
-          <Badge size="sm">parsed</Badge>
+          <span className="text-[11px] text-fg-subtle">Source values</span>
         )}
-        <IconButton label="Close inspector" size="icon-sm" onClick={() => setSelectedJob(null)}>
+        <IconButton label="Close inspector" size="icon-xs" onClick={() => setSelectedJob(null)}>
           <X />
         </IconButton>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3.5">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
+        <div className="flex min-w-0 items-center gap-3 pb-1">
+          <TrackArtwork thumbnail={job.thumbnail} sourceUrl={job.url} title={final.title || job.sourceTitle || 'Untitled'} className="size-11 rounded-[6px]" iconClassName="size-5" />
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-medium text-fg">{final.title || job.sourceTitle || 'Untitled'}</p>
+            <p className="mt-0.5 truncate text-[11.5px] text-fg-subtle">{final.producer || job.uploader || 'Unknown producer'}</p>
+          </div>
+        </div>
         <MetaField
           label="Title"
           value={final.title}
@@ -144,7 +180,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
           onCommit={(raw) => edit('producer', raw)}
         />
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 border-t border-line pt-3">
           <MetaField
             label="BPM"
             hint={
@@ -188,12 +224,11 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         />
 
         {/* Live filename preview — the exact name the exporter will write. */}
-        <div className="rounded-[10px] border border-line bg-surface-2 p-3">
-          <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.12em] text-fg-subtle uppercase">
-            <Sparkles className="size-3" />
+        <div className="border-t border-line py-3">
+          <div className="mb-1.5 text-[11.5px] text-fg-subtle">
             Output file name
           </div>
-          <div className="font-mono text-[11.5px] leading-relaxed break-all text-fg">
+          <div className="font-mono text-[11.5px] leading-relaxed break-all text-fg-muted">
             {preview.rendered || 'untitled'}
           </div>
           {preview.unknownTokens.length > 0 ? (
@@ -205,6 +240,8 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         </div>
 
         <Accordion
+          bare
+          className="border-t border-line [&>button]:px-0 [&>button]:py-2 [&_.t-acc-panel-inner>div]:px-0"
           title="Evidence"
           summary={`${draft.evidence.length}`}
           defaultOpen={draft.evidence.length > 0}
@@ -237,7 +274,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         </Accordion>
 
         {draft.conflicts.length > 0 ? (
-          <Accordion title="Conflicts" summary={`${draft.conflicts.length}`} defaultOpen>
+          <Accordion bare className="border-t border-line [&>button]:px-0 [&>button]:py-2 [&_.t-acc-panel-inner>div]:px-0" title="Conflicts" summary={`${draft.conflicts.length}`} defaultOpen>
             <ul className="space-y-2">
               {draft.conflicts.map((conflict) => (
                 <li key={conflict.field} className="flex items-start gap-2 text-[11.5px]">
@@ -254,7 +291,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
           </Accordion>
         ) : null}
 
-        <Accordion title="Source" summary={job.uploader ?? undefined}>
+        <Accordion bare className="border-t border-line [&>button]:px-0 [&>button]:py-2 [&_.t-acc-panel-inner>div]:px-0" title="Source" summary={job.uploader ?? undefined}>
           <dl className="space-y-2 text-[11.5px]">
             <div className="flex justify-between gap-3">
               <dt className="text-fg-subtle">Duration</dt>
@@ -276,12 +313,12 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         <AnalysisPanel job={job} />
       </div>
 
-      <div className="shrink-0 space-y-1.5 border-t border-line p-2.5">
+      <div className="shrink-0 border-t border-line pt-2">
         <button
           type="button"
           disabled={draft.overrides.length === 0}
           onClick={() => void updateJob(job.id, { clearOverrides: draft.overrides })}
-          className="flex w-full items-center justify-center gap-1.5 rounded-[9px] border border-line bg-surface-2 px-3 py-2 text-[12px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+          className="flex h-7 w-full items-center justify-center gap-1.5 rounded-[4px] px-2 text-[11px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
         >
           <RotateCcw className="size-3.5" />
           Clear {draft.overrides.length} manual override{draft.overrides.length === 1 ? '' : 's'}
@@ -310,6 +347,8 @@ function AnalysisPanel({ job }: { job: Job }): ReactNode {
 
   return (
     <Accordion
+      bare
+      className="border-t border-line [&>button]:px-0 [&>button]:py-2 [&_.t-acc-panel-inner>div]:px-0"
       title="Audio analysis"
       summary={analysis ? describeStatus(analysis) : 'not run'}
       defaultOpen={analysis != null}
@@ -387,7 +426,7 @@ function AnalysisPanel({ job }: { job: Job }): ReactNode {
             <button
               type="button"
               onClick={() => void updateJob(job.id, { adoptAnalyzed: [...adoptable] })}
-              className="flex w-full items-center justify-center gap-1.5 rounded-[8px] bg-accent-soft px-3 py-1.5 text-[11.5px] font-medium text-accent transition-colors duration-[var(--duration-quick)] hover:bg-[var(--sonic-accent-line)]"
+              className="flex w-full items-center justify-center gap-1.5 rounded-[4px] border border-line px-2 py-1.5 text-[11px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
             >
               <Wand2 className="size-3.5" />
               Use detected {adoptable.join(' + ')}

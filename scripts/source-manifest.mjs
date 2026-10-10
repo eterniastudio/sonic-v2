@@ -10,7 +10,7 @@ async function walk(directory) {
   }
 }
 for (const directory of ['src', 'scripts', 'tests']) await walk(directory)
-files.push('package.json', 'package-lock.json', 'electron.vite.config.ts', 'electron-builder.yml', 'playwright.config.ts', 'tsconfig.json', 'tsconfig.node.json')
+files.push('package.json', 'package-lock.json', 'pnpm-lock.yaml', '.npmrc', 'electron.vite.config.ts', 'electron-builder.yml', 'playwright.config.ts', 'tsconfig.json', 'tsconfig.node.json')
 const hashFile = async file => createHash('sha256').update(await readFile(file)).digest('hex')
 const source = []
 for (const file of files.sort()) source.push({ file, sha256: await hashFile(file) })

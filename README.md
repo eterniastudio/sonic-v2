@@ -1,6 +1,6 @@
 # Sonic V2
 
-A local-first Windows desktop workstation for turning authorised YouTube beat uploads
+A local-first Windows desktop workstation for turning authorised YouTube and SoundCloud tracks
 into organised, tagged, producer-ready audio files.
 
 Built from the ground up as an Electron application — new architecture, new interface,
@@ -8,7 +8,7 @@ no code or design language carried over from the original Tauri build.
 
 > **Use responsibly.** Sonic is for media you own or are authorised to download. It does
 > not bypass DRM, authentication, private-video access, or geographic restrictions, and
-> it is not affiliated with or endorsed by YouTube.
+> it is not affiliated with or endorsed by YouTube or SoundCloud.
 
 ---
 
@@ -22,7 +22,9 @@ no code or design language carried over from the original Tauri build.
 | **Export** | Eight recipes, a naming template with live preview, embedded tags, cover art, a versioned sidecar, and no-clobber publication. |
 | **Library** | A searchable archive with waveform auditioning, tempo correction, filters and conservative deletion. |
 
-Library cards show the credited producer when one is known, otherwise the saved YouTube channel. Right-click a beat to open its saved YouTube link, refresh an older channel name, rename the beat and audio file, reveal the file, or delete it. Source links and channel names are stored in the local `library.json` record; the sidecar carries the same source provenance when enabled. User profiles, downloads, and test artifacts are excluded from the source repository.
+Paste YouTube video links or SoundCloud track links into the same download box. SoundCloud share links resolve before inspection; playlists and profiles are not supported. Both sources use the existing media engine, export formats, metadata review, and audio analysis. If an older share link has expired, paste the full `soundcloud.com/artist/track` URL instead.
+
+Library cards show the credited producer when one is known, otherwise the saved source channel or artist. Right-click a beat to open its saved YouTube or SoundCloud link, refresh its source information, rename the beat and audio file, reveal the file, or delete it. Source links, channel names, and artwork URLs are stored in the local `library.json` record; the sidecar carries the same source provenance when enabled. User profiles, downloads, and test artifacts are excluded from the source repository.
 
 Export filenames include every known BPM and key even when a custom naming template omits those tokens. Later manual corrections and accepted analysis rename Sonic-owned audio safely, with collision suffixes and a matching sidecar. A rename leaves existing audio tags unchanged; **re-export** to rewrite tags. FL Studio can read specific WAV tempo-sync metadata, but a BPM printed in a filename does not by itself set the FL Studio project tempo. Check the BPM badge and set or confirm the project tempo when importing; Sonic's acoustic estimate can be inconclusive or wrong.
 
@@ -160,8 +162,10 @@ missing on Windows, Sonic can fetch a static build for you.
 | --- | --- |
 | `pnpm dev` | Dev server + Electron with hot reload |
 | `pnpm build` | Build main, preload and renderer into `out/` |
-| `pnpm start` | Preview the production build |
+| `pnpm preview` | Preview the production build |
 | `pnpm typecheck` | Typecheck the Node and web projects |
+| `pnpm test:unit` | Run the complete isolated unit regression suite |
+| `pnpm test:ui` | Build the current application and component harness, then run the Windows UI suite |
 | `pnpm smoke` | Headless boot self-check (DOM, theme, parser, templates) |
 | `pnpm reset:state -- --yes [--library] [--settings] [--all]` | Clear runtime state during development; never touches the engine or your exports |
 | `pnpm package` | Unpacked Windows build in `release/` |

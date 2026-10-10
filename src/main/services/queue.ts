@@ -6,7 +6,7 @@ import type { JobPatch } from '@shared/ipc'
 import { applyFinalEdit, adoptAnalyzed, buildAudioEvidence, clearOverride, createDraft, emptyMetadata, parseDeclared, withAnalyzed, withEmbedded } from '@shared/metadata'
 import { analyzedValuesFrom, type AudioAnalysis } from '@shared/analysis'
 import { analysisService, type AnalysisProgress } from '../analysis/service'
-import { extractVideoUrls } from '@shared/url'
+import { extractVideoUrls, parseVideoUrl } from '@shared/url'
 import { JsonStore } from '../lib/jsonStore'
 import { createId } from '../lib/id'
 import { sha256File } from '../lib/fsx'
@@ -218,7 +218,7 @@ class QueueService extends EventEmitter {
     for (const raw of urls) {
       const { accepted } = extractVideoUrls(raw)
       for (const parsed of accepted) {
-        if (!parsed.normalized || !parsed.videoId) continue
+        if (!parsed.normalized || !parsed.provider) continue
         if (existing.has(parsed.normalized)) continue
         existing.add(parsed.normalized)
 
@@ -226,7 +226,7 @@ class QueueService extends EventEmitter {
           id: createId('job'),
           url: parsed.normalized,
           videoId: parsed.videoId,
-          sourceKind: 'youtube',
+          sourceKind: parsed.provider,
           sourceTitle: null,
           sourceDescription: null,
           uploader: null,
@@ -275,7 +275,7 @@ class QueueService extends EventEmitter {
         : this.jobs.filter((job) => ids.includes(job.id))
 
     for (const job of targets) {
-      if (TERMINAL.includes(job.stage) && job.stage !== 'failed') continue
+      if (!['ready', 'queued', 'failed'].includes(job.stage) || this.controllers.has(job.id) || this.probing.has(job.id)) continue
       this.setStage(job.id, 'queued', { progress: 0, error: null, message: 'Waiting for a worker…' })
     }
 
@@ -408,7 +408,7 @@ class QueueService extends EventEmitter {
     if (this.paused || isStopping() || this.shutdownTask) return
 
     while (this.runCount() < this.concurrency) {
-      const next = this.jobs.find((job) => job.stage === 'queued')
+      const next = this.jobs.find((job) => job.stage === 'queued' && !this.controllers.has(job.id) && !this.probing.has(job.id))
       if (!next) return
       // Claim it before the async work starts so the loop cannot double-pick it.
       this.setStage(next.id, 'downloading', { progress: 0, message: 'Preparing…' })
@@ -438,19 +438,21 @@ class QueueService extends EventEmitter {
   private async runJobAnalysis(
     id: string,
     inputPath: string,
-    durationSec: number
+    durationSec: number,
+    signal: AbortSignal
   ): Promise<AudioAnalysis | null> {
     const job = this.getJob(id)
-    if (!job) return null
-
-    const outcome = await analysisService.analyze({
-      requestId: `job:${id}:${job.revision}`,
-      inputPath,
-      durationSec
-    })
-
-    if (!outcome.ok || !outcome.analysis) return null
-    return outcome.analysis
+    if (!job || signal.aborted) return null
+    const requestId = `job:${id}:${job.revision}`
+    const onAbort = (): void => analysisService.cancel(requestId)
+    signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      const outcome = await analysisService.analyze({ requestId, inputPath, durationSec })
+      if (signal.aborted || !outcome.ok || !outcome.analysis) return null
+      return outcome.analysis
+    } finally {
+      signal.removeEventListener('abort', onAbort)
+    }
   }
 
   private async run(id: string): Promise<void> {
@@ -481,10 +483,12 @@ class QueueService extends EventEmitter {
     if (!startJob) return
 
     // Skip work that already exists in the library.
-    if (settings.skipExisting && startJob.videoId) {
+    if (settings.skipExisting) {
+      const sourceUrl = parseVideoUrl(startJob.url).normalized
       const existing = libraryService
         .list()
-        .find((beat) => !beat.missing && beat.sourceUrl?.includes(startJob.videoId as string))
+        .find((beat) => !beat.missing && sourceUrl != null && beat.sourceKind === startJob.sourceKind &&
+          beat.sourceUrl != null && parseVideoUrl(beat.sourceUrl).normalized === sourceUrl)
       if (existing) {
         this.setStage(id, 'complete', {
           progress: 1,
@@ -515,7 +519,7 @@ class QueueService extends EventEmitter {
     // 2 ─ Fold any container tags into the metadata draft.
     let embedded: MetadataValues = {}
     try {
-      embedded = await readEmbeddedMetadata(acquired.filePath)
+      embedded = await readEmbeddedMetadata(acquired.filePath, signal)
     } catch {
       // A file without readable tags is normal for a fresh provider download.
     }
@@ -535,7 +539,7 @@ class QueueService extends EventEmitter {
     // Analysis is started here and awaited below so it overlaps the cover fetch.
     const analysisPromise =
       settings.analyzeOnDownload && !signal.aborted
-        ? this.runJobAnalysis(id, acquired.filePath, afterDownload.durationSec ?? 0)
+        ? this.runJobAnalysis(id, acquired.filePath, afterDownload.durationSec ?? 0, signal)
         : null
 
     // 4 ─ Grab cover art while we still have network context.
@@ -543,6 +547,11 @@ class QueueService extends EventEmitter {
     const coverPath = settings.embedThumbnail
       ? await fetchCover(coverJob?.thumbnail ?? null, id, signal)
       : null
+    if (signal.aborted) {
+      // Let the cancelled decoder settle before removing its source staging.
+      await analysisPromise
+      signal.throwIfAborted()
+    }
 
     // 5 ─ Fold the analysis in. A failure or an inconclusive result is recorded
     //     and the download continues — audio is never discarded for this.
@@ -555,6 +564,7 @@ class QueueService extends EventEmitter {
       })
 
       const analysis = await analysisPromise
+      signal.throwIfAborted()
       const duringAnalysis = this.getJob(id)
 
       if (duringAnalysis && analysis) {
@@ -594,7 +604,7 @@ class QueueService extends EventEmitter {
 
     // 5 ─ Read the result back to prove the tags landed.
     this.setStage(id, 'tagging', { progress: 0, message: 'Verifying tags…' })
-    const media = await probeMediaFile(outputPath)
+    const media = await probeMediaFile(outputPath, signal)
     const readback = tagsToMetadata(media.tags)
 
     signal.throwIfAborted()
@@ -622,8 +632,8 @@ class QueueService extends EventEmitter {
     this.setStage(id, 'publishing', { progress: 0, message: 'Publishing…' })
 
     const [ytdlp, ffmpeg] = await Promise.all([
-      engineService.resolve('yt-dlp'),
-      engineService.resolve('ffmpeg')
+      engineService.resolve('yt-dlp', false, signal),
+      engineService.resolve('ffmpeg', false, signal)
     ])
 
     const conflicts: MetadataConflict[] = this.getJob(id)?.metadata.conflicts ?? []
@@ -642,6 +652,7 @@ class QueueService extends EventEmitter {
       sourceUrl: finalJob.url,
       videoId: finalJob.videoId,
       uploader: finalJob.uploader,
+      thumbnail: finalJob.thumbnail,
       sourceTitle: finalJob.sourceTitle,
       evidence,
       conflicts,
@@ -765,6 +776,8 @@ class QueueService extends EventEmitter {
     const autoStart = settingsService.get().autoStart
 
     Object.assign(current, {
+      url: result.url ?? current.url,
+      videoId: result.videoId ?? current.videoId,
       sourceTitle: result.title,
       sourceDescription: result.description ? result.description.slice(0, 20_000) : null,
       uploader: result.uploader,

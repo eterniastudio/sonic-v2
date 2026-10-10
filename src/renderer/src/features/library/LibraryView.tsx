@@ -1,8 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Gauge,
-  HardDrive,
+  ArrowDownUp,
   LayoutGrid,
   List,
   Music4,
@@ -11,7 +10,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   TriangleAlert,
-  Wand2,
   X
 } from 'lucide-react'
 import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
@@ -19,15 +17,10 @@ import type { LibraryBeat, PresetId } from '@shared/domain'
 import { FAVORITES_COLLECTION_ID, type OrganizationCommand, type OrganizationSnapshot } from '@shared/organization'
 import type { BatchSession } from '@shared/batch'
 import { PRESETS } from '@shared/presets'
-import { formatBpm, formatBytes, formatDuration } from '@shared/format'
-import { coverArtFor } from '@shared/url'
 import { cn } from '@/lib/cn'
+import { useReducedMotion } from '@/lib/theme'
 import { useApp } from '@/store/app'
 import { reconcileWorkspace, useLibraryWorkspace, useWorkspaceField } from '@/store/libraryWorkspace'
-import { AmbientBackground } from '@/components/aceternity/AmbientBackground'
-import { AnimatedTooltip } from '@/components/aceternity/AnimatedTooltip'
-import { BentoCard, BentoGrid } from '@/components/aceternity/BentoGrid'
-import { FlipText } from '@/components/obsidian/FlipText'
 import { Badge } from '@/components/ui/Badge'
 import { Button, IconButton } from '@/components/ui/Button'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
@@ -37,15 +30,15 @@ import { Dropdown, DropdownItem, DropdownLabel } from '@/components/ui/Dropdown'
 import { Input } from '@/components/ui/Input'
 import { Segmented } from '@/components/ui/Segmented'
 import { Switch } from '@/components/ui/Switch'
-import { NumberPop } from '@/components/ui/NumberPop'
 import { toast } from '@/components/ui/Toaster'
-import { BeatCard } from './BeatCard'
+import { LibraryBeatRow } from './LibraryBeatRow'
 import { PreviewTransport } from './PreviewTransport'
 import { ImportAudio } from './ImportAudio'
-import { createLibraryIndex, searchLibrary, searchSmartCollection, type LibrarySort } from './librarySearch'
+import { RecoveryDialog } from './RecoveryDialog'
+import { createLibraryIndex, searchLibrary, searchSmartCollection, type LibraryIndex, type LibrarySort } from './librarySearch'
 import { CollectionWorkspace } from './CollectionWorkspace'
 import { AnnotationEditor } from './AnnotationEditor'
-import { usePlaybackActions } from '@/features/playback/playbackSession'
+import { usePlaybackActions, usePlaybackIdentity } from '@/features/playback/playbackSession'
 
 const SORTS: { key: LibrarySort; label: string }[] = [
   { key: 'manual', label: 'Collection order' },
@@ -67,7 +60,9 @@ const TEMPO_BANDS: { id: string; label: string }[] = [
 
 /** Searchable archive of imported audio and Sonic-created exports. */
 export function LibraryView(): ReactNode {
+  const reducedMotion = useReducedMotion()
   const { playOne, playQueue } = usePlaybackActions()
+  const { beatId: playbackBeatId, status: playbackStatus } = usePlaybackIdentity()
   const library = useApp((state) => state.library)
   const rescanLibrary = useApp((state) => state.rescanLibrary)
   const removeBeat = useApp((state) => state.removeBeat)
@@ -91,7 +86,7 @@ export function LibraryView(): ReactNode {
   const [keyFilter, setKeyFilter] = useWorkspaceField('keyFilter')
   const [selectedId, setSelectedId] = useWorkspaceField('selectedId')
   const [selectedIds, setSelectedIds] = useWorkspaceField('selectedIds')
-  const [selectionAnchor, setSelectionAnchor] = useWorkspaceField('selectionAnchor')
+  const [, setSelectionAnchor] = useWorkspaceField('selectionAnchor')
   const [organization, setOrganization] = useState<OrganizationSnapshot | null>(null)
   const [organizationError, setOrganizationError] = useState(false)
   const [organizationAttempt, setOrganizationAttempt] = useState(0)
@@ -109,6 +104,16 @@ export function LibraryView(): ReactNode {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
+  const [recoveryPlanId, setRecoveryPlanId] = useState<string | null>(null)
+  const [pickingRecovery, setPickingRecovery] = useState(false)
+  const recoveryPicker = useRef(false)
+  const locateFile = async (beatId: string): Promise<void> => {
+    if (recoveryPicker.current) return
+    recoveryPicker.current = true; setPickingRecovery(true)
+    try { const result = await ipc.invoke('recovery:chooseFile', beatId); if (result.planId) setRecoveryPlanId(result.planId) }
+    catch (error) { toast({ kind: 'error', title: 'Could not locate audio', description: String(error) }) }
+    finally { recoveryPicker.current = false; setPickingRecovery(false) }
+  }
 
   useEffect(() => {
     let live = true
@@ -190,17 +195,26 @@ export function LibraryView(): ReactNode {
     return () => { document.removeEventListener('pointerdown', dismiss, true); document.removeEventListener('keydown', keydown) }
   }, [menu])
 
-  const openMenu = (event: React.MouseEvent, beat: LibraryBeat): void => {
+  const openMenu = useCallback((event: React.MouseEvent, beat: LibraryBeat): void => {
     event.preventDefault()
     event.stopPropagation()
-    if (!selectedIds.has(beat.id)) { setSelectedIds(new Set([beat.id])); setSelectionAnchor(beat.id) }
+    if (!useLibraryWorkspace.getState().selectedIds.has(beat.id)) { setSelectedIds(new Set([beat.id])); setSelectionAnchor(beat.id) }
     setMenu({ id: beat.id, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - 216)) })
-  }
+  }, [setSelectedIds, setSelectionAnchor])
 
   const cardRefs = useRef(new Map<string, HTMLDivElement>())
+  const registerCard = useCallback((id: string, node: HTMLDivElement | null): void => {
+    if (node) cardRefs.current.set(id, node)
+    else cardRefs.current.delete(id)
+  }, [])
 
-  const index = useMemo(() => createLibraryIndex(library), [library])
+  const indexCache = useRef<LibraryIndex | undefined>(undefined)
+  const index = useMemo(() => {
+    const next = createLibraryIndex(library, indexCache.current)
+    indexCache.current = next
+    return next
+  }, [library])
 
   const availableFormats = useMemo(
     () => [...new Set(library.map((beat) => beat.format))].sort(),
@@ -227,6 +241,8 @@ export function LibraryView(): ReactNode {
   }, [library, index, organization, activeScope, activeCollection, query, sort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter])
 
   const auditionLabel = activeCollection?.name ?? (activeScope === FAVORITES_COLLECTION_ID ? 'Favorites' : 'All audio')
+  const visibleRef = useRef(visible)
+  useLayoutEffect(() => { visibleRef.current = visible }, [visible])
   const playDisplayed = (): void => {
     const ids = visible.map(beat => beat.id)
     if (ids.length) playQueue(ids, ids[0], auditionLabel)
@@ -256,7 +272,7 @@ export function LibraryView(): ReactNode {
     }
   }, [])
 
-  const toggleSelectedId = (id: string): void => {
+  const toggleSelectedId = useCallback((id: string): void => {
     setSelectedIds(previous => {
       const next = new Set(previous)
       if (next.has(id)) next.delete(id)
@@ -264,11 +280,12 @@ export function LibraryView(): ReactNode {
       return next
     })
     setSelectionAnchor(id)
-  }
+  }, [setSelectedIds, setSelectionAnchor])
 
-  const selectCard = (event: ReactMouseEvent | ReactKeyboardEvent, beat: LibraryBeat): void => {
+  const selectCard = useCallback((event: ReactMouseEvent | ReactKeyboardEvent, beat: LibraryBeat): void => {
+    const { selectedId, selectionAnchor } = useLibraryWorkspace.getState()
     if (event.shiftKey) {
-      const ids = visible.map(item => item.id)
+      const ids = visibleRef.current.map(item => item.id)
       const anchor = ids.indexOf(selectionAnchor ?? beat.id)
       const end = ids.indexOf(beat.id)
       if (anchor >= 0 && end >= 0) setSelectedIds(previous => new Set([...previous, ...ids.slice(Math.min(anchor, end), Math.max(anchor, end) + 1)]))
@@ -277,7 +294,7 @@ export function LibraryView(): ReactNode {
     if (event.ctrlKey || event.metaKey) { toggleSelectedId(beat.id); return }
     setSelectedId(selectedId === beat.id ? null : beat.id)
     setSelectionAnchor(beat.id)
-  }
+  }, [setSelectedIds, setSelectedId, setSelectionAnchor, toggleSelectedId])
 
   const selected = useMemo(
     () => library.find((beat) => beat.id === selectedId) ?? null,
@@ -290,28 +307,15 @@ export function LibraryView(): ReactNode {
     setSelectedId(focusId)
     setLibraryFocus(null)
     const node = cardRefs.current.get(focusId)
-    node?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [focusId, setLibraryFocus, setSelectedId, organization])
+    node?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'instant' : 'smooth' })
+  }, [focusId, setLibraryFocus, setSelectedId, organization, reducedMotion])
 
   const totals = useMemo(
     () => ({
-      size: library.reduce((total, beat) => total + beat.sizeBytes, 0),
       missing: library.filter((beat) => beat.missing).length
     }),
     [library]
   )
-
-  const stats = useMemo(() => {
-    const withTempo = library.filter((beat) => beat.bpm != null)
-    return {
-      averageBpm:
-        withTempo.length > 0
-          ? Math.round(withTempo.reduce((total, beat) => total + (beat.bpm ?? 0), 0) / withTempo.length)
-          : null,
-      lossless: library.filter((beat) => beat.format === 'flac' || beat.format === 'wav').length,
-      formats: new Set(library.map((beat) => beat.format)).size
-    }
-  }, [library])
 
   const toggle = (set: Set<string>, value: string, apply: (next: Set<string>) => void): void => {
     const next = new Set(set)
@@ -326,23 +330,34 @@ export function LibraryView(): ReactNode {
   const needsAnalysis = library.filter(
     (beat) => !beat.missing && (beat.analysisStatus === 'not-analyzed' || beat.analysisStatus === 'failed')
   ).length
+  const recoverable = visible.filter(beat => (beat.missing || beat.fileAccessError) && (selectedIds.size === 0 || selectedIds.has(beat.id)))
+  const findMissingFiles = async (): Promise<void> => {
+    if (recoveryPicker.current || !recoverable.length) return
+    recoveryPicker.current = true; setPickingRecovery(true)
+    try { const result = await ipc.invoke('recovery:chooseFolder', recoverable.map(beat => beat.id)); if (result.planId) setRecoveryPlanId(result.planId) }
+    catch (error) { toast({ kind: 'error', title: 'Could not scan for audio', description: String(error) }) }
+    finally { recoveryPicker.current = false; setPickingRecovery(false) }
+  }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-3">
-      <div className="flex shrink-0 flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-[15px] font-semibold tracking-tight text-fg">Beat Library</h1>
-            <span className="text-[11.5px] text-fg-subtle nums">
-              <NumberPop value={library.length} /> beats · {formatBytes(totals.size)}
-            </span>
-          </div>
-
-          <span className="flex-1" />
-
+    <div className="workspace-page flex h-full min-h-0 flex-col gap-3">
+      <header className="page-header flex shrink-0 items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="page-title">Library<span className="ml-2.5 align-middle text-[12px] font-normal tracking-normal text-fg-subtle nums">{library.length}</span></h1>
+        </div>
+        <div className="flex shrink-0 items-center gap-2.5">
+          {needsAnalysis > 0 ? <Button variant="ghost" size="md" aria-label="Analyze now" leading={<Sparkles />}
+            title={`${needsAnalysis} tracks ready for BPM and key analysis`} onClick={() => {
+              void analyzeMissing().then(queued => toast({ kind: 'info', title: `Analyzing ${queued} track${queued === 1 ? '' : 's'}`,
+                description: 'Working from the files on disk — nothing is re-downloaded.' }))
+            }}>Analyze <span className="ml-1 text-fg-subtle nums">{needsAnalysis}</span></Button> : null}
           <ImportAudio />
+        </div>
+      </header>
 
-          <div className="w-[260px]">
+      <div className="flex min-h-0 shrink-0 flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <div className="min-w-[160px] max-w-[340px] flex-1">
             <Input
               value={query}
               onChange={(event) => {
@@ -360,11 +375,11 @@ export function LibraryView(): ReactNode {
               }
             />
           </div>
-
           <Button
-            variant={showFilters ? 'quiet' : 'secondary'}
+            variant={showFilters ? 'quiet' : 'ghost'}
             size="md"
             leading={<SlidersHorizontal />}
+            aria-expanded={showFilters}
             onClick={() => setShowFilters((value) => !value)}
           >
             Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
@@ -373,7 +388,7 @@ export function LibraryView(): ReactNode {
           <Dropdown
             align="end"
             trigger={({ toggle: open }) => (
-              <Button variant="secondary" size="md" onClick={open}>
+              <Button variant="ghost" size="md" leading={<ArrowDownUp />} onClick={open}>
                 {SORTS.find((entry) => entry.key === sort)?.label ?? 'Sort'}
               </Button>
             )}
@@ -397,6 +412,8 @@ export function LibraryView(): ReactNode {
             )}
           </Dropdown>
 
+          <span className="flex-1" />
+          {recoverable.length > 0 ? <Button variant="ghost" size="sm" disabled={pickingRecovery} onClick={() => void findMissingFiles()}>Find missing files…</Button> : null}
           <Segmented
             value={layout}
             onChange={changeLayout}
@@ -410,7 +427,7 @@ export function LibraryView(): ReactNode {
 
           <IconButton
             label="Rescan the library"
-            variant="secondary"
+            variant="ghost"
             onClick={() => {
               void rescanLibrary()
               toast({ kind: 'info', title: 'Rescanning the library' })
@@ -420,34 +437,8 @@ export function LibraryView(): ReactNode {
           </IconButton>
         </div>
 
-        {needsAnalysis > 0 ? (
-          <div className="flex flex-wrap items-center gap-2.5 rounded-[12px] border border-line bg-surface px-3.5 py-2.5">
-            <Wand2 className="size-4 shrink-0 text-accent" />
-            <span className="text-[12.5px] text-fg-muted">
-              {needsAnalysis} track{needsAnalysis === 1 ? '' : 's'} have no audio analysis yet.
-            </span>
-            <span className="flex-1" />
-            <Button
-              variant="quiet"
-              size="sm"
-              leading={<Sparkles />}
-              onClick={() => {
-                void analyzeMissing().then((queued) => {
-                  toast({
-                    kind: 'info',
-                    title: `Analyzing ${queued} track${queued === 1 ? '' : 's'}`,
-                    description: 'Working from the files on disk — nothing is re-downloaded.'
-                  })
-                })
-              }}
-            >
-              Analyze now
-            </Button>
-          </div>
-        ) : null}
-
         {showFilters ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-[12px] border border-line bg-surface px-3.5 py-3">
+          <div className="flex max-h-[148px] flex-wrap items-center gap-x-5 gap-y-3 overflow-y-auto border-y border-line py-3">
             <label className="flex items-center gap-1.5 text-[11px] font-medium text-fg-subtle">
               BPM
               <Input type="number" min="1" max="999" step="any" inputMode="decimal"
@@ -474,8 +465,9 @@ export function LibraryView(): ReactNode {
                   key={band.id}
                   type="button"
                   onClick={() => toggle(bands, band.id, setBands)}
+                  aria-pressed={bands.has(band.id)}
                   className={cn(
-                    'rounded-full border px-2 py-0.5 text-[11px] transition-colors duration-[var(--duration-quick)]',
+                    'rounded-[6px] border px-2 py-1 text-[11px] transition-colors duration-[var(--duration-quick)]',
                     bands.has(band.id)
                       ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent'
                       : 'border-line text-fg-muted hover:border-line-strong hover:text-fg'
@@ -493,8 +485,9 @@ export function LibraryView(): ReactNode {
                   key={format}
                   type="button"
                   onClick={() => toggle(formats, format, setFormats)}
+                  aria-pressed={formats.has(format)}
                   className={cn(
-                    'rounded-full border px-2 py-0.5 text-[11px] uppercase transition-colors duration-[var(--duration-quick)]',
+                    'rounded-[6px] border px-2 py-1 text-[11px] uppercase transition-colors duration-[var(--duration-quick)]',
                     formats.has(format)
                       ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent'
                       : 'border-line text-fg-muted hover:border-line-strong hover:text-fg'
@@ -510,7 +503,7 @@ export function LibraryView(): ReactNode {
               {(['all', 'present', 'missing'] as const).map((value) => (
                 <button key={value} type="button" onClick={() => setFileFilter(value)}
                   aria-pressed={fileFilter === value}
-                  className={cn('rounded-full border px-2 py-0.5 text-[11px] capitalize transition-colors',
+                  className={cn('rounded-[6px] border px-2 py-1 text-[11px] capitalize transition-colors',
                     fileFilter === value ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent' : 'border-line text-fg-muted hover:border-line-strong hover:text-fg')}>
                   {value}
                 </button>
@@ -521,7 +514,7 @@ export function LibraryView(): ReactNode {
               {(['all', 'incomplete', 'disagreement'] as const).map((value) => (
                 <button key={value} type="button" onClick={() => setReviewFilter(value)}
                   aria-pressed={reviewFilter === value}
-                  className={cn('rounded-full border px-2 py-0.5 text-[11px] capitalize transition-colors',
+                  className={cn('rounded-[6px] border px-2 py-1 text-[11px] capitalize transition-colors',
                     reviewFilter === value ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent' : 'border-line text-fg-muted hover:border-line-strong hover:text-fg')}>
                   {value}
                 </button>
@@ -567,32 +560,8 @@ export function LibraryView(): ReactNode {
         onScope={changeScope} command={executeOrganization} batch={batch} setBatch={setBatch}
         defaultPresetId={defaultPresetId} manualSort={sort === 'manual'} /> : null}
 
-      {library.length > 0 ? (
-        <BentoGrid className="shrink-0">
-          <BentoCard
-            label="Beats in library"
-            value={<NumberPop value={library.length} />}
-            hint={`${stats.formats} format${stats.formats === 1 ? '' : 's'} · ${totals.missing} missing`}
-            icon={<Music4 />}
-            accent
-          />
-          <BentoCard label="On disk" value={formatBytes(totals.size)} icon={<HardDrive />} />
-          <BentoCard
-            label="Average tempo"
-            value={stats.averageBpm != null ? `${stats.averageBpm}` : '—'}
-            hint={stats.averageBpm != null ? 'BPM' : 'no tempo data'}
-            icon={<Gauge />}
-          />
-          <BentoCard
-            label="Lossless"
-            value={String(stats.lossless)}
-            hint={stats.lossless > 0 ? 'FLAC + WAV' : 'none yet'}
-            icon={<HardDrive />}
-          />
-        </BentoGrid>
-      ) : null}
-
-      <div ref={scrollRef} data-library-scroll className="min-h-0 flex-1 overflow-y-auto"
+      <div className="flex min-h-0 flex-1 gap-4">
+      <div ref={scrollRef} data-library-scroll className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-0.5"
         onScroll={event => {
           if (restoredScroll.current) useLibraryWorkspace.setState({ scrollTop: event.currentTarget.scrollTop })
         }}>
@@ -604,26 +573,16 @@ export function LibraryView(): ReactNode {
             </> : 'Loading Library workspace…'}
           </div>
         ) : library.length === 0 ? (
-          <div className="relative grid h-full min-h-[340px] place-items-center overflow-hidden rounded-[14px] border border-line bg-surface">
-            <AmbientBackground variant="full" intensity={0.7} />
-            <div className="relative max-w-[470px] px-8 text-center">
-              <h2 className="text-[20px] font-semibold tracking-tight text-fg">
-                Your library is{' '}
-                <span className="text-gradient">
-                  <FlipText
-                    words={['empty', 'waiting', 'ready', 'yours to fill']}
-                    intervalMs={2400}
-                  />
-                </span>
-              </h2>
-              <p className="mt-3 text-[12.5px] leading-relaxed text-fg-muted">
-                Import audio you already own, or paste a link in the Download tab.
-                Sonic keeps imported originals in place and saves corrections in your library.
-              </p>
+          <div className="studio-panel grid h-full min-h-[230px] place-items-center px-6 py-8">
+            <div className="max-w-[360px] text-center">
+              <Music4 className="mx-auto mb-4 size-6 text-fg-subtle" strokeWidth={1.4} />
+              <h2 className="text-[15px] font-medium text-fg">Your library is empty</h2>
+              <p className="mt-2 text-[12px] leading-relaxed text-fg-muted">Import audio from your computer, or add a link in Downloads.</p>
+              <p className="mt-5 text-[11px] text-fg-subtle">WAV · FLAC · MP3 · M4A · OGG</p>
             </div>
           </div>
         ) : visible.length === 0 ? (
-          <div className="grid h-full min-h-[220px] place-items-center rounded-[14px] border border-line bg-surface text-[12.5px] text-fg-subtle">
+          <div className="studio-panel grid h-full min-h-[180px] place-items-center px-8 text-center text-[13px] text-fg-muted">
             {activeCollection?.type === 'manual' && activeCollection.beatIds.length === 0
               ? 'This collection is empty. Select beats and use Add to collection.'
               : activeScope === FAVORITES_COLLECTION_ID && !library.some(beat => organization && Object.prototype.hasOwnProperty.call(organization.annotations, beat.id) && organization.annotations[beat.id].favorite)
@@ -633,88 +592,58 @@ export function LibraryView(): ReactNode {
                   : 'No beats match those filters.'}
           </div>
         ) : layout === 'grid' ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(212px,1fr))] gap-3 pr-0.5 pb-0.5">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2 pb-1">
             {visible.map((beat) => (
-              <div
-                key={beat.id}
-                ref={(node) => {
-                  if (node) cardRefs.current.set(beat.id, node)
-                  else cardRefs.current.delete(beat.id)
-                }}
-              >
-                <BeatCard
+                <LibraryBeatRow
+                  key={beat.id}
                   beat={beat}
                   layout="grid"
+                  playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
                   selected={selectedId === beat.id}
                   batchSelected={selectedIds.has(beat.id)}
-                  onToggleSelection={() => toggleSelectedId(beat.id)}
-                  onSelect={(event) => selectCard(event, beat)}
-                  onPlay={() => playOne(beat.id)}
-                  onContextMenu={(event) => openMenu(event, beat)}
+                  onToggleSelection={toggleSelectedId}
+                  onSelect={selectCard}
+                  onPlay={playOne}
+                  onContextMenu={openMenu}
+                  registerCard={registerCard}
                 />
-              </div>
             ))}
           </div>
         ) : (
-          <div className="space-y-0.5 rounded-[14px] border border-line bg-surface p-1.5">
-            {visible.map((beat) => {
-              const cover = coverArtFor(beat.sourceUrl)
-              return (
-                <AnimatedTooltip
+          <div className="@container overflow-hidden">
+            <div aria-hidden="true" className="mb-1 flex h-8 items-center gap-3 border-b border-line px-2 text-[11px] text-fg-subtle">
+              <span className="w-[64px] shrink-0" />
+              <span className="min-w-0 flex-1">Track</span>
+              <span className="hidden w-14 shrink-0 text-right @min-[440px]:block">BPM</span>
+              <span className="hidden w-14 shrink-0 text-right @min-[480px]:block">Key</span>
+              <span className="w-11 shrink-0 text-right">Time</span>
+              <span className="hidden w-12 shrink-0 text-right @min-[620px]:block">Format</span>
+            </div>
+            {visible.map((beat) => (
+                <LibraryBeatRow
                   key={beat.id}
-                  trigger={
-                    <BeatCard
-                      beat={beat}
-                      layout="list"
-                      selected={selectedId === beat.id}
-                      batchSelected={selectedIds.has(beat.id)}
-                      onToggleSelection={() => toggleSelectedId(beat.id)}
-                      onSelect={(event) => selectCard(event, beat)}
-                      onPlay={() => playOne(beat.id)}
-                      onContextMenu={(event) => openMenu(event, beat)}
-                    />
-                  }
-                  content={
-                    <div>
-                      <div className="relative aspect-video w-full overflow-hidden bg-surface-3">
-                        {cover ? (
-                          <img src={cover} alt="" className="size-full scale-[1.34] object-cover" />
-                        ) : null}
-                        <span className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-                      </div>
-                      <div className="p-3">
-                        <div className="text-[12.5px] font-medium text-fg">{beat.title}</div>
-                        <div className="mt-0.5 text-[11px] text-fg-muted">
-                          {beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')}
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {beat.bpm != null ? <Badge size="sm">{formatBpm(beat.bpm)} BPM</Badge> : null}
-                          {beat.camelot ? (
-                            <Badge size="sm" tone="accent">
-                              {beat.camelot}
-                            </Badge>
-                          ) : null}
-                          {beat.key ? <Badge size="sm">{beat.key}</Badge> : null}
-                          <Badge size="sm" tone="outline">
-                            {formatDuration(beat.durationSec)}
-                          </Badge>
-                        </div>
-                        <div className="mt-2 truncate font-mono text-[10px] text-fg-subtle">
-                          {beat.fileName}
-                        </div>
-                      </div>
-                    </div>
-                  }
+                  beat={beat}
+                  layout="list"
+                  playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
+                  selected={selectedId === beat.id}
+                  batchSelected={selectedIds.has(beat.id)}
+                  onToggleSelection={toggleSelectedId}
+                  onSelect={selectCard}
+                  onPlay={playOne}
+                  onContextMenu={openMenu}
+                  registerCard={registerCard}
                 />
-              )
-            })}
+            ))}
           </div>
         )}
       </div>
 
       {selected ? (
-        <PreviewTransport
+        <aside aria-label="Beat inspector" className="min-h-0 w-[300px] max-w-[39%] shrink-0 overflow-y-auto rounded-[10px] bg-surface">
+          <PreviewTransport
+          key={`preview-${selected.id}`}
           beat={selected}
+          onLocateFile={() => void locateFile(selected.id)}
           onClose={() => setSelectedId(null)}
           onRequestDelete={() => {
             setAlsoDeleteFiles(selected.fileOwnership === 'sonic-export')
@@ -726,8 +655,10 @@ export function LibraryView(): ReactNode {
             setExportError('')
           }}
         />
+        {organization ? <AnnotationEditor key={`annotations-${selected.id}`} beat={selected} annotation={Object.prototype.hasOwnProperty.call(organization.annotations, selected.id) ? organization.annotations[selected.id] : undefined} command={executeOrganization} /> : null}
+        </aside>
       ) : null}
-      {selected && organization ? <AnnotationEditor key={selected.id} beat={selected} annotation={Object.prototype.hasOwnProperty.call(organization.annotations, selected.id) ? organization.annotations[selected.id] : undefined} command={executeOrganization} /> : null}
+      </div>
 
       {menu && library.some(beat => beat.id === menu.id) ? createPortal(
         <div ref={menuRef} role="menu" aria-label="Beat actions" tabIndex={-1}
@@ -752,9 +683,10 @@ export function LibraryView(): ReactNode {
             )
             return <>
               {item('Play this beat', () => playOne(beat.id), beat.missing)}
-              {beat.sourceKind === 'youtube' && beat.sourceUrl ? <>
-                {item('Open on YouTube', async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid YouTube link is saved for this beat.') })}
-                {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.setState({ library: refreshed }) })}
+              {beat.missing || beat.fileAccessError ? item('Locate file…', () => locateFile(beat.id), pickingRecovery) : null}
+              {(beat.sourceKind === 'youtube' || beat.sourceKind === 'soundcloud') && beat.sourceUrl ? <>
+                {item(beat.sourceKind === 'soundcloud' ? 'Open on SoundCloud' : 'Open on YouTube', async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid source link is saved for this beat.') })}
+                {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.getState().setLibrarySnapshot(refreshed) })}
               </> : null}
               {item(beat.fileOwnership === 'external' ? 'Rename in library…' : 'Rename beat and file…', () => { setRenameTarget(beat); setRenameTitle(beat.title); setRenameError('') })}
               {beat.fileOwnership === 'external' ? item('Export prepared copy…', () => {
@@ -849,6 +781,7 @@ export function LibraryView(): ReactNode {
           <p className="mt-2 font-mono text-[10.5px] break-all text-fg-subtle">{deleteTarget.fileName}</p>
         ) : null}
       </ConfirmDialog>
+      {recoveryPlanId ? <RecoveryDialog planId={recoveryPlanId} onClose={() => setRecoveryPlanId(null)} /> : null}
     </div>
   )
 }

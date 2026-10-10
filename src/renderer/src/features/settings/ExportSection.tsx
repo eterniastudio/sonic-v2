@@ -1,9 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { FolderOpen, Gauge, Repeat2 } from 'lucide-react'
+import { ChevronDown, FolderOpen } from 'lucide-react'
 import type { ChannelMode, PresetId } from '@shared/domain'
 import { PRESETS } from '@shared/presets'
 import { TEMPLATE_TOKEN_HELP, TEMPLATE_TOKENS } from '@shared/template'
-import { cn } from '@/lib/cn'
 import { ipc } from '@/lib/ipc'
 import { useDebounced } from '@/lib/hooks'
 import { useApp } from '@/store/app'
@@ -14,13 +13,12 @@ import { Field, Input } from '@/components/ui/Input'
 import { Segmented } from '@/components/ui/Segmented'
 import { SwitchRow } from '@/components/ui/Switch'
 import { Accordion } from '@/components/ui/Accordion'
-import { FolderPreview } from '@/components/obsidian/FolderPreview'
+import { SettingsPanel } from './SettingsPanel'
 
 export function ExportSection(): ReactNode {
   const settings = useApp((state) => state.settings)
   const patchSettings = useApp((state) => state.patchSettings)
   const chooseDownloadDir = useApp((state) => state.chooseDownloadDir)
-  const library = useApp((state) => state.library)
 
   const [template, setTemplate] = useState(settings.namingTemplate)
   const [preview, setPreview] = useState<{ rendered: string; unknownTokens: string[] } | null>(null)
@@ -47,39 +45,31 @@ export function ExportSection(): ReactNode {
   const preset = PRESETS.find((entry) => entry.id === settings.defaultPresetId) ?? PRESETS[0]
 
   return (
-    <div className="space-y-7">
-      <section className="space-y-3">
-        <h3 className="text-[12px] font-semibold tracking-[0.1em] text-fg-subtle uppercase">
-          Destination
-        </h3>
-
-        <Field label="Export folder" hint="Where finished beats are published">
+    <div>
+      <SettingsPanel title="Destination">
+        <Field label="Export folder" htmlFor="settings-export-folder" hint="Where finished beats are published" className="[&>div>span]:text-[12px]">
           <div className="flex gap-2">
-            <Input
-              value={settings.downloadDir}
-              readOnly
-              className="font-mono text-[11.5px]"
-              leading={<FolderOpen />}
-            />
+            <div className="min-w-0 flex-1">
+              <Input
+                id="settings-export-folder"
+                value={settings.downloadDir}
+                readOnly
+                className="font-mono text-[12px]"
+                leading={<FolderOpen />}
+              />
+            </div>
             <Button variant="secondary" onClick={() => void chooseDownloadDir()}>
               Change
             </Button>
           </div>
         </Field>
+      </SettingsPanel>
 
-        <FolderPreview
-          path={settings.downloadDir}
-          files={library.slice(0, 12).map((beat) => ({ name: beat.fileName, sizeBytes: beat.sizeBytes }))}
-        />
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-[12px] font-semibold tracking-[0.1em] text-fg-subtle uppercase">
-          Naming
-        </h3>
-
+      <SettingsPanel title="Naming" bodyClassName="space-y-3">
         <Field
           label="File name template"
+          className="[&>div>span]:text-[12px] [&>div:last-child]:text-[12px]"
+          htmlFor="settings-naming-template"
           hint={`${TEMPLATE_TOKENS.length} tokens available`}
           note={
             preview?.unknownTokens.length
@@ -88,6 +78,7 @@ export function ExportSection(): ReactNode {
           }
         >
           <Input
+            id="settings-naming-template"
             value={template}
             spellCheck={false}
             className="font-mono text-[12px]"
@@ -99,41 +90,35 @@ export function ExportSection(): ReactNode {
           />
         </Field>
 
-        <div className="rounded-[10px] border border-line bg-surface-2 p-3">
-          <div className="mb-1.5 text-[10.5px] font-semibold tracking-[0.12em] text-fg-subtle uppercase">
-            Preview
-          </div>
-          <div className="font-mono text-[11.5px] break-all text-fg">
+        <div className="flex items-baseline gap-3 text-[12px]">
+          <span className="shrink-0 text-fg-subtle">Preview</span>
+          <div className="min-w-0 font-mono break-all text-fg-muted">
             {preview?.rendered || 'untitled'}.{preset.extension}
           </div>
         </div>
 
-        <Accordion title="Available tokens" summary={`${TEMPLATE_TOKEN_HELP.length}`}>
+        <Accordion title="Available tokens" summary={`${TEMPLATE_TOKEN_HELP.length}`} bare className="[&>button]:px-0 [&>button]:py-2">
           <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5">
             {TEMPLATE_TOKEN_HELP.map((entry) => (
               <li key={entry.token} className="flex items-baseline gap-2">
-                <code className="shrink-0 rounded-[4px] bg-surface-3 px-1 py-0.5 font-mono text-[10.5px] text-accent">
+                <code className="shrink-0 rounded-[4px] bg-surface-3 px-1 py-0.5 font-mono text-[12px] text-fg">
                   {`{${entry.token}}`}
                 </code>
-                <span className="truncate text-[11px] text-fg-muted">{entry.description}</span>
+                <span className="truncate text-[12px] text-fg-muted">{entry.description}</span>
               </li>
             ))}
           </ul>
         </Accordion>
-      </section>
+      </SettingsPanel>
 
-      <section className="space-y-3">
-        <h3 className="text-[12px] font-semibold tracking-[0.1em] text-fg-subtle uppercase">
-          Default recipe
-        </h3>
-
-        <div className="grid grid-cols-2 gap-3">
+      <SettingsPanel title="Default recipe" description="Applied to new downloads." bodyClassName="space-y-3">
+        <div className="grid grid-cols-2 gap-4">
           <Field label="Format for new downloads">
             <Dropdown
               width="trigger"
               className="w-full"
               trigger={({ toggle }) => (
-                <Button variant="secondary" className="w-full justify-between" onClick={toggle}>
+                <Button variant="secondary" className="w-full justify-between" trailing={<ChevronDown />} onClick={toggle}>
                   {preset.label}
                 </Button>
               )}
@@ -146,8 +131,8 @@ export function ExportSection(): ReactNode {
                       selected={entry.id === settings.defaultPresetId}
                       hint={entry.short}
                       onSelect={async () => {
-                      await patchSettings({ defaultPresetId: entry.id as PresetId })
-                      close()
+                        await patchSettings({ defaultPresetId: entry.id as PresetId })
+                        close()
                       }}
                     >
                       {entry.label}
@@ -172,14 +157,15 @@ export function ExportSection(): ReactNode {
           </Field>
         </div>
 
-        <p className="text-[11.5px] leading-relaxed text-fg-subtle">{preset.description}</p>
+        <p className="text-[12px] leading-relaxed text-fg-subtle">{preset.description}</p>
 
         <Field
           label="Loudness normalisation"
+          className="[&>div>span]:text-[12px] [&>div:last-child]:text-[12px]"
           hint="Off by default — on changes the audio"
-          note="Uses ffmpeg loudnorm. Leave this off unless a destination specifically asks for a target."
+          note="Leave this off unless your destination asks for a specific loudness target."
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
             <Segmented
               value={settings.normalizeLufs == null ? 'off' : 'on'}
               onChange={(next) =>
@@ -194,6 +180,7 @@ export function ExportSection(): ReactNode {
             {settings.normalizeLufs != null ? (
               <div className="flex items-center gap-1.5">
                 <input
+                  aria-label="Loudness target"
                   type="range"
                   min={-24}
                   max={-8}
@@ -202,22 +189,19 @@ export function ExportSection(): ReactNode {
                   onChange={(event) => void patchSettings({ normalizeLufs: Number(event.target.value) })}
                   className="w-32 accent-[var(--sonic-accent)]"
                 />
-                <Badge tone="accent" size="sm">
+                <Badge tone="neutral" size="sm" className="h-6 text-[12px]">
                   {settings.normalizeLufs} LUFS
                 </Badge>
               </div>
             ) : null}
           </div>
         </Field>
-      </section>
+      </SettingsPanel>
 
-      <section>
-        <h3 className="mb-1 text-[12px] font-semibold tracking-[0.1em] text-fg-subtle uppercase">
-          Audio analysis
-        </h3>
-
+      <SettingsPanel title="Audio analysis">
         <div className="divide-y divide-[var(--sonic-border)]">
           <SwitchRow
+            className="pt-0 pb-3"
             title="Analyze downloaded audio automatically"
             description="Estimates tempo and key from the audio itself and fills any field the source did not state. Works locally; nothing is uploaded."
             checked={settings.analyzeOnDownload}
@@ -225,12 +209,11 @@ export function ExportSection(): ReactNode {
           />
         </div>
 
-        <div className="mt-4 flex items-center gap-3">
-          <Gauge className="size-4 shrink-0 text-fg-subtle" />
+        <div className="flex items-center gap-3 border-t border-line py-3">
           <span className="flex-1 text-[12.5px] text-fg-muted">
             Concurrent analyses
-            <span className="mt-0.5 block text-[11px] text-fg-subtle">
-              Analysis is CPU-bound and runs on a worker thread; 1 is usually right.
+            <span className="mt-0.5 block text-[12px] text-fg-subtle">
+              One at a time keeps your workspace responsive.
             </span>
           </span>
           <Segmented
@@ -247,19 +230,14 @@ export function ExportSection(): ReactNode {
           />
         </div>
 
-        <p className="mt-3 text-[11.5px] leading-relaxed text-fg-subtle">
-          A source's own claim always wins over an audio estimate. When the video title, description or
-          tags disagree with what was measured, both values are kept and the disagreement is shown in
-          the metadata inspector — the estimate only fills fields nothing else supplied.
+        <p className="text-[12px] leading-relaxed text-fg-subtle">
+          Source metadata takes priority. Estimates fill missing fields; disagreements stay visible
+          in the metadata inspector.
         </p>
-      </section>
+      </SettingsPanel>
 
-      <section>
-        <h3 className="mb-1 text-[12px] font-semibold tracking-[0.1em] text-fg-subtle uppercase">
-          Tagging and sidecars
-        </h3>
-
-        <div className="divide-y divide-[var(--sonic-border)]">
+      <SettingsPanel title="Tagging and sidecars">
+        <div className="divide-y divide-[var(--sonic-border)] [&>div]:py-2.5 [&>div:first-child]:pt-0 [&>div:last-child]:pb-0">
           <SwitchRow
             title="Embed metadata in the file"
             description="Writes title, producer, tempo, key and genre into the container tags."
@@ -293,14 +271,10 @@ export function ExportSection(): ReactNode {
             onChange={(next) => void patchSettings({ rewriteTagsOnEdit: next })}
           />
         </div>
-      </section>
+      </SettingsPanel>
 
-      <section>
-        <h3 className="mb-1 text-[12px] font-semibold tracking-[0.1em] text-fg-subtle uppercase">
-          Queue behaviour
-        </h3>
-
-        <div className="divide-y divide-[var(--sonic-border)]">
+      <SettingsPanel title="Queue behaviour">
+        <div className="divide-y divide-[var(--sonic-border)] [&>div]:py-2.5 [&>div:first-child]:pt-0">
           <SwitchRow
             title="Start downloads automatically"
             description="Begin exporting as soon as a pasted link has been inspected, instead of waiting for review."
@@ -315,8 +289,7 @@ export function ExportSection(): ReactNode {
           />
         </div>
 
-        <div className={cn('mt-4 flex items-center gap-3')}>
-          <Repeat2 className="size-4 shrink-0 text-fg-subtle" />
+        <div className="flex items-center gap-3 border-t border-line pt-3">
           <span className="flex-1 text-[12.5px] text-fg-muted">Concurrent downloads</span>
           <Segmented
             value={String(settings.concurrency)}
@@ -330,7 +303,7 @@ export function ExportSection(): ReactNode {
             ]}
           />
         </div>
-      </section>
+      </SettingsPanel>
     </div>
   )
 }

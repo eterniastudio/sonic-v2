@@ -71,6 +71,9 @@ export function createMainWindow(): BrowserWindow {
     })
 
   const window = new BrowserWindow({
+    icon: app.isPackaged
+      ? path.join(process.resourcesPath, 'icon.png')
+      : path.join(app.getAppPath(), 'build', 'icon.png'),
     width: saved.width,
     height: saved.height,
     x: placementIsUsable ? (saved.x as number) : undefined,

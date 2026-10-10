@@ -39,7 +39,7 @@ for (const layout of ['grid', 'list']) {
   test(`${layout}: filtered collection, shortlist, inspector and scroll survive navigation without replacing playback`, async () => {
     await invoke('organization:command', { type: 'create-manual', name: 'Working set', beatIds: beats.slice(0, 32).map(beat => beat.id) })
     await page.getByRole('button', { name: 'Collection: Working set', exact: true }).click()
-    if (layout === 'list') await page.getByRole('tablist', { name: 'Layout' }).getByRole('tab').nth(1).click()
+    await page.getByRole('tablist', { name: 'Layout' }).getByRole('tab').nth(layout === 'list' ? 1 : 0).click()
     await search().fill('Offline')
     await page.getByRole('button', { name: 'Filters', exact: true }).click()
     await page.getByLabel('Target BPM').fill('140')

@@ -8,7 +8,7 @@ export interface ParsedVideoUrl {
   /** Canonical https URL, when the input could be normalised. */
   normalized: string | null
   videoId: string | null
-  provider: 'youtube' | null
+  provider: 'youtube' | 'soundcloud' | null
   reason: string | null
 }
 
@@ -22,6 +22,37 @@ const YOUTUBE_HOSTS = new Set([
 ])
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/
+
+/** A playlist is expanded separately; media jobs always retain single-track URLs. */
+export function parsePlaylistUrl(input: string): string | null {
+  try {
+    const url = new URL(input.trim())
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || !YOUTUBE_HOSTS.has(url.hostname)) return null
+    const path = url.pathname
+    if (path !== '/playlist' && path !== '/watch' && !((url.hostname === 'youtu.be' || url.hostname === 'www.youtu.be') && /^\/[A-Za-z0-9_-]{11}$/.test(path))) return null
+    const id = url.searchParams.get('list')
+    return id && /^[A-Za-z0-9_-]{2,200}$/.test(id) ? `https://www.youtube.com/playlist?list=${id}` : null
+  } catch { return null }
+}
+
+export function extractIntakeUrls(blob: string): { tracks: ParsedVideoUrl[]; playlists: string[]; rejected: string[] } {
+  const playlists = new Set<string>()
+  const tracks: string[] = []
+  for (const token of blob.split(/[\s,]+/).filter(Boolean)) {
+    const playlist = parsePlaylistUrl(token)
+    if (playlist) playlists.add(playlist)
+    else tracks.push(token)
+  }
+  const parsed = extractVideoUrls(tracks.join('\n'))
+  return { tracks: parsed.accepted, playlists: [...playlists], rejected: parsed.rejected }
+}
+const SOUNDCLOUD_HOSTS = new Set(['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com'])
+const SOUNDCLOUD_SHARE_HOSTS = new Set(['on.soundcloud.com', 'soundcloud.app.goo.gl'])
+const SOUNDCLOUD_COLLECTIONS = new Set(['tracks', 'albums', 'sets', 'reposts', 'likes', 'spotlight', 'comments'])
+
+export function isSoundCloudShareUrl(input: string): boolean {
+  try { return SOUNDCLOUD_SHARE_HOSTS.has(new URL(input).hostname) } catch { return false }
+}
 
 export function parseVideoUrl(input: string): ParsedVideoUrl {
   const trimmed = input.trim()
@@ -52,17 +83,37 @@ export function parseVideoUrl(input: string): ParsedVideoUrl {
     }
   }
 
-  if (!YOUTUBE_HOSTS.has(url.hostname.toLowerCase())) {
+  if (url.username || url.password || url.port) {
+    return { ok: false, normalized: null, videoId: null, provider: null, reason: 'Links with credentials or custom ports are not supported' }
+  }
+
+  const host = url.hostname.toLowerCase()
+  if (SOUNDCLOUD_HOSTS.has(host) || SOUNDCLOUD_SHARE_HOSTS.has(host)) {
+    const segments = url.pathname.replace(/\/$/, '').split('/').slice(1)
+    const share = SOUNDCLOUD_SHARE_HOSTS.has(host)
+    const valid = share
+      ? segments.length === 1 && /^[A-Za-z0-9_-]+$/.test(segments[0])
+      : (segments.length === 2 || (segments.length === 3 && /^s-[A-Za-z0-9]+$/.test(segments[2]))) &&
+        segments.slice(0, 2).every(segment => /^[A-Za-z0-9_-]+$/.test(segment)) &&
+        !SOUNDCLOUD_COLLECTIONS.has(segments[1]) &&
+        !['discover', 'search', 'you', 'stations', 'stream', 'charts'].includes(segments[0])
+    if (!valid) return { ok: false, normalized: null, videoId: null, provider: 'soundcloud', reason: 'Use a SoundCloud track link — playlists and profiles are not supported' }
+    let normalized = `https://${share ? host : 'soundcloud.com'}/${segments.join('/')}`
+    const secret = url.searchParams.get('secret_token')
+    if (!share && segments.length === 2 && secret && /^s-[A-Za-z0-9]+$/.test(secret)) normalized += `/${secret}`
+    return { ok: true, normalized, videoId: null, provider: 'soundcloud', reason: null }
+  }
+
+  if (!YOUTUBE_HOSTS.has(host)) {
     return {
       ok: false,
       normalized: null,
       videoId: null,
       provider: null,
-      reason: 'Only YouTube links are supported'
+      reason: 'Only YouTube and SoundCloud track links are supported'
     }
   }
 
-  const host = url.hostname.toLowerCase()
   let videoId: string | null = null
 
   if (host.endsWith('youtu.be')) {
@@ -111,9 +162,9 @@ export function extractVideoUrls(blob: string): { accepted: ParsedVideoUrl[]; re
 
   for (const token of tokens) {
     const parsed = parseVideoUrl(token)
-    if (parsed.ok && parsed.normalized && parsed.videoId) {
-      if (seen.has(parsed.videoId)) continue
-      seen.add(parsed.videoId)
+    if (parsed.ok && parsed.normalized) {
+      if (seen.has(parsed.normalized)) continue
+      seen.add(parsed.normalized)
       accepted.push(parsed)
     } else {
       rejected.push(token)

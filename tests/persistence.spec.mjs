@@ -76,10 +76,13 @@ for (const [cycle, lastChange] of ['settings', 'correction', 'active analysis'].
       await expect(page.locator('[data-playback-dock]')).toHaveAttribute('data-playback-state', 'playing')
       await page.getByRole('button', { name: 'Analyze audio', exact: true }).click()
       await expect.poll(async () => (await invoke('analysis:status')).running).toBeGreaterThan(0)
+      // One analysis can finish during the OS process snapshot. Queue the
+      // remaining real fixtures so close still exercises active and waiting work.
+      expect((await invoke('analysis:queueMissing')).queued).toBe(beats.length - 1)
       await captureOwnedProcesses(app)
       await invoke('queue:reorder', intendedOrder)
       expect((await invoke('analysis:status')).running).toBeGreaterThan(0)
-      await writeFile(info.outputPath('workload-at-close.json'), JSON.stringify({ generatedAudioSeconds: 600, preview: 'playing', analysisRunning: true, queueOrder: intendedOrder, repeatedCloseRequests: 3 }, null, 2))
+      await writeFile(info.outputPath('workload-at-close.json'), JSON.stringify({ generatedAudioSeconds: 600, analysisBeatIds: beats.map(beat => beat.id), preview: 'playing', analysisRunning: true, queueOrder: intendedOrder, repeatedCloseRequests: 3 }, null, 2))
     } else if (lastChange === 'settings') {
       await invoke('settings:patch', { defaultPresetId: 'flac', accent: 'cyan' })
     } else {
@@ -93,8 +96,10 @@ for (const [cycle, lastChange] of ['settings', 'correction', 'active analysis'].
     if (lastChange === 'settings') expect((await invoke('settings:get')).accent).toBe('cyan')
     if (lastChange === 'active analysis') {
       expect((await invoke('analysis:status')).running).toBe(0)
-      const status = (await currentBeat(beatId)).analysisStatus
-      expect(['analyzing', 'queued']).not.toContain(status)
+      expect((await invoke('analysis:status')).queued).toBe(0)
+      for (const beat of await invoke('library:list')) {
+        expect(['analyzing', 'queued']).not.toContain(beat.analysisStatus)
+      }
     }
     await writeFile(info.outputPath('restored.json'), JSON.stringify({ settings: await invoke('settings:get'), beat: await currentBeat(beatId), queue: await invoke('queue:snapshot') }, null, 2))
   })

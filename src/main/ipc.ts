@@ -13,12 +13,14 @@ import { libraryAnalysis } from './analysis/libraryAnalysis'
 import { engineService } from './services/engine'
 import { libraryService } from './services/library'
 import { localImportService } from './services/localImport'
+import { recoveryService } from './services/recovery'
 import { organizationService, validateOrganizationCommand } from './services/organization'
 import { batchOperations } from './services/batchOperations'
 import { playbackSessionService, validatePlaybackCheckpoint } from './services/playbackSession'
 import { validateBatchRequest } from '@shared/batch'
 import { defaultDownloadDir } from './services/paths'
 import { probeUrl } from './services/probe'
+import { inspectPlaylist, cancelPlaylist } from './services/playlist'
 import { queueService } from './services/queue'
 import { reexportBeat } from './services/reexport'
 import { settingsService } from './services/settings'
@@ -132,7 +134,14 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
     case 'library:refreshSource': case 'library:revealFile': case 'library:openFile':
     case 'library:openSidecarFile': case 'analysis:cancel':
     case 'import:status': case 'import:cancel': case 'batch:status': case 'batch:cancel': case 'batch:retry':
+    case 'recovery:chooseFile': case 'recovery:status': case 'recovery:cancel': case 'playlist:cancel':
       valid = args.length === 1 && isId(a); break
+    case 'recovery:chooseFolder':
+      valid = args.length === 1 && isStringArray(a, 10_000) && a.length > 0 && new Set(a).size === a.length; break
+    case 'recovery:apply':
+      valid = args.length === 2 && isId(a) && Array.isArray(b) && b.length > 0 && b.length <= 10_000 &&
+        b.every(item => isRecord(item) && Object.keys(item).length === 2 && isId(item.beatId) && isId(item.candidateId)) &&
+        new Set(b.map(item => item.beatId)).size === b.length; break
     case 'organization:command':
       valid = args.length === 1 && validateOrganizationCommand(a); break
     case 'playback:checkpoint':
@@ -156,6 +165,8 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
       valid = args.length === 2 && typeof a === 'string' && a.length <= 4096 && PRESETS.has(b as string); break
     case 'probe:url':
       valid = args.length === 1 && typeof a === 'string' && a.length <= 4096; break
+    case 'playlist:inspect':
+      valid = args.length === 2 && typeof a === 'string' && a.length <= 4096 && isId(b); break
     case 'queue:add':
       valid = args.length === 1 && isStringArray(a, 1000, 4096); break
     case 'queue:reorder':
@@ -198,9 +209,9 @@ export function registerIpcHandlers(): void {
   handle('playback:identity', beatId => playbackSessionService.identity(beatId))
   handle('playback:checkpoint', command => playbackSessionService.checkpoint(command))
   handle('storage:status', () => storageStatus())
-  handle('storage:retry', () => {
+  handle('storage:retry', async () => {
     queueService.flush()
-    retryStorage()
+    await retryStorage()
     broadcast('settings:changed', settingsService.get())
     broadcast('library:changed', libraryService.list())
     broadcast('organization:changed', organizationService.snapshot())
@@ -325,6 +336,8 @@ export function registerIpcHandlers(): void {
 
   // ---------------------------------------------------------------- probe
   handle('probe:url', (url) => probeUrl(url))
+  handle('playlist:inspect', (url, requestId) => inspectPlaylist(url, requestId))
+  handle('playlist:cancel', requestId => cancelPlaylist(requestId))
 
   // ---------------------------------------------------------------- queue
   handle('queue:snapshot', () => queueService.snapshot())
@@ -351,6 +364,23 @@ export function registerIpcHandlers(): void {
 
   // -------------------------------------------------------------- library
   handle('library:list', () => libraryService.list())
+  const recoveryOwner = (): number => getMainWindow()!.webContents.id
+  handle('recovery:chooseFile', async beatId => {
+    const owner = recoveryOwner()
+    const beat = libraryService.get(beatId)
+    if (!beat) throw new Error('This track is no longer in the library.')
+    const result = await dialog.showOpenDialog({ title: 'Locate missing audio', properties: ['openFile'],
+      filters: [{ name: 'Audio files', extensions: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'opus', 'aif', 'aiff', 'wma'] }, { name: 'All files', extensions: ['*'] }] })
+    return { planId: result.canceled || !result.filePaths.length ? null : recoveryService.begin(owner, [beatId], result.filePaths[0], 'file') }
+  })
+  handle('recovery:chooseFolder', async ids => {
+    const owner = recoveryOwner()
+    const result = await dialog.showOpenDialog({ title: 'Find missing audio in a moved folder', properties: ['openDirectory'] })
+    return { planId: result.canceled || !result.filePaths.length ? null : recoveryService.begin(owner, ids, result.filePaths[0], 'folder') }
+  })
+  handle('recovery:status', id => recoveryService.status(id, recoveryOwner()))
+  handle('recovery:apply', (id, selected) => recoveryService.apply(id, recoveryOwner(), selected))
+  handle('recovery:cancel', id => recoveryService.cancel(id, recoveryOwner()))
   handle('organization:snapshot', () => organizationService.snapshot())
   handle('organization:command', command => organizationService.execute(command))
   handle('batch:start', request => batchOperations.start(request))
@@ -385,10 +415,10 @@ export function registerIpcHandlers(): void {
   })
   handle('library:refreshSource', async (id) => {
     const beat = libraryService.get(id)
-    if (!beat?.sourceUrl) throw new Error('This beat has no saved YouTube link.')
+    if (!beat?.sourceUrl) throw new Error('This beat has no saved source link.')
     const result = await probeUrl(beat.sourceUrl)
     if (result.error || !result.uploader) throw new Error(result.error || 'The source did not return a channel name.')
-    libraryService.update(id, { sourceChannel: result.uploader })
+    libraryService.update(id, { sourceChannel: result.uploader, thumbnail: result.thumbnail })
     if (beat.sidecarPath) await libraryService.retrySidecar(id)
     return libraryService.list()
   })

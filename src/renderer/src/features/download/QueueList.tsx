@@ -1,15 +1,13 @@
-import { useRef, type ReactNode } from 'react'
-import { ListChecks, Pause, Play } from 'lucide-react'
+import { useCallback, type ReactNode } from 'react'
+import { Download, ListChecks, Pause, Play } from 'lucide-react'
 import { useApp } from '@/store/app'
-import { ArrowFillButton } from '@/components/obsidian/ArrowFillButton'
-import { GlowingScrollIndicator } from '@/components/obsidian/GlowingScrollIndicator'
 import { Button } from '@/components/ui/Button'
 import { Segmented } from '@/components/ui/Segmented'
 import { JobRow, QueueEmptyState } from './JobRow'
 
 const TERMINAL = new Set(['complete', 'failed', 'cancelled'])
 
-/** Queue surface: bulk controls plus the per-job rows. */
+/** A dedicated queue with task controls separated from its transport settings. */
 export function QueueList(): ReactNode {
   const jobs = useApp((state) => state.queue.jobs)
   const paused = useApp((state) => state.queue.paused)
@@ -20,80 +18,49 @@ export function QueueList(): ReactNode {
   const setPaused = useApp((state) => state.setPaused)
   const setConcurrency = useApp((state) => state.setConcurrency)
   const clearFinished = useApp((state) => state.clearFinished)
-
+  const selectJob = useCallback((id: string): void => {
+    setSelectedJob(useApp.getState().selectedJobId === id ? null : id)
+  }, [setSelectedJob])
   const readyCount = jobs.filter((job) => job.stage === 'ready').length
   const activeCount = jobs.filter((job) => !TERMINAL.has(job.stage)).length
   const finishedCount = jobs.filter((job) => job.stage === 'complete' || job.stage === 'cancelled').length
-  const scrollRef = useRef<HTMLDivElement | null>(null)
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
-      <div className="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-line px-4 py-3">
-        <h2 className="text-[13px] font-semibold tracking-tight text-fg">Queue</h2>
-        <span className="text-[11.5px] text-fg-subtle nums">
-          {activeCount > 0 ? `${activeCount} active` : 'idle'}
-        </span>
-
+    <section className="flex min-h-[180px] flex-1 flex-col overflow-hidden" aria-labelledby="queue-heading">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line py-2">
+        <h2 id="queue-heading" className="text-[13px] font-medium text-fg">Queue</h2>
+        <span className="text-[11.5px] text-fg-subtle nums">{jobs.length}</span>
         <span className="flex-1" />
-
-        <button
-          type="button"
-          onClick={() => void setPaused(!paused)}
-          className="flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-surface-2 px-2.5 text-[12px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg"
-        >
-          {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-          {paused ? 'Resume' : 'Pause'}
-        </button>
-
-        <Segmented
-          size="sm"
-          value={String(concurrency)}
-          onChange={(next) => void setConcurrency(Number(next))}
-          ariaLabel="Concurrent downloads"
-          options={[
-            { value: '1', label: '1' },
-            { value: '2', label: '2' },
-            { value: '3', label: '3' }
-          ]}
-        />
-
-        <Button
-          variant="ghost"
-          size="sm"
-          leading={<ListChecks />}
-          disabled={finishedCount === 0}
-          onClick={() => void clearFinished()}
-        >
-          Clear done
-        </Button>
-
-        <ArrowFillButton
-          disabled={readyCount === 0}
-          onClick={() => void startJobs(null)}
-          className="h-8 px-3 text-[12.5px]"
-        >
+        <Button variant="ghost" size="xs" leading={<ListChecks />} disabled={finishedCount === 0} onClick={() => void clearFinished()} className="h-6 px-1.5 text-[11.5px]">Clear done</Button>
+        <Button variant="primary" size="xs" leading={<Download />} disabled={readyCount === 0} onClick={() => void startJobs(null)} className="h-6 rounded-[4px] px-2 text-[11.5px] shadow-none">
           Download all{readyCount > 0 ? ` (${readyCount})` : ''}
-        </ArrowFillButton>
+        </Button>
       </div>
 
-      <div className="relative min-h-0 flex-1">
-        <div ref={scrollRef} className="h-full space-y-2 overflow-y-auto p-3">
-          {jobs.length === 0 ? (
-            <QueueEmptyState>
-              Nothing queued yet. Paste a link above to get started.
-            </QueueEmptyState>
-          ) : (
-            jobs.map((job) => (
-              <JobRow
-                key={job.id}
-                job={job}
-                selected={selectedJobId === job.id}
-                onSelect={() => setSelectedJob(selectedJobId === job.id ? null : job.id)}
-              />
-            ))
-          )}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line pb-1.5">
+        <div className="text-[11.5px] text-fg-subtle">
+          {paused ? 'Paused' : activeCount > 0 ? `${activeCount} active` : 'Idle'}
         </div>
-        <GlowingScrollIndicator scrollRef={scrollRef} />
+        <span className="flex-1" />
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11.5px] text-fg-subtle">Parallel</span>
+          <Segmented size="sm" value={String(concurrency)} onChange={(next) => void setConcurrency(Number(next))} ariaLabel="Concurrent downloads" options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]} />
+        </div>
+        <Button variant="ghost" size="xs" onClick={() => void setPaused(!paused)} leading={paused ? <Play /> : <Pause />} className="h-6 px-1.5 text-[11.5px]">
+          {paused ? 'Resume' : 'Pause'}
+        </Button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {jobs.length === 0 ? (
+          <QueueEmptyState>Paste a link above to prepare your first download.</QueueEmptyState>
+        ) : (
+          <div className="divide-y divide-line">
+            {jobs.map((job) => (
+              <JobRow key={job.id} job={job} selected={selectedJobId === job.id} onSelect={selectJob} />
+            ))}
+          </div>
+        )}
       </div>
     </section>
   )

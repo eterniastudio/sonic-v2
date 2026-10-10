@@ -85,7 +85,7 @@ export function StatefulButton({
         'active:scale-[0.985] disabled:pointer-events-none disabled:opacity-45',
         SIZES[size],
         variant === 'primary'
-          ? 'bg-accent text-accent-fg shadow-accent hover:bg-[var(--sonic-accent-hover)]'
+          ? 'bg-primary text-primary-fg hover:bg-[var(--sonic-primary-hover)]'
           : 'border border-line bg-surface-2 text-fg hover:border-line-strong hover:bg-surface-3',
         phase === 'success' && 'bg-success text-white shadow-none',
         className

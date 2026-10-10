@@ -3,15 +3,15 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 
 const badge = cva(
-  'inline-flex items-center gap-1 rounded-full border font-medium whitespace-nowrap nums',
+  'inline-flex items-center gap-1 rounded-[5px] border font-medium whitespace-nowrap nums',
   {
     variants: {
       tone: {
         neutral: 'border-line bg-surface-2 text-fg-muted',
-        accent: 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent',
-        success: 'border-success/30 bg-success/12 text-success',
-        warning: 'border-warning/30 bg-warning/12 text-warning',
-        danger: 'border-danger/30 bg-danger/12 text-danger',
+        accent: 'border-[var(--sonic-accent-line)] bg-accent-softer text-accent',
+        success: 'border-success/20 bg-success/8 text-success',
+        warning: 'border-warning/20 bg-warning/8 text-warning',
+        danger: 'border-danger/20 bg-danger/8 text-danger',
         outline: 'border-line-strong bg-transparent text-fg-muted'
       },
       size: {

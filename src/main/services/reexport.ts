@@ -73,7 +73,8 @@ async function reexportLocked(beatId: string, presetId: PresetId): Promise<Reexp
     operationDir = await mkdtemp(path.join(stagingDir(), 'reexport-'))
     const tempOutput = path.join(operationDir, `output.${preset.extension}`)
     if (await sha256File(beat.filePath) !== beat.fingerprint) throw new Error('The source audio changed since Sonic recorded it.')
-    const source = await probeMediaFile(beat.filePath)
+    controller.signal.throwIfAborted()
+    const source = await probeMediaFile(beat.filePath, controller.signal)
 
     await transcode({
       inputPath: beat.filePath,
@@ -101,7 +102,7 @@ async function reexportLocked(beatId: string, presetId: PresetId): Promise<Reexp
       onProgress: () => undefined
     })
 
-    const output = await probeMediaFile(tempOutput)
+    const output = await probeMediaFile(tempOutput, controller.signal)
     const fingerprint = await sha256File(tempOutput)
     controller.signal.throwIfAborted()
     const current = libraryService.get(beatId)
@@ -113,8 +114,8 @@ async function reexportLocked(beatId: string, presetId: PresetId): Promise<Reexp
     }
 
     const [ytdlp, ffmpeg] = await Promise.all([
-      engineService.resolve('yt-dlp'),
-      engineService.resolve('ffmpeg')
+      engineService.resolve('yt-dlp', false, controller.signal),
+      engineService.resolve('ffmpeg', false, controller.signal)
     ])
     controller.signal.throwIfAborted()
 
@@ -139,6 +140,7 @@ async function reexportLocked(beatId: string, presetId: PresetId): Promise<Reexp
       sourceUrl: beat.sourceUrl,
       videoId: null,
       uploader: beat.sourceChannel ?? null,
+      thumbnail: beat.thumbnail ?? null,
       sourceTitle: beat.title,
       evidence: [],
       conflicts: [],

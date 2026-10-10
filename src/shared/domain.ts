@@ -6,6 +6,7 @@
  */
 
 import type { AnalysisStatus, AudioAnalysis, AudioEvidence } from './analysis'
+import type { ExportOwnershipEvidence, RecoveryInfo } from './recovery'
 
 export type ThemeMode = 'dark' | 'light' | 'system'
 
@@ -23,7 +24,7 @@ export type PresetId =
 
 export type ChannelMode = 'preserve' | 'stereo' | 'mono'
 
-export type SourceKind = 'youtube' | 'local' | 'unknown'
+export type SourceKind = 'youtube' | 'soundcloud' | 'local' | 'unknown'
 
 /** Only Sonic-created exports may be renamed or removed from disk by library actions. */
 export type FileOwnership = 'sonic-export' | 'external'
@@ -257,6 +258,9 @@ export interface LibraryBeat {
   filePath: string
   fileName: string
   fileOwnership: FileOwnership
+  /** Receipts captured when Sonic creates files; content hashes alone do not prove ownership. */
+  ownershipEvidence?: ExportOwnershipEvidence
+  recoveryInfo?: RecoveryInfo
   sidecarPath: string | null
   /** Library is authoritative; audio tags are unchanged by correction. */
   sidecarSync?: { status: 'pending' | 'synced' | 'error'; error: string | null }
@@ -270,6 +274,8 @@ export interface LibraryBeat {
   sourceUrl: string | null
   /** Channel credited by the source platform; distinct from a producer credit. */
   sourceChannel?: string | null
+  /** Artwork returned by the source platform, retained across restarts. */
+  thumbnail?: string | null
   /** Template used for this export, retained when global settings change. */
   namingTemplate?: string | null
   namingIndex?: number | null
@@ -279,6 +285,8 @@ export interface LibraryBeat {
   fingerprint: string
   /** Set by a rescan when the file is gone from disk. */
   missing: boolean
+  /** Access/volume failures are not evidence that an audio file was deleted. */
+  fileAccessError?: string | null
   /** Track-level analysis state, for the library UI. */
   analysisStatus: AnalysisStatus
   /** Full analysis record, when one has been run. */
@@ -310,6 +318,7 @@ export interface BeatSidecar {
     videoId: string | null
     uploader: string | null
     channel?: string | null
+    thumbnail?: string | null
     title: string | null
   }
   metadata: BeatMetadata

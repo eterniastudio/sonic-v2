@@ -27,9 +27,21 @@ const TEMPO_BANDS = [
   { id: 'fast', min: 150, max: Number.POSITIVE_INFINITY }
 ]
 
-export function createLibraryIndex(library: LibraryBeat[]): MiniSearch<LibraryBeat> {
-  const index = new MiniSearch<LibraryBeat>({
-    fields: ['title', 'producer', 'sourceChannel', 'fileName', 'key', 'camelot', 'format'],
+const INDEX_FIELDS = ['title', 'producer', 'sourceChannel', 'fileName', 'key', 'camelot', 'format', 'bpm'] as const
+type SearchDocument = Pick<LibraryBeat, 'id' | typeof INDEX_FIELDS[number]>
+export type LibraryIndex = MiniSearch<SearchDocument>
+const indexedDocuments = new WeakMap<LibraryIndex, SearchDocument[]>()
+
+/** Analysis, file availability and other unindexed changes do not require rebuilding search. */
+export function createLibraryIndex(library: LibraryBeat[], previous?: LibraryIndex): LibraryIndex {
+  const documents = library.map(beat => ({ id: beat.id, title: beat.title, producer: beat.producer,
+    sourceChannel: beat.sourceChannel, fileName: beat.fileName, key: beat.key,
+    camelot: beat.camelot, format: beat.format, bpm: beat.bpm }))
+  const existing = previous && indexedDocuments.get(previous)
+  if (previous && existing && existing.length === documents.length && documents.every((document, position) =>
+    document.id === existing[position].id && INDEX_FIELDS.every(field => Object.is(document[field], existing[position][field])))) return previous
+  const index = new MiniSearch<SearchDocument>({
+    fields: [...INDEX_FIELDS],
     searchOptions: {
       boost: { title: 2, producer: 1.6 },
       fuzzy: 0.2,
@@ -37,13 +49,14 @@ export function createLibraryIndex(library: LibraryBeat[]): MiniSearch<LibraryBe
       combineWith: 'AND'
     }
   })
-  index.addAll(library)
+  index.addAll(documents)
+  indexedDocuments.set(index, documents)
   return index
 }
 
 export function searchLibrary(
   library: LibraryBeat[],
-  index: MiniSearch<LibraryBeat>,
+  index: LibraryIndex,
   options: LibrarySearchOptions
 ): LibraryBeat[] {
   const query = options.query.trim()
@@ -56,6 +69,8 @@ export function searchLibrary(
   const keyText = options.key.trim()
   const wantedKey = keyText ? parseKeyString(keyText) : null
   if (keyText && !wantedKey) return []
+  const candidates = targetBpm == null ? [] : options.includeHalfDouble
+    ? [targetBpm, targetBpm / 2, targetBpm * 2] : [targetBpm]
 
   const rows = library.filter((beat) => {
     if (rank && !rank.has(beat.id)) return false
@@ -63,17 +78,14 @@ export function searchLibrary(
       (band) => options.bands.has(band.id) && beat.bpm! >= band.min && beat.bpm! < band.max
     ))) return false
     if (options.formats.size > 0 && !options.formats.has(beat.format)) return false
-    if (options.fileFilter === 'present' && beat.missing) return false
-    if (options.fileFilter === 'missing' && !beat.missing) return false
+    if (options.fileFilter === 'present' && (beat.missing || beat.fileAccessError)) return false
+    if (options.fileFilter === 'missing' && !beat.missing && !beat.fileAccessError) return false
     if (options.reviewFilter === 'incomplete' && beat.analysisStatus === 'estimated') return false
     if (options.reviewFilter === 'disagreement' && !beat.verification?.fields.some(
       (field) => (field.field === 'bpm' || field.field === 'key') && field.verdict === 'mismatch'
     )) return false
     if (targetBpm != null) {
       if (beat.bpm == null) return false
-      const candidates = options.includeHalfDouble
-        ? [targetBpm, targetBpm / 2, targetBpm * 2]
-        : [targetBpm]
       if (!candidates.some((candidate) => Math.abs(beat.bpm! - candidate) <= options.bpmTolerance)) return false
     }
     if (wantedKey) {
@@ -85,7 +97,7 @@ export function searchLibrary(
     return true
   })
 
-  const sorted = [...rows]
+  const sorted = rows
   switch (options.sort) {
     case 'manual': break
     case 'relevance':
@@ -104,7 +116,7 @@ export function searchLibrary(
 
 /** Smart views use the same search and review predicates as the library filters. */
 export function searchSmartCollection(
-  library: LibraryBeat[], index: MiniSearch<LibraryBeat>, rules: SmartCollectionRule,
+  library: LibraryBeat[], index: LibraryIndex, rules: SmartCollectionRule,
   annotations: OrganizationSnapshot['annotations'], sort: LibrarySort
 ): LibraryBeat[] {
   const searched = searchLibrary(library, index, {

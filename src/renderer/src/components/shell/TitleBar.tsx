@@ -78,20 +78,20 @@ export function TitleBar(): ReactNode {
   useIpcEvent('window:maximized', setMaximized)
 
   return (
-    <header className="drag-region relative z-40 flex h-12 shrink-0 items-end border-b border-line bg-surface/70 backdrop-blur-xl">
-      <div className="flex h-10 min-w-0 flex-1 items-center gap-2 pl-3">
+    <header className="drag-region relative z-40 flex h-[52px] shrink-0 items-end bg-bg-deep">
+      <div className="flex h-11 min-w-0 flex-1 items-center px-5">
         <Wordmark />
       </div>
 
       {/* Windows reserves the outer resize border before Chromium hit testing.
-          Keep a visible 8px title strip above the full 40px button hit areas. */}
-      <div className="no-drag flex h-10 items-stretch gap-1 pr-1">
+          Keep a visible 8px title strip above the full 44px button hit areas. */}
+      <div className="no-drag flex h-11 items-stretch gap-1 pr-1">
         <button
           type="button"
           onClick={() => void cycleTheme()}
           title={`Theme: ${THEME_LABELS[themeMode]} — click to cycle`}
           aria-label={`Theme: ${THEME_LABELS[themeMode]}. Click to cycle.`}
-          className="self-center grid size-7 place-items-center rounded-[7px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
+          className="grid size-8 self-center place-items-center rounded-[5px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
         >
           <IconSwap
             swapped={theme === 'light'}
@@ -104,16 +104,16 @@ export function TitleBar(): ReactNode {
         <button
           type="button"
           onClick={() => setCommandOpen(true)}
-          className="self-center flex h-7 items-center gap-2 rounded-[7px] border border-line bg-surface-2 pr-1.5 pl-2 text-[11.5px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg-muted"
+          className="flex h-7 self-center items-center gap-2 rounded-[5px] px-2 text-[11px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
         >
-          <Command className="size-3" />
+          <Command aria-hidden="true" className="size-3 text-fg-subtle" />
           <span>Commands</span>
-          <kbd className="rounded-[4px] border border-line bg-surface px-1 text-[10px] font-medium">
+          <kbd className="ml-1 text-[10px] font-medium text-fg-subtle">
             Ctrl K
           </kbd>
         </button>
 
-        <span className="self-center mx-1 h-5 w-px bg-line" />
+        <span aria-hidden="true" className="w-2" />
 
         <WindowButton kind="minimize" label="Minimize" onClick={() => ipc.invoke('window:minimize')} />
         <WindowButton

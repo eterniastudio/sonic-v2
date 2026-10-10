@@ -25,7 +25,7 @@ export interface PlaybackEngine {
   getDuration(): number
   setVolume(volume: number): void
   setColors?(wave: string, progress: string): void
-  on(event: 'play' | 'pause' | 'timeupdate' | 'finish' | 'error', callback: (value?: unknown) => void): void
+  on(event: 'play' | 'pause' | 'timeupdate' | 'interaction' | 'finish' | 'error', callback: (value?: unknown) => void): void
   destroy(): void
 }
 
@@ -41,6 +41,7 @@ export interface PlaybackControllerOptions {
 
 const PREVIOUS_RESTART_THRESHOLD_SEC = 3
 const PROGRESS_CHECKPOINT_MS = 20_000
+const PROGRESS_PUBLISH_MS = 100
 
 function validSeconds(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0
@@ -62,12 +63,15 @@ export class PlaybackController {
   private generation = 0
   private activeFingerprint: string | null = null
   private activeLibraryFingerprint: string | null = null
+  private activePath: string | null = null
   private autoplay = false
   private queueIds: string[] = []
   private queueLabel = ''
   private queueIndex = -1
   private positions = new Map<string, { fingerprint: string; positionSec: number; completed: boolean }>()
   private lastProgressCheckpoint = 0
+  private lastProgressPublished = -Infinity
+  private latestPosition = 0
   private seekTimer: ReturnType<typeof setTimeout> | null = null
   private disposed = false
 
@@ -81,6 +85,7 @@ export class PlaybackController {
   getSnapshot = (): PlaybackState => this.state
 
   private update(patch: Partial<PlaybackState>): void {
+    if ((Object.keys(patch) as (keyof PlaybackState)[]).every(key => Object.is(this.state[key], patch[key]))) return
     this.state = { ...this.state, ...patch }
     this.listeners.forEach(listener => listener())
   }
@@ -106,9 +111,11 @@ export class PlaybackController {
     }
     const volume = clampVolume(snapshot.volume)
     const beat = snapshot.lastTrackId ? this.options.getBeat(snapshot.lastTrackId) : undefined
-    this.update({ beatId: beat && !beat.missing ? beat.id : null, status: beat && !beat.missing ? 'paused' : 'idle', current: 0, duration: beat?.durationSec ?? 0, volume, error: null })
+    this.latestPosition = 0
+    const available = beat && !beat.missing && !beat.fileAccessError
+    this.update({ beatId: available ? beat.id : null, status: available ? 'paused' : 'idle', current: 0, duration: beat?.durationSec ?? 0, volume, error: null })
     this.engine?.setVolume(volume)
-    if (this.container && beat && !beat.missing) void this.loadTrack(beat.id, false, false)
+    if (this.container && available) void this.loadTrack(beat.id, false, false)
   }
 
   playOne = (id: string): void => {
@@ -144,7 +151,7 @@ export class PlaybackController {
       index >= 0 && index < this.queueIds.length;
       index += direction) {
       const beat = this.options.getBeat(this.queueIds[index])
-      if (beat && !beat.missing) return index
+      if (beat && !beat.missing && !beat.fileAccessError) return index
       this.options.onNotice?.('A missing or removed track was skipped in the audition queue.')
     }
     return -1
@@ -167,7 +174,8 @@ export class PlaybackController {
     const id = this.state.beatId
     const beat = id ? this.options.getBeat(id) : undefined
     if (!beat || !this.activeFingerprint) return
-    const positionSec = completed ? this.state.duration : this.state.current
+    // Progress paints are bounded, but persistence always uses the latest frame.
+    const positionSec = completed ? this.state.duration : this.latestPosition
     if (!Number.isFinite(positionSec)) return
     this.positions.set(id!, { fingerprint: this.activeFingerprint, positionSec, completed })
     this.options.checkpoint({ type: 'position', beatId: id!, fingerprint: this.activeFingerprint, positionSec, completed })
@@ -185,7 +193,7 @@ export class PlaybackController {
   private async loadTrack(id: string, play: boolean, saveActive: boolean, force = false): Promise<void> {
     if (this.disposed || this.state.closing) return
     const beat = this.options.getBeat(id)
-    if (!beat || beat.missing) {
+    if (!beat || beat.missing || beat.fileAccessError) {
       this.clearActive('This track is missing or was removed from the library.')
       return
     }
@@ -198,8 +206,11 @@ export class PlaybackController {
     this.invalidateEngine()
     this.activeFingerprint = null
     this.activeLibraryFingerprint = beat.fingerprint
+    this.activePath = beat.filePath
     const generation = this.generation
     this.autoplay = play
+    this.latestPosition = 0
+    this.lastProgressPublished = -Infinity
     this.update({ beatId: id, status: this.container ? 'loading' : 'paused', current: 0,
       duration: beat.durationSec, queueContext: this.context(), error: null })
     if (saveActive) this.options.checkpoint({ type: 'active', beatId: id })
@@ -215,48 +226,64 @@ export class PlaybackController {
     if (this.disposed || this.state.closing || generation !== this.generation || !this.container) return
     this.activeFingerprint = fingerprint
     const position = this.savedPosition(beat, fingerprint)
+    this.latestPosition = position
     this.update({ current: position })
-    const engine = this.options.createEngine(this.container)
-    this.engine = engine
-    engine.setVolume(this.state.volume)
-    const live = (): boolean => !this.disposed && generation === this.generation && this.engine === engine
-    engine.on('play', () => {
-      if (!live()) return
-      if (this.autoplay) this.update({ status: 'playing' })
-      else engine.pause()
-    })
-    engine.on('pause', () => { if (live() && this.state.status === 'playing') this.update({ status: 'paused' }) })
-    engine.on('timeupdate', value => {
-      if (!live() || typeof value !== 'number' || !Number.isFinite(value)) return
-      this.update({ current: value })
-      const now = (this.options.now ?? Date.now)()
-      if (this.state.status === 'playing' && now - this.lastProgressCheckpoint >= PROGRESS_CHECKPOINT_MS) this.checkpointPosition()
-    })
-    engine.on('finish', () => { if (live()) this.onFinish() })
-    engine.on('error', value => {
-      if (!live()) return
-      this.loadFailed(value)
-    })
     try {
+      const engine = this.options.createEngine(this.container)
+      this.engine = engine
+      engine.setVolume(this.state.volume)
+      const live = (): boolean => !this.disposed && generation === this.generation && this.engine === engine
+      engine.on('play', () => {
+        if (!live()) return
+        if (this.autoplay) this.update({ status: 'playing' })
+        else engine.pause()
+      })
+      engine.on('pause', () => {
+        if (live() && this.state.status === 'playing') this.update({ status: 'paused', current: this.latestPosition })
+      })
+      engine.on('timeupdate', value => {
+        if (!live() || typeof value !== 'number' || !Number.isFinite(value)) return
+        this.latestPosition = validSeconds(value)
+        const now = (this.options.now ?? Date.now)()
+        // WaveSurfer keeps its waveform smooth at frame rate. React's controls
+        // need at most ten progress paints per second, plus immediate seeks.
+        if (this.state.status !== 'playing' || now - this.lastProgressPublished >= PROGRESS_PUBLISH_MS) {
+          this.lastProgressPublished = now
+          this.update({ current: this.latestPosition })
+        }
+        if (this.state.status === 'playing' && now - this.lastProgressCheckpoint >= PROGRESS_CHECKPOINT_MS) this.checkpointPosition()
+      })
+      engine.on('interaction', value => {
+        // WaveSurfer owns the actual seek, including its paused drag debounce.
+        // An interaction previews the target; timeupdate confirms the position.
+        if (live() && typeof value === 'number' && Number.isFinite(value)) this.publishSeek(value)
+      })
+      engine.on('finish', () => { if (live()) this.onFinish() })
+      engine.on('error', value => {
+        if (live()) this.loadFailed(value)
+      })
       await engine.load(`sonic-media://beat/${encodeURIComponent(id)}?identity=${encodeURIComponent(fingerprint)}`)
       if (!live() || this.state.status === 'error') return
       const duration = validSeconds(engine.getDuration())
       const current = Math.min(position, Math.max(0, duration - 0.25))
       if (current > 0) engine.setTime(current)
+      this.latestPosition = current
       this.update({ status: 'ready', current, duration })
       if (this.autoplay) await this.startPlaying(engine, generation)
       else this.update({ status: 'paused' })
     } catch (error) {
-      if (!live()) return
+      if (this.disposed || generation !== this.generation) return
       if (this.state.status !== 'error') this.loadFailed(error)
     }
   }
 
   private loadFailed(error: unknown): void {
     const shouldPlay = this.autoplay
-    this.autoplay = false
+    // Release decoded buffers and AudioContext on every failure, including
+    // synchronous construction/setup errors and errors after playback starts.
+    this.invalidateEngine()
     const message = error instanceof Error ? error.message : String(error)
-    this.update({ status: 'error', error: message })
+    this.update({ status: 'error', current: this.latestPosition, error: message })
     this.options.onNotice?.(`This track could not be played: ${message}`)
     if (this.queueIndex >= 0) {
       const next = this.findPlayable(this.queueIndex, 1)
@@ -286,6 +313,7 @@ export class PlaybackController {
     // true for that event, but a user Pause clears it before any late finish.
     if (!this.autoplay || this.state.closing || this.state.status === 'ended') return
     this.autoplay = false
+    this.latestPosition = this.state.duration
     this.update({ status: 'ended', current: this.state.duration })
     this.checkpointPosition(true)
     if (this.state.repeat) {
@@ -323,7 +351,7 @@ export class PlaybackController {
     this.autoplay = false
     this.engine?.pause()
     if (this.state.beatId && this.state.status !== 'error' && this.state.status !== 'ended') {
-      this.update({ status: this.state.status === 'loading' ? 'loading' : 'paused' })
+      this.update({ status: this.state.status === 'loading' ? 'loading' : 'paused', current: this.latestPosition })
     }
     this.checkpointPosition()
   }
@@ -343,6 +371,8 @@ export class PlaybackController {
     this.queueLabel = ''
     this.activeFingerprint = null
     this.activeLibraryFingerprint = null
+    this.activePath = null
+    this.latestPosition = 0
     this.update({ beatId: null, status: message ? 'error' : 'idle', current: 0,
       duration: 0, queueContext: null, error: message })
     this.options.checkpoint({ type: 'active', beatId: null })
@@ -367,7 +397,7 @@ export class PlaybackController {
 
   previous = (): void => {
     if (this.state.closing) return
-    if (this.state.current > PREVIOUS_RESTART_THRESHOLD_SEC) {
+    if (this.latestPosition > PREVIOUS_RESTART_THRESHOLD_SEC) {
       this.seek(0)
       return
     }
@@ -386,7 +416,13 @@ export class PlaybackController {
     if (this.state.closing) return
     if (!this.state.beatId) return
     const current = Math.min(validSeconds(seconds), this.state.duration || Number.MAX_SAFE_INTEGER)
+    this.latestPosition = current
     this.engine?.setTime(current)
+    this.publishSeek(current)
+  }
+
+  private publishSeek(seconds: number): void {
+    const current = Math.min(validSeconds(seconds), this.state.duration || Number.MAX_SAFE_INTEGER)
     this.update({ current, status: this.state.status === 'ended' && current < this.state.duration ? 'paused' : this.state.status })
     if (this.seekTimer) clearTimeout(this.seekTimer)
     this.seekTimer = setTimeout(() => { this.seekTimer = null; this.checkpointPosition() }, 250)
@@ -429,13 +465,23 @@ export class PlaybackController {
     const id = this.state.beatId
     if (!id) return
     const beat = this.options.getBeat(id)
-    if (!beat || beat.missing) {
+    if (!beat) {
       this.clearActive('The playing track was removed or is now missing.')
+    } else if (beat.missing || beat.fileAccessError) {
+      // An unavailable record retains its captured queue and content position.
+      // Reconnection can then resume it only on an explicit Play action.
+      if (this.engine) { this.checkpointPosition(); this.invalidateEngine() }
+      this.update({ status: 'error', current: this.latestPosition, error: beat.fileAccessError || 'This audio file is missing. Locate it from the Library.' })
     } else if (this.activeLibraryFingerprint && beat.fingerprint !== this.activeLibraryFingerprint) {
       this.positions.delete(id)
       const play = this.state.status === 'playing' || (this.state.status === 'loading' && this.autoplay)
       void this.loadTrack(id, play, false, true)
       this.options.onNotice?.('The audio changed; its remembered position was reset.')
+    } else if (this.activePath && beat.filePath !== this.activePath) {
+      this.checkpointPosition()
+      this.invalidateEngine()
+      this.activePath = beat.filePath
+      this.update({ status: 'paused', current: this.latestPosition, error: null })
     }
   }
 

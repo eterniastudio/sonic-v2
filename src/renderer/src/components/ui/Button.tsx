@@ -4,29 +4,29 @@ import { cn } from '@/lib/cn'
 
 const button = cva(
   [
-    'relative inline-flex select-none items-center justify-center gap-2 whitespace-nowrap font-medium',
+    'relative inline-flex select-none items-center justify-center gap-2 whitespace-nowrap font-medium tracking-[-0.01em]',
     'no-drag disabled:pointer-events-none disabled:opacity-40',
-    'active:scale-[0.985]',
+    'active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
     'transition-[background-color,border-color,color,box-shadow,transform,opacity]',
     'duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)]'
   ],
   {
     variants: {
       variant: {
-        primary: 'bg-accent text-accent-fg shadow-accent hover:bg-[var(--sonic-accent-hover)]',
+        primary: 'border border-transparent bg-primary text-primary-fg hover:bg-[var(--sonic-primary-hover)]',
         secondary:
-          'border border-line bg-surface-2 text-fg hover:border-line-strong hover:bg-surface-3',
+          'border border-line-strong/60 bg-transparent text-fg hover:border-line-strong hover:bg-surface-2',
         outline: 'border border-line-strong text-fg hover:bg-surface-2',
         ghost: 'text-fg-muted hover:bg-surface-2 hover:text-fg',
         danger: 'border border-danger/35 bg-danger/12 text-danger hover:bg-danger/20',
-        quiet: 'bg-accent-soft text-accent hover:bg-[var(--sonic-accent-line)]'
+        quiet: 'border border-transparent bg-surface-2 text-fg hover:bg-surface-3'
       },
       size: {
-        xs: 'h-7 rounded-[7px] px-2.5 text-[11.5px]',
-        sm: 'h-8 rounded-[9px] px-3 text-[13px]',
-        md: 'h-9.5 rounded-[10px] px-4 text-[13.5px]',
-        lg: 'h-11 rounded-[12px] px-5 text-[15px]',
-        icon: 'h-9 w-9 rounded-[10px]',
+        xs: 'h-7 rounded-[6px] px-2.5 text-[11px]',
+        sm: 'h-8 rounded-[7px] px-3 text-[12px]',
+        md: 'h-8 rounded-[6px] px-3 text-[12px]',
+        lg: 'h-11 rounded-[9px] px-5 text-[14px]',
+        icon: 'h-8 w-8 rounded-[6px]',
         'icon-sm': 'h-8 w-8 rounded-[8px]',
         'icon-xs': 'h-6.5 w-6.5 rounded-[6px]'
       }

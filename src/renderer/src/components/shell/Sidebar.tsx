@@ -2,123 +2,82 @@ import type { ReactNode } from 'react'
 import { Download, Library, Settings as SettingsIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useApp, type ViewId } from '@/store/app'
-import { StatusDot } from '@/components/ui/Badge'
 
 interface NavItemProps {
   icon: ReactNode
   label: string
   active: boolean
-  count?: number
   onClick: () => void
-  /** Pulses the badge while work is in flight. */
-  busy?: boolean
 }
 
-function NavItem({ icon, label, active, count, onClick, busy }: NavItemProps): ReactNode {
+function NavItem({ icon, label, active, onClick }: NavItemProps): ReactNode {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left',
-        'transition-[background-color,color] duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
-        active ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
+        'group flex h-[34px] w-full items-center gap-2.5 rounded-[5px] px-3 text-left',
+        'transition-colors duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
+        active ? 'bg-surface-2 text-fg' : 'text-fg-muted hover:bg-surface-2/60 hover:text-fg'
       )}
     >
-      {/* Accent rail marks the active view without shifting the label. */}
-      <span
-        aria-hidden
-        className={cn(
-          'absolute top-1/2 -left-2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-accent',
-          'transition-[opacity,transform] duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)]',
-          active ? 'scale-y-100 opacity-100' : 'scale-y-50 opacity-0'
-        )}
-      />
-      <span className={cn('shrink-0 [&>svg]:size-4', active ? 'text-accent' : 'text-fg-subtle')}>
+      <span aria-hidden="true" className={cn('shrink-0 [&>svg]:size-4 [&>svg]:stroke-[1.6]', active ? 'text-fg' : 'text-fg-subtle group-hover:text-fg-muted')}>
         {icon}
       </span>
-      <span className="flex-1 truncate text-[13px] font-medium">{label}</span>
-      {count != null && count > 0 ? (
-        <span
-          className={cn(
-            'shrink-0 rounded-full px-1.5 py-0.5 text-[10.5px] font-medium nums',
-            active ? 'bg-accent/20 text-accent' : 'bg-surface-3 text-fg-subtle'
-          )}
-        >
-          {count}
-        </span>
-      ) : busy ? (
-        <StatusDot tone="accent" pulse />
-      ) : null}
+      <span className="truncate text-[13px] font-medium">{label}</span>
     </button>
   )
 }
 
-const TERMINAL = new Set(['complete', 'failed', 'cancelled'])
-
-/** Left navigation rail with live queue and library counts. */
+/** The persistent workspace navigation. */
 export function Sidebar(): ReactNode {
   const view = useApp((state) => state.view)
   const setView = useApp((state) => state.setView)
-  const jobs = useApp((state) => state.queue.jobs)
-  const library = useApp((state) => state.library)
   const engine = useApp((state) => state.engine)
 
-  const activeJobs = jobs.filter((job) => !TERMINAL.has(job.stage)).length
   const engineReady = engine?.ready ?? false
 
   const go = (next: ViewId): void => setView(next)
 
   return (
-    <nav className="flex w-[218px] shrink-0 flex-col border-r border-line bg-surface/40 px-2.5 py-3">
-      <div className="space-y-0.5">
+    <nav aria-label="Main navigation" className="flex w-[180px] shrink-0 flex-col overflow-y-auto bg-bg-deep px-2.5 py-3">
+      <div className="space-y-1">
         <NavItem
           icon={<Download />}
           label="Download"
           active={view === 'download'}
-          count={activeJobs || undefined}
-          busy={activeJobs > 0}
           onClick={() => go('download')}
         />
         <NavItem
           icon={<Library />}
           label="Library"
           active={view === 'library'}
-          count={library.length || undefined}
           onClick={() => go('library')}
-        />
-        <NavItem
-          icon={<SettingsIcon />}
-          label="Settings"
-          active={view === 'settings'}
-          onClick={() => go('settings')}
         />
       </div>
 
-      <div className="flex-1" />
+      <div className="min-h-8 flex-1" />
+
+      <NavItem
+        icon={<SettingsIcon />}
+        label="Settings"
+        active={view === 'settings'}
+        onClick={() => go('settings')}
+      />
 
       <button
         type="button"
+        aria-label="Media engine status. Open settings"
         onClick={() => go('settings')}
         className={cn(
-          'flex items-center gap-2 rounded-[9px] px-2.5 py-2 text-left',
-          'transition-colors duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
-          'hover:bg-surface-2'
+          'mt-2 flex h-8 shrink-0 items-center gap-2 rounded-[5px] px-3 text-left text-[11px] text-fg-subtle',
+          'transition-colors duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)] hover:text-fg-muted'
         )}
         title={engine?.lastError ?? (engineReady ? 'Media engine ready' : 'Media engine setup required')}
       >
-        <StatusDot tone={engineReady ? 'success' : 'warning'} pulse={!engineReady} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11.5px] font-medium text-fg-muted">
-            {engineReady ? 'Engine ready' : 'Setup required'}
-          </span>
-          <span className="block truncate text-[10.5px] text-fg-subtle">
-            {engine?.components.find((component) => component.name === 'yt-dlp')?.version
-              ? `yt-dlp ${engine.components.find((component) => component.name === 'yt-dlp')?.version}`
-              : 'yt-dlp not installed'}
-          </span>
-        </span>
+        <span aria-hidden="true" className={cn('size-1 shrink-0 rounded-full', engineReady ? 'bg-fg-subtle' : 'bg-warning')} />
+        <span className="truncate">{engineReady ? 'Engine ready' : 'Setup required'}</span>
       </button>
     </nav>
   )

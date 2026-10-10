@@ -52,6 +52,7 @@ export interface TemplateContext {
 
 const SOURCE_LABELS: Record<SourceKind, string> = {
   youtube: 'YouTube',
+  soundcloud: 'SoundCloud',
   local: 'Local',
   unknown: 'Source'
 }

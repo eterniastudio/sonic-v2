@@ -4,7 +4,9 @@ import { FAVORITES_COLLECTION_ID, type LibraryCollection, type OrganizationComma
 import type { BatchSession } from '@shared/batch'
 import { PRESETS } from '@shared/presets'
 import { ipc } from '@/lib/ipc'
-import { Button } from '@/components/ui/Button'
+import { Button, IconButton } from '@/components/ui/Button'
+import { Dropdown, DropdownItem } from '@/components/ui/Dropdown'
+import { CheckSquare2, Download, Folder, FolderMinus, FolderPlus, Library, MoreHorizontal, Play, Plus, Sparkles, Star, StarOff, Tag, Tags, X } from 'lucide-react'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/Toaster'
@@ -86,48 +88,55 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
     cancelled: batch.items.filter(item => item.status === 'cancelled').length
   } : null
 
-  return <>
-    <nav aria-label="Library collections" className="flex flex-wrap items-center gap-1.5 rounded-[12px] border border-line bg-surface p-2">
-      <button type="button" aria-label="All audio" aria-current={activeId === null ? 'page' : undefined}
-        onClick={() => void run(() => onScope(null), false)} className={`rounded-[8px] px-2.5 py-1.5 text-[12px] ${activeId === null ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2'}`}>All audio</button>
-      <button type="button" aria-label="Favorites" aria-current={activeId === FAVORITES_COLLECTION_ID ? 'page' : undefined}
-        onClick={() => void run(() => onScope(FAVORITES_COLLECTION_ID), false)} className={`rounded-[8px] px-2.5 py-1.5 text-[12px] ${activeId === FAVORITES_COLLECTION_ID ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2'}`}>Favorites</button>
-      {organization?.collections.map(item => <button key={item.id} type="button" aria-label={`Collection: ${item.name}`}
-        aria-current={activeId === item.id ? 'page' : undefined} onClick={() => void run(() => onScope(item.id), false)}
-        className={`rounded-[8px] px-2.5 py-1.5 text-[12px] ${activeId === item.id ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-surface-2'}`}>{item.type === 'smart' ? '✦ ' : ''}{item.name}</button>)}
-      <span className="flex-1" />
-      <Button size="sm" variant="quiet" onClick={() => { setName(''); open('create-manual'); setName('') }}>New collection</Button>
-      <Button size="sm" variant="quiet" onClick={() => { open('create-smart'); setName('') }}>New smart collection</Button>
-      {active ? <>
-        <Button size="sm" variant="ghost" onClick={() => open('rename')}>Rename</Button>
-        {active.type === 'smart' ? <Button size="sm" variant="ghost" onClick={() => open('edit-smart')}>Edit rules</Button> : null}
-        <Button size="sm" variant="ghost" onClick={() => open('delete')}>Delete collection</Button>
-      </> : null}
+  return <div className="min-w-0 shrink-0 space-y-2">
+    <nav aria-label="Library collections" className="flex min-w-0 items-center gap-3 border-b border-line">
+      <div className="flex min-w-0 flex-1 items-center gap-4 overflow-x-auto [&_button]:shrink-0">
+        <button type="button" aria-label="All audio" aria-current={activeId === null ? 'page' : undefined}
+          onClick={() => void run(() => onScope(null), false)} className={`flex h-9 items-center border-b-2 text-[12px] font-medium transition-colors ${activeId === null ? 'border-fg-muted text-fg' : 'border-transparent text-fg-subtle hover:text-fg'}`}>All audio</button>
+        <button type="button" aria-label="Favorites" aria-current={activeId === FAVORITES_COLLECTION_ID ? 'page' : undefined}
+          onClick={() => void run(() => onScope(FAVORITES_COLLECTION_ID), false)} className={`flex h-9 items-center gap-1.5 border-b-2 text-[12px] font-medium transition-colors ${activeId === FAVORITES_COLLECTION_ID ? 'border-fg-muted text-fg' : 'border-transparent text-fg-subtle hover:text-fg'}`}>Favorites</button>
+        {organization?.collections.map(item => <button key={item.id} type="button" aria-label={`Collection: ${item.name}`}
+          aria-current={activeId === item.id ? 'page' : undefined} onClick={() => void run(() => onScope(item.id), false)}
+          className={`flex h-9 max-w-[190px] items-center gap-1.5 border-b-2 text-[12px] font-medium transition-colors ${activeId === item.id ? 'border-fg-muted text-fg' : 'border-transparent text-fg-subtle hover:text-fg'}`}>
+          {item.type === 'smart' ? <Sparkles className="size-3.5 shrink-0" /> : <Folder className="size-3.5 shrink-0" />}<span className="truncate">{item.name}</span>
+        </button>)}
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button size="sm" variant="ghost" leading={<Plus />} onClick={() => { setName(''); open('create-manual'); setName('') }}>New collection</Button>
+        <IconButton label="New smart collection" title="New smart collection" size="icon-sm" onClick={() => { open('create-smart'); setName('') }}><Sparkles /></IconButton>
+        {active ? <Dropdown align="end" trigger={({ toggle }) => <IconButton label="Collection options" title="Collection options" size="icon-sm" onClick={toggle}><MoreHorizontal /></IconButton>}>
+          {close => <>
+            <DropdownItem onSelect={() => { open('rename'); close() }}>Rename</DropdownItem>
+            {active.type === 'smart' ? <DropdownItem onSelect={() => { open('edit-smart'); close() }}>Edit rules</DropdownItem> : null}
+            <DropdownItem tone="danger" onSelect={() => { open('delete'); close() }}>Delete collection</DropdownItem>
+          </>}
+        </Dropdown> : null}
+      </div>
     </nav>
 
-    {selectedCount ? <div role="toolbar" aria-label="Selected beats" className="flex flex-wrap items-center gap-2 rounded-[12px] border border-[var(--sonic-accent-line)] bg-accent-softer px-3 py-2">
-      <strong className="text-[12px] text-fg nums">{selectedCount} selected</strong>
-      <Button size="sm" variant="primary" onClick={onPlaySelected}>Play selected tracks</Button>
-      <Button size="sm" variant="secondary" disabled={!matchingIds.length} onClick={onPlayDisplayed}>Play displayed results</Button>
-      <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => void run(() => command({ type: 'batch-annotation', beatIds: selected, favorite: true }), false)}>Favorite selected</Button>
-      <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => void run(() => command({ type: 'batch-annotation', beatIds: selected, favorite: false }), false)}>Unfavorite selected</Button>
-      <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => open('tag-add')}>Add tag to selected</Button>
-      <Button size="sm" variant="quiet" disabled={selectedCount > 5000} onClick={() => open('tag-remove')}>Remove tag from selected</Button>
-      <Button size="sm" variant="quiet" disabled={!manualCollections.length} onClick={() => open('add-members')}>Add to collection</Button>
-      {active?.type === 'manual' ? <Button size="sm" variant="quiet" onClick={() => void run(() => command({ type: 'remove-members', id: active.id, beatIds: selected }), false)}>Remove from this collection</Button> : null}
-      <Button size="sm" variant="quiet" disabled={selectedCount > 1000} onClick={() => void run(() => startBatch('analyze'), false)}>Analyze selected</Button>
-      <Button size="sm" variant="quiet" disabled={selectedCount > 1000} onClick={() => open('export')}>Export selected</Button>
-      {selectedCount > 1000 ? <span className="text-[11px] text-fg-muted">Analyze/export: 1,000 max{selectedCount > 5000 ? '; annotations: 5,000 max' : ''}. Narrow the selection.</span> : null}
+    {selectedCount ? <div role="toolbar" aria-label="Selected beats" className="flex flex-wrap items-center gap-1.5 rounded-[6px] bg-surface-2 px-2 py-1">
+      <strong className="mr-1 shrink-0 text-[11px] font-medium text-fg nums">{selectedCount} selected</strong>
+      <Button size="sm" aria-label="Play selected tracks" variant="primary" leading={<Play className="fill-current" />} onClick={onPlaySelected}>Play selected</Button>
+      <IconButton label="Play displayed results" title="Play displayed results" size="icon-sm" disabled={!matchingIds.length} onClick={onPlayDisplayed}><Library /></IconButton>
+      <span className="mx-1 h-4 w-px bg-line-strong" />
+      <IconButton label="Favorite selected" title="Favorite selected" size="icon-sm" disabled={selectedCount > 5000} onClick={() => void run(() => command({ type: 'batch-annotation', beatIds: selected, favorite: true }), false)}><Star /></IconButton>
+      <IconButton label="Unfavorite selected" title="Unfavorite selected" size="icon-sm" disabled={selectedCount > 5000} onClick={() => void run(() => command({ type: 'batch-annotation', beatIds: selected, favorite: false }), false)}><StarOff /></IconButton>
+      <IconButton label="Add tag to selected" title="Add tag to selected" size="icon-sm" disabled={selectedCount > 5000} onClick={() => open('tag-add')}><Tags /></IconButton>
+      <IconButton label="Remove tag from selected" title="Remove tag from selected" size="icon-sm" disabled={selectedCount > 5000} onClick={() => open('tag-remove')}><Tag /></IconButton>
+      <Button size="sm" variant="ghost" leading={<FolderPlus />} disabled={!manualCollections.length} onClick={() => open('add-members')}>Add to collection</Button>
+      {active?.type === 'manual' ? <IconButton label="Remove from this collection" title="Remove from this collection" size="icon-sm" onClick={() => void run(() => command({ type: 'remove-members', id: active.id, beatIds: selected }), false)}><FolderMinus /></IconButton> : null}
+      <IconButton label="Analyze selected" title="Analyze selected" size="icon-sm" disabled={selectedCount > 1000} onClick={() => void run(() => startBatch('analyze'), false)}><Sparkles /></IconButton>
+      <IconButton label="Export selected" title="Export selected" size="icon-sm" disabled={selectedCount > 1000} onClick={() => open('export')}><Download /></IconButton>
       <span className="flex-1" />
-      {selectedCount !== matchingIds.length ? <Button size="sm" variant="ghost" onClick={selectAll}>Select all {matchingIds.length} matching</Button> : null}
-      <Button size="sm" variant="ghost" onClick={clearSelection}>Clear selection</Button>
-    </div> : <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-fg-subtle">
-      <Button size="sm" variant="quiet" disabled={!matchingIds.length} onClick={onPlayDisplayed}>Play displayed results</Button>
+      {selectedCount !== matchingIds.length ? <IconButton label={`Select all ${matchingIds.length} matching`} title={`Select all ${matchingIds.length} matching`} size="icon-sm" onClick={selectAll}><CheckSquare2 /></IconButton> : null}
+      <IconButton label="Clear selection" title="Clear selection" size="icon-sm" onClick={clearSelection}><X /></IconButton>
+      {selectedCount > 1000 ? <span className="w-full text-[10px] text-fg-muted">Analyze/export: 1,000 max{selectedCount > 5000 ? '; annotations: 5,000 max' : ''}. Narrow the selection.</span> : null}
+    </div> : <div className="flex items-center gap-2 text-[11px] text-fg-subtle">
+      <span className="mr-1 text-fg-muted nums">{matchingIds.length} track{matchingIds.length === 1 ? '' : 's'}</span>
+      <Button size="sm" variant="ghost" aria-label="Play displayed results" leading={<Play />} disabled={!matchingIds.length} onClick={onPlayDisplayed}>Play all</Button>
       <span className="flex-1" />
-      <span>Ctrl/Cmd-click to select · Shift-click for a range</span>
-      {matchingIds.length ? <Button size="sm" variant="ghost" onClick={selectAll}>Select all {matchingIds.length} matching</Button> : null}
+      {matchingIds.length ? <Button size="sm" variant="ghost" aria-label={`Select all ${matchingIds.length} matching`} onClick={selectAll}>Select all</Button> : null}
     </div>}
-
     {active?.type === 'manual' && manualSort && active.beatIds.length > 1 ? <div className="flex flex-wrap items-center gap-2 px-1 text-[11px] text-fg-subtle">
       <span>Collection order</span>
       <Button size="sm" variant="ghost" disabled={selectedCount !== 1 || active.beatIds.indexOf(selected[0]) <= 0}
@@ -172,7 +181,7 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
       {mode === 'create-smart' || mode === 'edit-smart' ? <SmartRuleEditor rules={rules} update={editRules} /> : null}
       {error ? <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p> : null}
     </Modal>
-  </>
+  </div>
 }
 
 async function moveMember(collection: Extract<LibraryCollection, { type: 'manual' }>, id: string, direction: -1 | 1,
@@ -208,7 +217,7 @@ function SmartRuleEditor({ rules, update }: { rules: SmartCollectionRule; update
     <label>Key / Camelot<Input aria-label="Smart key" value={rules.key ?? ''} onChange={event => update({ key: event.target.value || undefined })} /></label>
     <label>User tags<Input aria-label="Smart user tags" value={rules.tags?.join(', ') ?? ''} onChange={event => update({ tags: event.target.value.split(',').map(tag => tag.trim()).filter(Boolean) })} placeholder="dark, vocals" /></label>
     <label>Favorite<select aria-label="Smart favorite state" value={rules.favorite == null ? 'any' : String(rules.favorite)} onChange={event => update({ favorite: event.target.value === 'any' ? undefined : event.target.value === 'true' })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="any">Any</option><option value="true">Favorites</option><option value="false">Not favorites</option></select></label>
-    <label>Source<select aria-label="Smart source origin" value={rules.sourceKind ?? 'any'} onChange={event => update({ sourceKind: event.target.value === 'any' ? undefined : event.target.value as SmartCollectionRule['sourceKind'] })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="any">Any</option><option value="local">Local source</option><option value="youtube">YouTube source</option><option value="unknown">Unknown</option></select></label>
+    <label>Source<select aria-label="Smart source origin" value={rules.sourceKind ?? 'any'} onChange={event => update({ sourceKind: event.target.value === 'any' ? undefined : event.target.value as SmartCollectionRule['sourceKind'] })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="any">Any</option><option value="local">Local source</option><option value="youtube">YouTube source</option><option value="soundcloud">SoundCloud source</option><option value="unknown">Unknown</option></select></label>
     <label>File ownership<select aria-label="Smart file ownership" value={rules.fileOwnership ?? 'any'} onChange={event => update({ fileOwnership: event.target.value === 'any' ? undefined : event.target.value as SmartCollectionRule['fileOwnership'] })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="any">Any</option><option value="external">Imported original</option><option value="sonic-export">Sonic export</option></select></label>
     <label>Review<select aria-label="Smart review state" value={rules.reviewState ?? 'all'} onChange={event => update({ reviewState: event.target.value as SmartCollectionRule['reviewState'] })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="all">Any</option><option value="incomplete">Needs review</option><option value="disagreement">Disagreement</option></select></label>
     <label>File<select aria-label="Smart file state" value={rules.fileState ?? 'all'} onChange={event => update({ fileState: event.target.value as SmartCollectionRule['fileState'] })} className="mt-1 block w-full rounded border border-line bg-surface p-2"><option value="all">Any</option><option value="present">Present</option><option value="missing">Missing</option></select></label>

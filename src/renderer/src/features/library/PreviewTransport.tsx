@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Copy,
+  MoreHorizontal,
   ExternalLink,
   FileJson,
   FolderOpen,
@@ -19,9 +20,10 @@ import { formatBitrate, formatBpm, formatBytes, formatChannelCount, formatDurati
 import { ipc } from '@/lib/ipc'
 import { useIpcEvent, useNow } from '@/lib/hooks'
 import { useApp } from '@/store/app'
+import { TrackArtwork } from '@/components/audio/TrackArtwork'
 import { Badge } from '@/components/ui/Badge'
-import { CircleMenu } from '@/components/obsidian/CircleMenu'
-import { IconButton } from '@/components/ui/Button'
+import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/Dropdown'
+import { Button, IconButton } from '@/components/ui/Button'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { toast } from '@/components/ui/Toaster'
 import { usePlaybackActions } from '@/features/playback/playbackSession'
@@ -31,12 +33,14 @@ export function PreviewTransport({
   beat,
   onClose,
   onRequestDelete,
-  onRequestExport
+  onRequestExport,
+  onLocateFile
 }: {
   beat: LibraryBeat
   onClose: () => void
   onRequestDelete: () => void
   onRequestExport: () => void
+  onLocateFile?: () => void
 }): ReactNode {
   const { playOne } = usePlaybackActions()
   const updateBeatMetadata = useApp((state) => state.updateBeatMetadata)
@@ -83,228 +87,107 @@ export function PreviewTransport({
   }
 
   return (
-    <div
-      data-preview-state="inspecting"
-      className="shrink-0 rounded-[14px] border border-line bg-surface p-3"
-    >
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-[180px] flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="truncate text-[13px] font-medium text-fg">{beat.title}</span>
-            {beat.producer ? (
-              <span className="truncate text-[11.5px] text-fg-muted">· {beat.producer}</span>
-            ) : null}
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-fg-subtle nums">
-            <span className="text-fg-muted">{formatDuration(beat.durationSec)}</span>
-            <span>·</span>
-            <span>{beat.format.toUpperCase()}</span>
-            {beat.bitrateKbps ? (
-              <>
-                <span>·</span>
-                <span>{formatBitrate(beat.bitrateKbps)}</span>
-              </>
-            ) : null}
-            {beat.sampleRate ? (
-              <>
-                <span>·</span>
-                <span>{formatSampleRate(beat.sampleRate)}</span>
-              </>
-            ) : null}
-            {beat.channels ? (
-              <>
-                <span>·</span>
-                <span>{formatChannelCount(beat.channels)}</span>
-              </>
-            ) : null}
-            <span>·</span>
-            <span>{formatBytes(beat.sizeBytes)}</span>
-            <span>·</span>
-            <span>added {formatRelativeTime(beat.addedAt, now)}</span>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button type="button" disabled={beat.missing} onClick={() => playOne(beat.id)}
-            className="flex h-8 items-center gap-1.5 rounded-[8px] bg-accent-soft px-2.5 text-[11.5px] font-medium text-accent transition-colors hover:bg-[var(--sonic-accent-line)] disabled:opacity-40">
-            <Play className="size-3.5" /> Play this beat
-          </button>
-          <Tooltip label="Tap along to set the tempo">
-            <button
-              type="button"
-              onClick={tap}
-              className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line bg-surface-2 px-2.5 text-[11.5px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg"
-            >
-              <Timer className="size-3.5" />
-              Tap
-            </button>
-          </Tooltip>
-
-          {tapBpm != null ? (
-            <button
-              type="button"
-              onClick={() => applyBpm(tapBpm)}
-              className="h-8 rounded-[8px] bg-accent-soft px-2.5 text-[11.5px] font-medium text-accent transition-colors duration-[var(--duration-quick)] hover:bg-[var(--sonic-accent-line)]"
-              title="Apply the tapped tempo to this beat"
-            >
-              Use {tapBpm}
-            </button>
-          ) : null}
-        </div>
-
-        <span className="mx-0.5 h-7 w-px shrink-0 bg-line" />
-
-        <div className="flex shrink-0 items-center gap-1">
-          <Tooltip label="Halve the tempo">
-            <IconButton
-              label="Halve the tempo"
-              size="icon-sm"
-              variant="ghost"
-              disabled={beat.bpm == null || beat.bpm / 2 < MIN_BPM}
-              onClick={() => applyBpm((beat.bpm ?? 0) / 2)}
-            >
-              <span className="text-[11px] font-semibold">½</span>
-            </IconButton>
-          </Tooltip>
-          <Tooltip label="Double the tempo">
-            <IconButton
-              label="Double the tempo"
-              size="icon-sm"
-              variant="ghost"
-              disabled={beat.bpm == null || beat.bpm * 2 > MAX_BPM}
-              onClick={() => applyBpm((beat.bpm ?? 0) * 2)}
-            >
-              <span className="text-[11px] font-semibold">2×</span>
-            </IconButton>
-          </Tooltip>
-
-          <span className="mx-0.5 h-7 w-px bg-line" />
-
-          <Tooltip label={beat.fileOwnership === 'external' ? 'Open, export or remove from library' : 'Reveal, open or delete this beat'}>
-            <span>
-              <CircleMenu
-                label="Beat actions"
-                radius={72}
-                items={[
-                  {
-                    id: 'reveal',
-                    label: 'Reveal in folder',
-                    icon: <FolderOpen />,
-                    onSelect: () => ipc.invoke('library:revealFile', beat.id)
-                  },
-                  {
-                    id: 'open',
-                    label: 'Open in default player',
-                    icon: <ExternalLink />,
-                    onSelect: () => ipc.invoke('library:openFile', beat.id)
-                  },
-                  {
-                    id: 'sidecar',
-                    label: 'Show sidecar JSON',
-                    icon: <FileJson />,
-                    disabled: beat.sidecarPath == null,
-                    onSelect: () => ipc.invoke('library:openSidecarFile', beat.id).then((opened) => {
-                      if (!opened) toast({ kind: 'error', title: 'No sidecar is recorded for this beat.' })
-                    })
-                  },
-                  ...(beat.fileOwnership === 'external' ? [{
-                    id: 'export',
-                    label: 'Export prepared copy',
-                    icon: <Copy />,
-                    disabled: beat.missing,
-                    onSelect: onRequestExport
-                  }] : []),
-                  {
-                    id: 'delete',
-                    label: beat.fileOwnership === 'external' ? 'Remove from library' : 'Delete this beat',
-                    icon: <Trash2 />,
-                    tone: 'danger',
-                    onSelect: onRequestDelete
-                  }
-                ]}
-              />
-            </span>
-          </Tooltip>
-          <Tooltip label="Close">
-            <IconButton label="Close preview" size="icon-sm" onClick={onClose}>
-              <X />
-            </IconButton>
-          </Tooltip>
+    <div data-preview-state="inspecting" className="p-4 [@media(max-height:760px)]:p-3">
+      <div className="mb-3 flex items-center justify-between gap-2 [@media(max-height:760px)]:mb-2">
+        <span className="section-label">Details</span>
+        <IconButton label="Close preview" size="icon-xs" onClick={onClose}><X /></IconButton>
+      </div>
+      <div className="[@media(max-height:760px)]:flex [@media(max-height:760px)]:items-start [@media(max-height:760px)]:gap-3">
+        <TrackArtwork thumbnail={beat.thumbnail} sourceUrl={beat.sourceUrl} title={beat.title} className="mb-3.5 h-[140px] w-full rounded-[5px] [@media(max-height:760px)]:mb-0 [@media(max-height:760px)]:size-[72px]" iconClassName="size-7" />
+        <div className="min-w-0">
+          <h2 title={beat.title} className="text-[17px] leading-[1.35] font-semibold tracking-[-0.02em] break-words text-fg [@media(max-height:760px)]:line-clamp-3 [@media(max-height:760px)]:text-[15px] [@media(max-height:760px)]:leading-[1.3]">{beat.title}</h2>
+          <p className="mt-1.5 text-[12.5px] leading-snug text-fg-muted [@media(max-height:760px)]:mt-1 [@media(max-height:760px)]:truncate [@media(max-height:760px)]:text-[12px]">{beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')}</p>
         </div>
       </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-subtle nums">
+        <span>{beat.format.toUpperCase()}</span><span>·</span><span>{formatDuration(beat.durationSec)}</span><span>·</span><span>{formatBytes(beat.sizeBytes)}</span>
+      </div>
+      {beat.missing || beat.fileAccessError ? <div className="mt-3 space-y-2">
+        <p className="text-[11px] leading-relaxed text-warning">{beat.fileAccessError ? `Audio file is unavailable: ${beat.fileAccessError}` : 'Audio file is missing. Locate the same file to keep this library entry and its metadata.'}</p>
+        <p className="select-text break-all font-mono text-[10px] text-fg-subtle" title={beat.filePath}>{beat.filePath}</p>
+        {onLocateFile ? <Button size="sm" variant="secondary" onClick={onLocateFile}>Locate file…</Button> : null}
+      </div> : null}
+      {beat.recoveryInfo ? <div className="mt-3 space-y-1 text-[11px] text-fg-muted">
+        <p>{beat.recoveryInfo.sidecar === 'unresolved' ? 'Audio reconnected; sidecar unresolved.' : 'Audio reconnected.'}</p>
+        <p className="select-text break-all font-mono text-[10px]" title={beat.filePath}>{beat.filePath}</p>
+        {beat.recoveryInfo.ownership === 'read-only' ? <p>This file remains read-only. Metadata changes stay in your library; export a prepared copy when needed.</p> : null}
+      </div> : null}
 
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
-        {beat.bpm != null ? (
-          <Badge size="sm" tone="accent">
-            {formatBpm(beat.bpm)} BPM
-            <OriginMark origin={bpmDecision.origin} />
-          </Badge>
-        ) : null}
-        {beat.key ? (
-          <Badge size="sm">
-            {beat.key}
-            <OriginMark origin={keyDecision.origin} />
-          </Badge>
-        ) : null}
-        {beat.camelot ? <Badge size="sm">{beat.camelot}</Badge> : null}
-        {beat.detune != null && beat.detune !== 0 ? (
-          <Badge size="sm">
-            {beat.detune > 0 ? '+' : ''}
-            {beat.detune} ¢
-          </Badge>
-        ) : null}
-        <Badge size="sm" tone="outline">
-          {beat.presetId}
-        </Badge>
-        {beat.fileOwnership === 'external' ? <Badge size="sm" tone="outline">local original</Badge> : null}
+      <dl className="my-4 grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-x-5 border-y border-line py-3.5 [@media(max-height:760px)]:my-2 [@media(max-height:760px)]:gap-x-4 [@media(max-height:760px)]:py-2">
+        <div className="min-w-0 [@media(max-height:760px)]:grid [@media(max-height:760px)]:grid-cols-[auto_minmax(0,1fr)]">
+          <dt className="text-[11px] text-fg-subtle">Tempo</dt>
+          <dd className="mt-1 text-[21px] leading-tight font-medium tracking-[-0.025em] text-fg nums [@media(max-height:760px)]:col-span-2">{beat.bpm != null ? formatBpm(beat.bpm) : '—'}<span className="ml-1.5 text-[11px] font-normal tracking-normal text-fg-muted">BPM</span></dd>
+          {beat.bpm != null ? <dd className="mt-1 [@media(max-height:760px)]:col-start-2 [@media(max-height:760px)]:row-start-1 [@media(max-height:760px)]:mt-0 [@media(max-height:760px)]:justify-self-end"><OriginMark origin={bpmDecision.origin} /></dd> : null}
+        </div>
+        <div className="min-w-0 [@media(max-height:760px)]:grid [@media(max-height:760px)]:grid-cols-[auto_minmax(0,1fr)]">
+          <dt className="text-[11px] text-fg-subtle">Key</dt>
+          <dd className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[16px] leading-tight font-medium tracking-[-0.015em] text-fg [@media(max-height:760px)]:col-span-2 [@media(max-height:760px)]:mt-1">{beat.key || '—'}{beat.camelot ? <span className="text-[11px] font-normal tracking-normal text-fg-muted">{beat.camelot}</span> : null}</dd>
+          {beat.key ? <dd className="mt-1.5 [@media(max-height:760px)]:col-start-2 [@media(max-height:760px)]:row-start-1 [@media(max-height:760px)]:mt-0 [@media(max-height:760px)]:justify-self-end"><OriginMark origin={keyDecision.origin} /></dd> : null}
+        </div>
+      </dl>
 
-        <AnalysisStatusBadge beat={beat} />
-        {beat.overrides.length > 0 ? (
-          <Badge size="sm" tone="accent">
-            {beat.overrides.length} manual
-          </Badge>
-        ) : null}
-        <Badge size="sm" tone={librarySaved ? 'success' : 'warning'}>
-          {librarySaved ? 'library saved' : libraryStorage ? 'library save pending' : 'library status checking'}
-        </Badge>
-        {beat.sidecarPath ? <Badge size="sm" tone={beat.sidecarSync?.status === 'error' ? 'danger' : beat.sidecarSync?.status === 'synced' ? 'success' : 'warning'}>
-          sidecar {beat.sidecarSync?.status ?? 'pending'}
-        </Badge> : null}
-        <Badge size="sm" tone={tags === 'current' ? 'success' : tags === 'unknown' ? 'neutral' : 'warning'}>
-          {tags === 'current' ? 'audio tags match' : tags === 'absent' ? 'audio tags absent' : tags === 'out-of-sync' ? 'audio tags need re-export' : 'audio tags unverified'}
-        </Badge>
-
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" className="flex-1" leading={<Play className="fill-current" />} disabled={beat.missing || !!beat.fileAccessError} onClick={() => playOne(beat.id)}>Play this beat</Button>
+        <Dropdown align="end" trigger={({ toggle }) => <IconButton label="Beat actions" variant="secondary" onClick={toggle}><MoreHorizontal /></IconButton>}>
+          {close => <>
+            <DropdownItem icon={<FolderOpen />} onSelect={async () => { await ipc.invoke('library:revealFile', beat.id); close() }}>Reveal in folder</DropdownItem>
+            <DropdownItem icon={<ExternalLink />} onSelect={async () => { await ipc.invoke('library:openFile', beat.id); close() }}>Open in default player</DropdownItem>
+            <DropdownItem icon={<FileJson />} disabled={beat.sidecarPath == null} onSelect={async () => {
+              const opened = await ipc.invoke('library:openSidecarFile', beat.id)
+              if (!opened) toast({ kind: 'error', title: 'No sidecar is recorded for this beat.' })
+              close()
+            }}>Show sidecar JSON</DropdownItem>
+            {beat.fileOwnership === 'external' ? <DropdownItem icon={<Copy />} disabled={beat.missing} onSelect={() => { onRequestExport(); close() }}>Export prepared copy</DropdownItem> : null}
+            <DropdownSeparator />
+            <DropdownItem icon={<Trash2 />} tone="danger" onSelect={() => { onRequestDelete(); close() }}>{beat.fileOwnership === 'external' ? 'Remove from library' : 'Delete this beat'}</DropdownItem>
+          </>}
+        </Dropdown>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1">
+        <Tooltip label="Tap along to set the tempo"><button type="button" onClick={tap} className="flex h-8 items-center gap-1.5 rounded-[7px] px-2 text-[11px] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"><Timer className="size-3.5" />Tap tempo</button></Tooltip>
+        {tapBpm != null ? <button type="button" onClick={() => applyBpm(tapBpm)} className="h-7 rounded-[6px] bg-accent-soft px-2 text-[11px] font-medium text-accent" title="Apply the tapped tempo to this beat">Use {tapBpm}</button> : null}
         <span className="flex-1" />
-
-        <AnalyzeButton beat={beat} />
-
-        <span className="truncate font-mono text-[10.5px] text-fg-subtle" title={beat.fileName}>
-          {beat.fileName}
-        </span>
+        <Tooltip label="Halve the tempo"><IconButton label="Halve the tempo" size="icon-sm" disabled={beat.bpm == null || beat.bpm / 2 < MIN_BPM} onClick={() => applyBpm((beat.bpm ?? 0) / 2)}><span className="text-[11px] font-medium">½</span></IconButton></Tooltip>
+        <Tooltip label="Double the tempo"><IconButton label="Double the tempo" size="icon-sm" disabled={beat.bpm == null || beat.bpm * 2 > MAX_BPM} onClick={() => applyBpm((beat.bpm ?? 0) * 2)}><span className="text-[11px] font-medium">2×</span></IconButton></Tooltip>
       </div>
 
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+        <AnalysisStatusBadge beat={beat} />
+        <span className="flex-1" />
+        <AnalyzeButton beat={beat} />
+      </div>
       <MetadataCorrection key={beat.id} beat={beat} />
-      {beat.analysis && beat.analysis.warnings.length > 0 ? (
-        <ul className="mt-1.5 space-y-0.5">
-          {beat.analysis.warnings.map((warning) => (
-            <li key={warning} className="flex gap-1.5 text-[11px] leading-relaxed text-warning">
-              <TriangleAlert className="mt-0.5 size-3 shrink-0" />
-              <span className="min-w-0">{warning}</span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {libraryStorage?.error ? <p role="alert" className="mt-3 text-[11px] leading-relaxed text-danger">Library changes could not be saved. {libraryStorage.error}</p> : null}
+      <details className="mt-3 border-t border-line pt-3 text-[11px] text-fg-muted">
+        <summary className="cursor-pointer font-medium text-fg-muted marker:text-fg-subtle">File &amp; metadata</summary>
+        <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-[11px]">
+          <dt className="text-fg-subtle">Added</dt><dd className="text-right">{formatRelativeTime(beat.addedAt, now)}</dd>
+          {beat.sampleRate ? <><dt className="text-fg-subtle">Sample rate</dt><dd className="text-right nums">{formatSampleRate(beat.sampleRate)}</dd></> : null}
+          {beat.bitrateKbps ? <><dt className="text-fg-subtle">Bitrate</dt><dd className="text-right nums">{formatBitrate(beat.bitrateKbps)}</dd></> : null}
+          {beat.channels ? <><dt className="text-fg-subtle">Channels</dt><dd className="text-right">{formatChannelCount(beat.channels)}</dd></> : null}
+          <dt className="text-fg-subtle">Preset</dt><dd className="text-right break-words">{beat.presetId}</dd>
+          {beat.detune != null && beat.detune !== 0 ? <><dt className="text-fg-subtle">Detune</dt><dd className="text-right nums">{beat.detune > 0 ? '+' : ''}{beat.detune} ¢</dd></> : null}
+        </dl>
+        <p className="mt-3 break-all font-mono text-[10px] text-fg-subtle">{beat.fileName}</p>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {beat.fileOwnership === 'external' ? <Badge size="sm" tone="outline">{beat.recoveryInfo ? 'read-only file' : 'local original'}</Badge> : null}
+          {beat.overrides.length > 0 ? <Badge size="sm" tone="accent">{beat.overrides.length} manual</Badge> : null}
+          <Badge size="sm" tone={librarySaved ? 'success' : 'warning'}>{librarySaved ? 'library saved' : libraryStorage ? 'library save pending' : 'library status checking'}</Badge>
+          {beat.sidecarPath ? <Badge size="sm" tone={beat.sidecarSync?.status === 'error' ? 'danger' : beat.sidecarSync?.status === 'synced' ? 'success' : 'warning'}>sidecar {beat.sidecarSync?.status ?? 'pending'}</Badge> : null}
+          <Badge size="sm" tone={tags === 'current' ? 'success' : tags === 'unknown' ? 'neutral' : 'warning'}>{tags === 'current' ? 'audio tags match' : tags === 'absent' ? 'audio tags absent' : tags === 'out-of-sync' ? 'audio tags need re-export' : 'audio tags unverified'}</Badge>
+        </div>
+      </details>
+      {beat.analysis && beat.analysis.warnings.length > 0 ? <ul className="mt-3 space-y-1">{beat.analysis.warnings.map(warning => <li key={warning} className="flex gap-1.5 text-[11px] leading-relaxed text-warning"><TriangleAlert className="mt-0.5 size-3 shrink-0" /><span className="min-w-0">{warning}</span></li>)}</ul> : null}
     </div>
   )
 }
-
 /** Show the decision's real origin, including legacy values with no evidence. */
 function OriginMark({ origin }: { origin: FieldOrigin }): ReactNode {
   const label = origin === 'embedded' ? 'tag' : origin === 'description' ? 'description' : origin === 'filename' ? 'filename' : origin === 'title' ? 'title' : origin === 'legacy' ? 'unknown' : origin
   return (
     <span
       title={origin === 'legacy' ? 'Origin was not saved for this older record' : `Source: ${label}`}
-      className="ml-1 rounded-[3px] bg-[var(--sonic-accent-line)] px-1 text-[9px] font-semibold tracking-wide text-fg uppercase"
+      className="inline-block text-[10.5px] leading-none text-fg-subtle capitalize"
     >
       {label}
     </span>
@@ -370,7 +253,7 @@ function AnalyzeButton({ beat }: { beat: LibraryBeat }): ReactNode {
           }
         })
       }}
-      className="h-7 rounded-[8px] bg-accent-soft px-2.5 text-[11.5px] font-medium text-accent transition-colors duration-[var(--duration-quick)] hover:bg-[var(--sonic-accent-line)] disabled:pointer-events-none disabled:opacity-40"
+      className="h-7 rounded-[6px] px-2 text-[11px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
     >
       {reanalyze ? 'Re-analyze' : 'Analyze audio'}
     </button>
@@ -431,19 +314,19 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
       setError(String(failure))
     } finally { pendingRef.current = false; setPending(false) }
   }
-  return <details className="mt-2 text-xs text-fg-muted"><summary className="cursor-pointer">Correct BPM / key</summary>
-    <fieldset disabled={pending} className="mt-2 flex flex-wrap items-center gap-2">
-      <label>BPM <input aria-label="Manual BPM" className="w-20 rounded border border-line bg-surface px-2 py-1" value={bpm} onChange={event => setDraft(current => ({ ...current, bpm: event.target.value }))} /></label>
-      <label>Key <input aria-label="Manual key" className="w-28 rounded border border-line bg-surface px-2 py-1" value={key} onChange={event => setDraft(current => ({ ...current, key: event.target.value }))} /></label>
-      <button type="button" disabled={!dirty || pending} onClick={() => void save()} className="rounded bg-accent-soft px-3 py-1 text-accent">{pending ? 'Saving…' : 'Save corrections'}</button>
-      <button type="button" disabled={!beat.overrides.includes('bpm')} onClick={() => void save({ kind: 'reset', field: 'bpm' })} title={`Evidence priority: ${bpmDecision.resetOrigin}`}>
-        Reset BPM to evidence priority
+  return <details className="mt-3 border-t border-line pt-3 text-[11px] text-fg-muted"><summary className="cursor-pointer font-medium marker:text-fg-subtle">Correct BPM / key</summary>
+    <fieldset disabled={pending} className="mt-3 grid grid-cols-2 gap-2 [&_button]:rounded-[6px] [&_button]:px-2 [&_button]:py-1.5 [&_button]:text-[10px] [&_button]:transition-colors [&_button:disabled]:opacity-40">
+      <label className="text-[10px] text-fg-subtle">BPM<input aria-label="Manual BPM" className="mt-1 h-8 w-full rounded-[6px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={bpm} onChange={event => setDraft(current => ({ ...current, bpm: event.target.value }))} /></label>
+      <label className="text-[10px] text-fg-subtle">Key<input aria-label="Manual key" className="mt-1 h-8 w-full rounded-[6px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={key} onChange={event => setDraft(current => ({ ...current, key: event.target.value }))} /></label>
+      <button type="button" disabled={!dirty || pending} onClick={() => void save()} className="col-span-2 bg-accent-soft font-medium text-accent hover:bg-[var(--sonic-accent-line)]">{pending ? 'Saving…' : 'Save corrections'}</button>
+      <button type="button" aria-label="Reset BPM to evidence priority" disabled={!beat.overrides.includes('bpm')} className="border border-line hover:bg-surface-2" onClick={() => void save({ kind: 'reset', field: 'bpm' })} title={`Evidence priority: ${bpmDecision.resetOrigin}`}>
+        Reset BPM
       </button>
-      <button type="button" disabled={!beat.overrides.includes('key')} onClick={() => void save({ kind: 'reset', field: 'key' })} title={`Evidence priority: ${keyDecision.resetOrigin}`}>
-        Reset key to evidence priority
+      <button type="button" aria-label="Reset key to evidence priority" disabled={!beat.overrides.includes('key')} className="border border-line hover:bg-surface-2" onClick={() => void save({ kind: 'reset', field: 'key' })} title={`Evidence priority: ${keyDecision.resetOrigin}`}>
+        Reset key
       </button>
-      <button type="button" disabled={bpmDecision.measuredValue == null} onClick={() => void save({ kind: 'measured', field: 'bpm' })} title="Choose the audio estimate as a manual correction">Use measured BPM</button>
-      <button type="button" disabled={keyDecision.measuredValue == null} onClick={() => void save({ kind: 'measured', field: 'key' })} title="Choose the audio estimate as a manual correction">Use measured key</button>
+      <button type="button" disabled={bpmDecision.measuredValue == null} className="hover:bg-surface-2" onClick={() => void save({ kind: 'measured', field: 'bpm' })} title="Choose the audio estimate as a manual correction">Use measured BPM</button>
+      <button type="button" disabled={keyDecision.measuredValue == null} className="hover:bg-surface-2" onClick={() => void save({ kind: 'measured', field: 'key' })} title="Choose the audio estimate as a manual correction">Use measured key</button>
     </fieldset>{error ? <p role="alert" className="mt-1 text-danger">{error}</p> : null}
   </details>
 }

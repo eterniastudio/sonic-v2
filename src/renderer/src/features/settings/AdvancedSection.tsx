@@ -1,17 +1,18 @@
 import { useState, type ReactNode } from 'react'
-import { FolderOpen, ShieldCheck, Trash2 } from 'lucide-react'
+import { FileWarning, FolderOpen, RefreshCw } from 'lucide-react'
 import { ipc } from '@/lib/ipc'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/Button'
 import { Field, Input } from '@/components/ui/Input'
 import { toast } from '@/components/ui/Toaster'
+import { SettingsPanel } from './SettingsPanel'
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }): ReactNode {
   return (
     <div className="flex items-baseline justify-between gap-4 py-2">
       <span className="shrink-0 text-[12px] text-fg-muted">{label}</span>
       <span
-        className={`min-w-0 truncate text-right text-[11.5px] text-fg ${mono ? 'font-mono text-[10.5px]' : ''}`}
+        className={`min-w-0 truncate text-right text-[12px] text-fg ${mono ? 'font-mono' : ''}`}
         title={value}
       >
         {value}
@@ -32,13 +33,9 @@ export function AdvancedSection(): ReactNode {
   const missingCount = library.filter((beat) => beat.missing).length
 
   return (
-    <div className="space-y-7">
-      <section>
-        <h3 className="mb-2 text-[12px] font-semibold tracking-[0.1em] text-fg-subtle uppercase">
-          Library upkeep
-        </h3>
-
-        <div className="divide-y divide-[var(--sonic-border)]">
+    <div>
+      <SettingsPanel title="Library upkeep">
+        <div className="divide-y divide-[var(--sonic-border)] [&>div:first-child]:pt-0">
           <Row label="Beats in library" value={String(library.length)} />
           <Row label="Records with missing files" value={String(missingCount)} />
         </div>
@@ -46,6 +43,7 @@ export function AdvancedSection(): ReactNode {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button
             variant="secondary"
+            leading={<RefreshCw />}
             onClick={() => {
               void rescanLibrary()
               toast({ kind: 'info', title: 'Library rescan started' })
@@ -55,8 +53,8 @@ export function AdvancedSection(): ReactNode {
           </Button>
 
           <Button
-            variant="danger"
-            leading={<Trash2 />}
+            variant="secondary"
+            leading={<FileWarning />}
             disabled={missingCount === 0}
             onClick={() => {
               // Filtering for missing files lives in the Library; send them there.
@@ -75,11 +73,13 @@ export function AdvancedSection(): ReactNode {
         <Field
           label="Background rescan interval"
           hint="seconds · 0 disables it"
-          note="Sonic periodically checks that every recorded file still exists, so a deleted export shows up as missing instead of silently failing to play."
-          className="mt-4"
+          note="Checks whether recorded files still exist on your device."
+          htmlFor="settings-rescan-interval"
+          className="mt-4 border-t border-line pt-4 [&>div>span]:text-[12px] [&>div:last-child]:text-[12px]"
         >
           <Input
             type="number"
+            id="settings-rescan-interval"
             min={0}
             max={3600}
             value={intervalDraft}
@@ -92,14 +92,10 @@ export function AdvancedSection(): ReactNode {
             className="w-28 nums"
           />
         </Field>
-      </section>
+      </SettingsPanel>
 
-      <section>
-        <h3 className="mb-2 text-[12px] font-semibold tracking-[0.1em] text-fg-subtle uppercase">
-          Where Sonic keeps your data
-        </h3>
-
-        <div className="divide-y divide-[var(--sonic-border)]">
+      <SettingsPanel title="Where Sonic keeps your data">
+        <div className="divide-y divide-[var(--sonic-border)] [&>div:first-child]:pt-0">
           <Row label="Version" value={info ? `${info.name} ${info.version}` : '—'} />
           <Row label="Electron" value={info?.electron ?? '—'} />
           <Row label="Chromium" value={info?.chrome ?? '—'} />
@@ -125,15 +121,10 @@ export function AdvancedSection(): ReactNode {
             Open export folder
           </Button>
         </div>
-      </section>
+      </SettingsPanel>
 
-      <section>
-        <h3 className="mb-2 text-[12px] font-semibold tracking-[0.1em] text-fg-subtle uppercase">
-          Privacy
-        </h3>
-        <div className="flex items-start gap-2.5 rounded-[10px] border border-line bg-surface-2 p-3.5">
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" />
-          <div className="space-y-1 text-[11.5px] leading-relaxed text-fg-muted">
+      <SettingsPanel title="Privacy">
+        <div className="space-y-2 text-[12px] leading-relaxed text-fg-muted">
             <p>
               Sonic has no account, no analytics and no conversion backend. Network access happens
               only when you paste a link, when the media engine is installed, or when a thumbnail is
@@ -143,9 +134,8 @@ export function AdvancedSection(): ReactNode {
               Sidecars record the file <span className="text-fg">name</span> rather than its full
               local path, so they stay safe to share.
             </p>
-          </div>
         </div>
-      </section>
+      </SettingsPanel>
     </div>
   )
 }

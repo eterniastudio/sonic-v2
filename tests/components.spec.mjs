@@ -4,7 +4,7 @@ import path from 'node:path'
 function editorTest(name, run) {
   test(`metadata correction: ${name}`, async ({}, info) => {
     const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
-    const app = await electron.launch({ args: ['tests/harness/main.cjs', '--editor-harness', `--user-data-dir=${path.resolve(info.outputPath(`profile-${Date.now()}`))}`], env })
+    const app = await electron.launch({ args: ['tests/harness/electron.cjs', '--editor-harness', `--user-data-dir=${path.resolve(info.outputPath(`profile-${Date.now()}`))}`], env })
     const page = await app.firstWindow(); page.setDefaultTimeout(10000)
     try {
       await page.getByText('Correct BPM / key', { exact: true }).click()
@@ -96,7 +96,7 @@ editorTest('validation and intentional clearing use canonical shared rules', asy
 })
 test('component overlays: nesting, flipping, focus, interrupted transitions and failed confirmation', async ({}, info) => {
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
-  const app = await electron.launch({ args: ['tests/harness/main.cjs', `--user-data-dir=${path.resolve(info.outputPath('profile'))}`], env })
+  const app = await electron.launch({ args: ['tests/harness/electron.cjs', `--user-data-dir=${path.resolve(info.outputPath('profile'))}`], env })
   const page = await app.firstWindow(); page.setDefaultTimeout(10000)
   await app.context().tracing.start({ screenshots: true, snapshots: true })
   try {
