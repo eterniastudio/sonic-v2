@@ -59,6 +59,7 @@ function isOnSomeDisplay(bounds: { x: number; y: number; width: number; height: 
 
 export function createMainWindow(): BrowserWindow {
   const saved = store.read()
+  const hiddenTest = !app.isPackaged && process.env['SONIC_TEST_HIDDEN'] === '1'
 
   // Only reuse the saved position when it is still reachable; otherwise let
   // Electron centre the window on the primary display.
@@ -93,16 +94,17 @@ export function createMainWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: true,
-      spellcheck: false
+      spellcheck: false,
+      backgroundThrottling: !hiddenTest
     }
   })
 
   mainWindow = window
 
-  if (saved.maximized) window.maximize()
+  if (saved.maximized && !hiddenTest) window.maximize()
 
   window.on('ready-to-show', () => {
-    window.show()
+    if (!hiddenTest) window.show()
   })
 
   const persistState = (): void => {

@@ -166,12 +166,21 @@ missing on Windows, Sonic can fetch a static build for you.
 | `pnpm typecheck` | Typecheck the Node and web projects |
 | `pnpm test:unit` | Run the complete isolated unit regression suite |
 | `pnpm test:ui` | Build the current application and component harness, then run the Windows UI suite |
+| `pnpm test:ui:hidden` | Build and test the UI with Electron windows hidden; skip native window and OS pointer checks |
 | `pnpm smoke` | Headless boot self-check (DOM, theme, parser, templates) |
 | `pnpm reset:state -- --yes [--library] [--settings] [--all]` | Clear runtime state during development; never touches the engine or your exports |
 | `pnpm package` | Unpacked Windows build in `release/` |
 | `pnpm dist` | NSIS installer in `release/` |
 
 ### Verification
+
+Use `npm run test:ui:hidden` for routine UI testing without opening Sonic windows on your
+desktop. Playwright still drives the real renderer, preload bridge and main process;
+background throttling is disabled during this mode so hidden windows keep rendering.
+Pass filters normally, for example `npm run test:ui:hidden -- --grep=Play.selected`.
+Native window controls and OS pointer tests require a visible desktop and remain available
+through `npm run test:ui`. Hidden mode applies to development test builds only; unset
+`SONIC_PACKAGED_EXE` before using it.
 
 `pnpm smoke` boots the real application — window, preload bridge, IPC, services — drives
 the actual UI, and writes a JSON report, exiting non-zero on any failure. It fails on

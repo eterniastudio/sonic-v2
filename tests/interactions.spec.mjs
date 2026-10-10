@@ -235,6 +235,7 @@ test('offline pointer, keyboard, deletion, persistence, and preview', async ({},
 })
 
 test('native window controls at center and edges', async ({}, info) => {
+  test.skip(process.env.SONIC_TEST_HIDDEN === '1', 'Native window controls require a visible desktop window.')
   const measurements = []
   for (const position of [{ x: 22, y: 20 }, { x: 3, y: 3 }, { x: 40, y: 35 }]) {
     const max = page.getByRole('button', { name: 'Maximize', exact: true })
@@ -295,6 +296,7 @@ test('loaded analysis plus playback and picker input', async ({}, info) => {
 
 
 test('Windows OS pointer hit testing and draggable title space', async ({}, info) => {
+  test.skip(process.env.SONIC_TEST_HIDDEN === '1', 'Windows pointer automation requires a visible desktop window.')
   const state = () => app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; return { bounds: w.getBounds(), content: w.getContentBounds(), hwnd: Number(w.getNativeWindowHandle().readBigUInt64LE()), maximized: w.isMaximized(), minimized: w.isMinimized() } })
   const nativePointer = async (x, y, drag) => {
     const current = await state()
