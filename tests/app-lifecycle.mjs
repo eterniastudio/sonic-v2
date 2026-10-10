@@ -83,6 +83,9 @@ export async function readyPage(app, root) {
   const page = await app.firstWindow()
   page.setDefaultTimeout(10000)
   await expect(page.getByTitle('Default export format', { exact: true })).toBeVisible()
+  if (process.env.SONIC_TEST_HIDDEN === '1' && !process.env.SONIC_PACKAGED_EXE && app.evaluate) {
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isVisible()))).toBe(true)
+  }
   const info = await page.evaluate(() => window.sonic.invoke('app:info'))
   expect(path.resolve(info.userDataDir)).toBe(path.resolve(root))
   const engine = await page.evaluate(() => window.sonic.invoke('engine:status'))
