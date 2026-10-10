@@ -6,6 +6,7 @@ import { engineService } from './engine'
 import { baseYtDlpArgs, summariseYtDlpError } from './probe'
 import { stagingDir } from './paths'
 import { settingsService } from './settings'
+import { isSoundCloudShareUrl, parseVideoUrl } from '@shared/url'
 
 export interface AcquireProgress {
   percent: number | null
@@ -68,7 +69,13 @@ export async function acquireAudio(
     onLog?: (line: string) => void
   }
 ): Promise<AcquireResult> {
-  const ytdlp = await engineService.resolve('yt-dlp')
+  options.signal.throwIfAborted()
+  const parsed = parseVideoUrl(url)
+  if (!parsed.ok || !parsed.normalized || isSoundCloudShareUrl(parsed.normalized)) {
+    throw new Error(parsed.reason ?? 'Inspect the SoundCloud share link before downloading.')
+  }
+  const ytdlp = await engineService.resolve('yt-dlp', false, options.signal)
+  options.signal.throwIfAborted()
   if (!ytdlp.path) {
     throw new Error('yt-dlp is not installed. Run media engine setup from Settings.')
   }
@@ -78,7 +85,7 @@ export async function acquireAudio(
 
   const outputTemplate = path.join(staging, `${jobId}.%(ext)s`)
   const args = [
-    ...(await baseYtDlpArgs()),
+    ...(await baseYtDlpArgs(options.signal)),
     '--newline',
     '--progress',
     '--progress-template',
@@ -93,10 +100,11 @@ export async function acquireAudio(
     'bestaudio/best',
     '-o',
     outputTemplate,
-    url
+    parsed.normalized
   ]
 
   const settings = settingsService.get()
+  options.signal.throwIfAborted()
 
   const result = await run(ytdlp.path, args, {
     signal: options.signal,
@@ -130,7 +138,7 @@ export async function acquireAudio(
   const staged = await findStagedFile(jobId)
   if (result.code !== 0 || !staged) {
     await cleanStaging(jobId)
-    throw new Error(summariseYtDlpError(result.stderr))
+    throw new Error(summariseYtDlpError(result.stderr, parsed.provider))
   }
 
   const info = path.parse(staged)

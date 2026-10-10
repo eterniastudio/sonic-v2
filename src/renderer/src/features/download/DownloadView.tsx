@@ -8,20 +8,19 @@ import { MetadataInspector } from './MetadataInspector'
 /** Download workspace: intake, queue, and the metadata inspector. */
 export function DownloadView(): ReactNode {
   const selectedJob = useApp(selectSelectedJob)
-  const jobs = useApp((state) => state.queue.jobs)
+  const candidateId = useApp((state) => state.queue.jobs.find((job) => job.stage === 'ready' || job.stage === 'probing')?.id)
   const selectedJobId = useApp((state) => state.selectedJobId)
   const setSelectedJob = useApp((state) => state.setSelectedJob)
   const lastCandidateId = useRef<string | undefined>(undefined)
-  const completedCount = jobs.filter((job) => job.stage === 'complete').length
+  const completedCount = useApp((state) => state.queue.jobs.filter((job) => job.stage === 'complete').length)
 
   // Auto-focus the newest job so its metadata is reviewable straight after a paste.
   useEffect(() => {
-    const candidate = jobs.find((job) => job.stage === 'ready' || job.stage === 'probing')
     // A dismissed inspector stays closed until a different job becomes available.
-    if (candidate?.id === lastCandidateId.current) return
-    lastCandidateId.current = candidate?.id
-    if (candidate && !selectedJobId) setSelectedJob(candidate.id)
-  }, [jobs, selectedJobId, setSelectedJob])
+    if (candidateId === lastCandidateId.current) return
+    lastCandidateId.current = candidateId
+    if (candidateId && !selectedJobId) setSelectedJob(candidateId)
+  }, [candidateId, selectedJobId, setSelectedJob])
 
   return (
     <div className="workspace-page flex h-full min-h-0 flex-col">

@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { Check, ChevronDown, CircleAlert, ExternalLink, FolderOpen, Music2, Pause, Play, RefreshCw, Trash2, X } from 'lucide-react'
+import { memo, useState, type ReactNode } from 'react'
+import { Check, ChevronDown, CircleAlert, FolderOpen, Music2, Pause, Play, RefreshCw, Trash2, X } from 'lucide-react'
 import type { Job, JobStage, PresetId } from '@shared/domain'
 import { formatBpm, formatDuration } from '@shared/format'
 import { PRESETS } from '@shared/presets'
@@ -12,8 +12,29 @@ import { Dropdown, DropdownItem, DropdownLabel } from '@/components/ui/Dropdown'
 import { ProgressBar } from '@/components/ui/Progress'
 import { ConfirmDialog } from '@/components/ui/Modal'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { toast } from '@/components/ui/Toaster'
+import { usePlaybackActions } from '@/features/playback/playbackSession'
 
 const RUNNING = new Set<JobStage>(['downloading', 'analyzing', 'converting', 'tagging', 'publishing'])
+
+function DownloadPreview({ job }: { job: Job }): ReactNode {
+  const { playOne } = usePlaybackActions()
+  const preview = (): void => {
+    const library = useApp.getState().library
+    // Prefer stable identity so a renamed or recovered export still previews.
+    // Path lookup only supports older queue entries without a library ID.
+    const beat = job.libraryId ? library.find(entry => entry.id === job.libraryId)
+      : library.find(entry => entry.filePath === job.outputPath)
+    if (!beat) {
+      toast({ kind: 'info', title: 'This download is no longer in your library. Import its audio to preview it.' })
+      return
+    }
+    playOne(beat.id)
+  }
+  return <Tooltip label="Preview in Sonic">
+    <IconButton label="Preview in Sonic" size="icon-xs" variant="ghost" onClick={preview}><Play /></IconButton>
+  </Tooltip>
+}
 
 const STAGE_LABEL: Record<JobStage, string> = {
   probing: 'Reading metadata',
@@ -36,7 +57,7 @@ function analysisSourceFor(job: Job, field: 'bpm' | 'key'): boolean {
   return job.metadata.analyzed[field] != null
 }
 
-export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolean; onSelect: () => void }): ReactNode {
+export const JobRow = memo(function JobRow({ job, selected, onSelect }: { job: Job; selected: boolean; onSelect: (id: string) => void }): ReactNode {
   const [confirmRemove, setConfirmRemove] = useState(false)
   const startJobs = useApp((state) => state.startJobs)
   const cancelJob = useApp((state) => state.cancelJob)
@@ -69,7 +90,7 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
   return (
     <>
       <div data-job-id={job.id} className={cn('group relative transition-colors duration-[var(--duration-quick)]', selected ? 'bg-surface-3/65' : 'hover:bg-surface-2')}>
-        <div className="flex min-h-[68px] items-center gap-3.5 px-2 py-2" onClick={onSelect}>
+        <div className="flex min-h-[68px] items-center gap-3.5 px-2 py-2" onClick={() => onSelect(job.id)}>
           <div className="relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-[3px] bg-surface-2 text-fg-subtle">
             <Music2 className="size-3.5" />
             {cover ? <img src={cover} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : null}
@@ -78,7 +99,7 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h3 className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
-                <button type="button" className="block w-full truncate text-left focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-fg-muted" onClick={(event) => { event.stopPropagation(); onSelect() }} aria-pressed={selected} title="Inspect metadata">
+                <button type="button" className="block w-full truncate text-left focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-fg-muted" onClick={(event) => { event.stopPropagation(); onSelect(job.id) }} aria-pressed={selected} title="Inspect metadata">
                   {metadata.title || job.sourceTitle || 'Untitled'}
                 </button>
               </h3>
@@ -142,9 +163,7 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
                 <Tooltip label="Reveal in folder">
                   <IconButton label="Reveal in folder" size="icon-xs" variant="ghost" onClick={() => void ipc.invoke('queue:revealOutput', job.id)}><FolderOpen /></IconButton>
                 </Tooltip>
-                <Tooltip label="Play in default app">
-                  <IconButton label="Play in default app" size="icon-xs" variant="ghost" onClick={() => void ipc.invoke('queue:openOutput', job.id)}><ExternalLink /></IconButton>
-                </Tooltip>
+                <DownloadPreview job={job} />
               </>
             ) : null}
             <Tooltip label="Remove from queue">
@@ -168,7 +187,7 @@ export function JobRow({ job, selected, onSelect }: { job: Job; selected: boolea
       />
     </>
   )
-}
+})
 
 export function QueueEmptyState({ children }: { children: ReactNode }): ReactNode {
   return (

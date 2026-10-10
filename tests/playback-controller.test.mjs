@@ -15,6 +15,7 @@ class DeferredEngine {
     this.playCalls = 0
     this.destroyCalls = 0
     this.time = 0
+    this.setTimeCalls = 0
     this.volume = 1
     this.loadPromise = new Promise((resolve, reject) => { this.resolveLoad = resolve; this.rejectLoad = reject })
   }
@@ -22,7 +23,7 @@ class DeferredEngine {
   play() { this.playCalls++; this.emit('play'); return Promise.resolve() }
   pause() { this.emit('pause') }
   stop() { this.time = 0 }
-  setTime(seconds) { this.time = seconds; this.emit('timeupdate', seconds) }
+  setTime(seconds) { this.setTimeCalls++; this.time = seconds; this.emit('timeupdate', seconds) }
   getDuration() { return 18 }
   setVolume(volume) { this.volume = volume }
   on(event, callback) { this.listeners.set(event, callback) }
@@ -32,7 +33,7 @@ class DeferredEngine {
 
 function createFixture(overrides = {}) {
   const beats = new Map(['a', 'b', 'c', 'd'].map(id => [id, {
-    id, fingerprint: `fingerprint-${id}`, missing: false, durationSec: 18
+    id, fingerprint: `fingerprint-${id}`, filePath: `/${id}.wav`, missing: false, durationSec: 18
   }]))
   const engines = []
   const checkpoints = []
@@ -55,6 +56,54 @@ async function flush() {
   await Promise.resolve()
   await Promise.resolve()
 }
+
+test('recovery retains captured queue and saved position, releases stale path, and waits for explicit Play', async () => {
+  const { controller, beats, engines } = createFixture()
+  controller.playQueue(['a', 'b', 'c'], 'b', 'Captured collection')
+  await flush()
+  engines[0].resolveLoad()
+  await flush()
+  engines[0].emit('timeupdate', 7)
+  beats.get('b').missing = true
+  controller.reconcile()
+  assert.equal(controller.getSnapshot().beatId, 'b')
+  assert.equal(controller.getSnapshot().current, 7)
+  assert.equal(controller.getSnapshot().status, 'error')
+  assert.deepEqual(controller.getSnapshot().queueContext, { label: 'Captured collection', index: 2, count: 3 })
+  assert.equal(engines[0].destroyCalls, 1)
+  beats.get('b').missing = false
+  beats.get('b').filePath = '/recovered/b.wav'
+  controller.reconcile()
+  await flush()
+  assert.equal(controller.getSnapshot().status, 'paused')
+  assert.equal(engines.length, 1, 'recovery must not load or autoplay')
+  controller.toggle()
+  await flush()
+  engines[1].resolveLoad()
+  await flush()
+  assert.equal(engines[1].time, 7)
+  assert.equal(controller.getSnapshot().status, 'playing')
+  controller.next()
+  await flush()
+  assert.equal(controller.getSnapshot().beatId, 'c')
+  controller.dispose()
+})
+
+test('recovering another track leaves active decoder and captured queue untouched', async () => {
+  const { controller, beats, engines } = createFixture()
+  controller.playQueue(['a', 'b'], 'a', 'Original queue')
+  await flush()
+  engines[0].resolveLoad()
+  await flush()
+  beats.get('b').filePath = '/recovered/b.wav'
+  controller.reconcile()
+  engines[0].emit('timeupdate', 8)
+  assert.equal(controller.getSnapshot().current, 8)
+  assert.equal(controller.getSnapshot().status, 'playing')
+  assert.equal(engines[0].destroyCalls, 0)
+  assert.deepEqual(controller.getSnapshot().queueContext, { label: 'Original queue', index: 1, count: 2 })
+  controller.dispose()
+})
 
 test('late A/B ready, play, error and time callbacks cannot replace C', async () => {
   const { controller, engines } = createFixture()
@@ -386,4 +435,161 @@ test('close flush latches playback commands after checkpointing and releasing de
   assert.equal(engines.length, 1)
   assert.equal(checkpoints.length, before)
   controller.dispose()
+})
+
+for (const frameRate of [60, 120]) test(`${frameRate}Hz progress is bounded while Pause and checkpoints keep the latest position`, async () => {
+  const { controller, engines, checkpoints, setNow } = createFixture()
+  controller.playOne('a')
+  await flush()
+  engines[0].resolveLoad()
+  await flush()
+  let notifications = 0
+  const unsubscribe = controller.subscribe(() => { notifications++ })
+  for (let frame = 1; frame <= frameRate; frame++) {
+    setNow(frame * 1000 / frameRate)
+    engines[0].emit('timeupdate', frame / frameRate)
+  }
+  assert.ok(notifications <= 10, `one second published ${notifications} progress updates`)
+  engines[0].emit('timeupdate', 1.012)
+  controller.pause()
+  assert.equal(controller.getSnapshot().current, 1.012)
+  assert.equal(checkpoints.filter(command => command.type === 'position').at(-1).positionSec, 1.012)
+  const before = notifications
+  controller.setSaveError(null)
+  controller.setRepeat(false)
+  controller.setVolume(1)
+  assert.equal(notifications, before, 'unchanged settings/save acknowledgements do not repaint the player')
+  unsubscribe()
+  controller.dispose()
+})
+
+test('paused waveform interaction saves the sought position and finished interaction resumes there', async () => {
+  const { controller, engines, checkpoints } = createFixture()
+  controller.playOne('a')
+  await flush()
+  engines[0].resolveLoad()
+  await flush()
+  controller.pause()
+  engines[0].setTime(5) // WaveSurfer applies click seeks before emitting interaction.
+  const beforeClick = engines[0].setTimeCalls
+  engines[0].emit('interaction', 5)
+  assert.equal(engines[0].setTimeCalls, beforeClick, 'interaction does not repeat the backend seek')
+  assert.equal(controller.getSnapshot().current, 5)
+  assert.equal(controller.getSnapshot().status, 'paused')
+  await new Promise(resolve => setTimeout(resolve, 300))
+  assert.equal(checkpoints.filter(command => command.type === 'position').at(-1).positionSec, 5)
+
+  controller.toggle()
+  await flush()
+  engines[0].emit('finish')
+  assert.equal(controller.getSnapshot().status, 'ended')
+  engines[0].setTime(9)
+  engines[0].emit('interaction', 9)
+  assert.equal(controller.getSnapshot().status, 'paused')
+  controller.toggle()
+  await flush()
+  assert.equal(engines[0].time, 9)
+  assert.equal(controller.getSnapshot().status, 'playing')
+  controller.dispose()
+})
+
+test('Previous uses the actual position across the throttled three-second boundary', async () => {
+  const { controller, engines, setNow } = createFixture()
+  controller.playQueue(['a', 'b'], 'b', 'Two tracks')
+  await flush()
+  engines[0].resolveLoad()
+  await flush()
+  setNow(2990)
+  engines[0].emit('timeupdate', 2.99)
+  setNow(3000)
+  engines[0].emit('timeupdate', 3.04)
+  assert.equal(controller.getSnapshot().current, 2.99, 'display has not repainted the next frame')
+  controller.previous()
+  assert.equal(controller.getSnapshot().beatId, 'b')
+  assert.equal(controller.getSnapshot().current, 0)
+  assert.equal(engines.length, 1)
+  assert.equal(engines[0].time, 0)
+  controller.previous()
+  await flush()
+  assert.equal(controller.getSnapshot().beatId, 'a', 'after restart Previous can navigate the prior track')
+  controller.dispose()
+})
+
+test('paused waveform dragging preserves the backend debounce and checkpoints the actual position', async () => {
+  const { controller, engines, checkpoints } = createFixture()
+  controller.playOne('a')
+  await flush()
+  engines[0].resolveLoad()
+  await flush()
+  controller.pause()
+  engines[0].setTime(4)
+  const beforeDrag = engines[0].setTimeCalls
+  engines[0].emit('interaction', 7)
+  engines[0].emit('interaction', 10)
+  assert.equal(controller.getSnapshot().current, 10, 'controls preview the pending drag target')
+  assert.equal(engines[0].time, 4, 'the decoder has not applied the debounced drag')
+  assert.equal(engines[0].setTimeCalls, beforeDrag, 'pointer moves do not seek the decoder')
+  controller.pause()
+  assert.equal(checkpoints.filter(command => command.type === 'position').at(-1).positionSec, 4)
+  await new Promise(resolve => setTimeout(resolve, 200))
+  engines[0].setTime(10) // WaveSurfer applies the final paused drag after its debounce.
+  await new Promise(resolve => setTimeout(resolve, 100))
+  assert.equal(controller.getSnapshot().current, 10)
+  assert.equal(checkpoints.filter(command => command.type === 'position').at(-1).positionSec, 10)
+  controller.dispose()
+})
+
+test('decoder construction failures become retryable player errors', async () => {
+  let fail = true
+  const { controller, engines, notices } = createFixture({
+    createEngine: () => {
+      if (fail) throw new Error('Audio context unavailable')
+      const engine = new DeferredEngine()
+      engines.push(engine)
+      return engine
+    }
+  })
+  controller.playOne('a')
+  await flush()
+  assert.equal(controller.getSnapshot().status, 'error')
+  assert.equal(controller.getSnapshot().error, 'Audio context unavailable')
+  assert.equal(notices.length, 1)
+  fail = false
+  controller.toggle()
+  await flush()
+  engines[0].resolveLoad()
+  await flush()
+  assert.equal(controller.getSnapshot().status, 'playing')
+  controller.dispose()
+})
+
+test('decoder setup failures and live errors release their engine exactly once', async () => {
+  const { controller, engines } = createFixture({
+    createEngine: () => {
+      const engine = new DeferredEngine()
+      engine.setVolume = () => { throw new Error('Decoder setup failed') }
+      engines.push(engine)
+      return engine
+    }
+  })
+  controller.playOne('a')
+  await flush()
+  assert.equal(controller.getSnapshot().status, 'error')
+  assert.equal(engines[0].destroyCalls, 1)
+  controller.dispose()
+  assert.equal(engines[0].destroyCalls, 1)
+
+  const active = createFixture()
+  active.controller.playOne('a')
+  await flush()
+  active.engines[0].resolveLoad()
+  await flush()
+  active.engines[0].emit('error', new Error('Decoder stopped'))
+  assert.equal(active.controller.getSnapshot().status, 'error')
+  assert.equal(active.engines[0].destroyCalls, 1)
+  active.engines[0].emit('play')
+  active.engines[0].emit('timeupdate', 15)
+  assert.equal(active.controller.getSnapshot().status, 'error')
+  active.controller.dispose()
+  assert.equal(active.engines[0].destroyCalls, 1)
 })

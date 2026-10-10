@@ -1,6 +1,8 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, ChevronDown, ClipboardPaste, TriangleAlert, X } from 'lucide-react'
-import { extractVideoUrls } from '@shared/url'
+import { extractIntakeUrls } from '@shared/url'
+import type { PlaylistTrack } from '@shared/playlist'
+import { PlaylistReviewPanel } from './PlaylistReviewPanel'
 import { PRESETS } from '@shared/presets'
 import { cn } from '@/lib/cn'
 import { ipc } from '@/lib/ipc'
@@ -17,27 +19,85 @@ export function IntakePanel(): ReactNode {
   const [text, setText] = useState('')
   const [dragging, setDragging] = useState(false)
   const [shakeKey, setShakeKey] = useState(0)
+  const [pending, setPending] = useState(false)
+  const submitting = useRef(false)
+  const requestId = useRef<string | null>(null)
+  const [reading, setReading] = useState(false)
+  const [review, setReview] = useState<{ tracks: PlaylistTrack[]; summary: string; text: string } | null>(null)
+  useEffect(() => () => {
+    if (requestId.current) void ipc.invoke('playlist:cancel', requestId.current).catch(() => {})
+    requestId.current = null
+  }, [])
   const addUrls = useApp((state) => state.addUrls)
   const settings = useApp((state) => state.settings)
   const patchSettings = useApp((state) => state.patchSettings)
-  const parsed = useMemo(() => extractVideoUrls(text), [text])
-  const acceptedCount = parsed.accepted.length
+  const parsed = useMemo(() => extractIntakeUrls(text), [text])
+  const acceptedCount = parsed.tracks.length + parsed.playlists.length
   const preset = PRESETS.find((entry) => entry.id === settings.defaultPresetId) ?? PRESETS[0]
 
   const submit = async (): Promise<void> => {
+    if (submitting.current || review) return
     if (acceptedCount === 0) {
       setShakeKey((value) => value + 1)
       return
     }
-    await addUrls([text])
-    toast({
-      kind: 'success',
-      title: `Queued ${acceptedCount} link${acceptedCount === 1 ? '' : 's'}`,
-      description: settings.autoStart
-        ? 'Inspecting and downloading now.'
-        : 'Review the metadata, then start the download.'
-    })
-    setText('')
+    const submittedText = text
+    const autoStart = settings.autoStart
+    submitting.current = true
+    setPending(true)
+    try {
+      if (parsed.playlists.length) {
+        setReading(true)
+        const id = crypto.randomUUID()
+        requestId.current = id
+        if (parsed.playlists.length > 5) throw new Error('Review up to five playlists at a time.')
+        const tracks = new Map<string, PlaylistTrack>(parsed.tracks.map(track => [track.normalized!, { url: track.normalized!, title: track.normalized! }]))
+        const summaries: string[] = []
+        for (const url of parsed.playlists) {
+          const result = await ipc.invoke('playlist:inspect', url, id)
+          if (requestId.current !== id) return
+          for (const track of result.tracks) tracks.set(track.url, track)
+          summaries.push(`${result.title}: ${result.tracks.length} tracks${result.skipped ? `, ${result.skipped} unavailable or duplicate entries skipped` : ''}${result.limited ? ' (first 500 entries only)' : ''}`)
+        }
+        if (!tracks.size) throw new Error('No available tracks were found in these playlists.')
+        if (tracks.size > 1000) throw new Error('This batch has more than 1,000 tracks. Review fewer playlists at a time.')
+        setReview({ tracks: [...tracks.values()], summary: summaries.join(' · '), text: submittedText })
+        return
+      }
+      await addUrls([submittedText])
+      toast({
+        kind: 'success',
+        title: `Queued ${acceptedCount} link${acceptedCount === 1 ? '' : 's'}`,
+        description: autoStart
+          ? 'Inspecting and downloading now.'
+          : 'Review the metadata, then start the download.'
+      })
+      // A slow queue request must not discard the user's next batch of links.
+      setText((current) => current === submittedText ? '' : current)
+    } catch (error) {
+      if (parsed.playlists.length && requestId.current === null) return
+      toast({ kind: 'error', title: 'Could not queue links', description: error instanceof Error ? error.message : String(error) })
+      throw error
+    } finally {
+      submitting.current = false
+      setPending(false)
+      setReading(false)
+      requestId.current = null
+    }
+  }
+
+  const confirmPlaylist = async (urls: string[]): Promise<void> => {
+    if (submitting.current || !review) return
+    submitting.current = true
+    setPending(true)
+    try {
+      await addUrls(urls)
+      setText(current => current === review.text ? '' : current)
+      setReview(null)
+      toast({ kind: 'success', title: `Submitted ${urls.length} tracks`, description: 'Tracks already active in the queue are skipped.' })
+    } catch (error) {
+      toast({ kind: 'error', title: 'Could not queue playlist tracks', description: String(error) })
+    } finally { submitting.current = false; setPending(false) }
   }
 
   const onDrop = (event: React.DragEvent): void => {
@@ -66,18 +126,18 @@ export function IntakePanel(): ReactNode {
         >
           <Textarea
             key={shakeKey}
-            aria-label="YouTube beat links"
+            aria-label="YouTube or SoundCloud beat links"
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
               if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
                 event.preventDefault()
-                void submit()
+                if (!event.repeat) void submit().catch(() => {})
               }
             }}
             rows={2}
             spellCheck={false}
-            placeholder="Paste YouTube beat links — one per line, or all at once."
+            placeholder="Paste YouTube videos, YouTube playlists, or SoundCloud tracks."
             className={cn(
               'min-h-[54px] rounded-none border-0 bg-transparent px-3 pt-3 pb-1 text-[13px] leading-relaxed focus:bg-transparent focus:shadow-none',
               shakeKey > 0 && acceptedCount === 0 && 't-input is-shaking is-error'
@@ -101,14 +161,14 @@ export function IntakePanel(): ReactNode {
             </span>
             <StatefulButton
               onAction={submit}
-              disabled={acceptedCount === 0}
+              disabled={acceptedCount === 0 || pending || !!review}
               icon={<ArrowRight className="size-3.5" />}
-              loadingLabel="Queueing…"
-              successLabel="Queued"
+              loadingLabel={parsed.playlists.length ? 'Reading playlists…' : 'Queueing…'}
+              successLabel={parsed.playlists.length ? 'Ready to review' : 'Queued'}
               size="sm"
               className="h-7 rounded-[4px] px-2.5 text-[11.5px] shadow-none"
             >
-              Add to queue
+              {parsed.playlists.length ? 'Review playlists' : 'Add to queue'}
             </StatefulButton>
           </div>
           {dragging ? (
@@ -127,6 +187,16 @@ export function IntakePanel(): ReactNode {
           </div>
         ) : null}
       </div>
+
+      {reading ? <div className="mt-2 flex items-center gap-2" role="status">
+        <span className="text-xs text-fg-muted">Reading playlist tracks…</span>
+        <Button size="xs" onClick={() => {
+          const id = requestId.current
+          requestId.current = null
+          if (id) void ipc.invoke('playlist:cancel', id).catch(() => {})
+        }}>Cancel reading</Button>
+      </div> : null}
+      {review ? <PlaylistReviewPanel tracks={review.tracks} summary={review.summary} pending={pending} onConfirm={confirmPlaylist} onCancel={() => setReview(null)} /> : null}
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5">
         <div className="flex items-center gap-1">

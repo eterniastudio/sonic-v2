@@ -5,14 +5,15 @@ import { cn } from '@/lib/cn'
 
 export interface TrackArtworkProps {
   sourceUrl?: string | null
+  thumbnail?: string | null
   title: string
   className?: string
   iconClassName?: string
 }
 
 /** Real source artwork, with a neutral placeholder when none is available. */
-export function TrackArtwork({ sourceUrl, title, className, iconClassName }: TrackArtworkProps): ReactNode {
-  const artworkUrl = coverArtFor(sourceUrl)
+export function TrackArtwork({ sourceUrl, thumbnail, title, className, iconClassName }: TrackArtworkProps): ReactNode {
+  const artworkUrl = thumbnail || coverArtFor(sourceUrl)
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
   const hasArtwork = artworkUrl != null && artworkUrl !== failedUrl
 

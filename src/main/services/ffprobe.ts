@@ -62,11 +62,11 @@ export async function probeMediaFile(filePath: string, signal?: AbortSignal): Pr
   )
 
   if (result.aborted || signal?.aborted) throw new Error('Reading audio metadata was cancelled.')
+  if (result.timedOut) throw new Error('Reading audio metadata timed out.')
   if (result.code !== 0) {
     throw new Error(`ffprobe could not read ${filePath}: ${result.stderr.trim().slice(0, 200)}`)
   }
 
-  if (result.timedOut) throw new Error('Reading audio metadata timed out.')
   if (result.stdoutTruncated) throw new Error('Audio metadata exceeded the capture limit.')
 
   let raw: RawFfprobeOutput
@@ -158,7 +158,7 @@ export function tagsToMetadata(tags: Record<string, string>): MetadataValues {
 }
 
 /** Convenience: probe a file and return only its interpreted metadata. */
-export async function readEmbeddedMetadata(filePath: string): Promise<MetadataValues> {
-  const info = await probeMediaFile(filePath)
+export async function readEmbeddedMetadata(filePath: string, signal?: AbortSignal): Promise<MetadataValues> {
+  const info = await probeMediaFile(filePath, signal)
   return tagsToMetadata(info.tags)
 }

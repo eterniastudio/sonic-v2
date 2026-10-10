@@ -5,6 +5,7 @@ import { queueService } from './services/queue'
 import { installSmokeTest } from './smoke'
 import { createMainWindow, flushWindowState, getMainWindow } from './window'
 import { beginShutdown, isStopping, settleOperations } from './lifecycle'
+import { stopPlaylists } from './services/playlist'
 import { analysisService } from './analysis/service'
 import { libraryAnalysis } from './analysis/libraryAnalysis'
 import { libraryService } from './services/library'
@@ -15,6 +16,7 @@ import { stopReexports } from './services/reexport'
 import { localImportService } from './services/localImport'
 import { batchOperations } from './services/batchOperations'
 import { playbackSessionService } from './services/playbackSession'
+import { recoveryService } from './services/recovery'
 
 let readyToQuit = false
 let closing: Promise<void> | null = null
@@ -39,13 +41,14 @@ async function flushRendererPlayback(): Promise<void> {
 function requestShutdown(): void {
   if (readyToQuit || closing) return
   beginShutdown()
+  stopPlaylists()
   libraryService.scheduleRescan(0)
   // Defer work out of the close/Inspector callback. Never nest a flush inside another synchronous write.
   closing = new Promise<void>(resolve => setImmediate(resolve)).then(async () => {
     storageDiagnostic(queueFile(), { operation: 'shutdown-start' })
     await flushRendererPlayback()
     shutdownWork ??= (async () => {
-      await Promise.all([queueService.stopAll(), libraryAnalysis.shutdown(), analysisService.shutdown(), stopReexports(), localImportService.shutdown(), batchOperations.shutdown()])
+      await Promise.all([queueService.stopAll(), libraryAnalysis.shutdown(), analysisService.shutdown(), stopReexports(), localImportService.shutdown(), batchOperations.shutdown(), recoveryService.shutdown()])
       await settleOperations()
       await libraryService.shutdown()
       await settleChildren()
@@ -57,7 +60,7 @@ function requestShutdown(): void {
       })])
       queueService.flush()
       flushWindowState()
-      retryStorage()
+      await retryStorage()
       libraryAnalysis.settlePendingAdmission()
       storageDiagnostic(queueFile(), { operation: 'shutdown-saved' })
       readyToQuit = true

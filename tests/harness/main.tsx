@@ -6,6 +6,7 @@ import type { LibraryBeat } from '../../src/shared/domain'
 import { parseKeyString } from '../../src/shared/music'
 import { Dropdown, DropdownItem } from '../../src/renderer/src/components/ui/Dropdown'
 import { Modal, ConfirmDialog } from '../../src/renderer/src/components/ui/Modal'
+import { DownloadHarness, QueueHarness } from './DownloadHarness'
 import '../../src/renderer/src/styles/index.css'
 function Harness() {
   const [open, setOpen] = useState(false)
@@ -50,4 +51,4 @@ function EditorHarness() {
   }, [])
   return <main className="bg-bg text-fg h-screen p-4"><MetadataCorrection beat={beat} /><output aria-label="Current record">{JSON.stringify(beat)}</output></main>
 }
-createRoot(document.getElementById('root')!).render(location.hash === '#editor' ? <EditorHarness /> : <Harness />)
+createRoot(document.getElementById('root')!).render(location.hash === '#editor' ? <EditorHarness /> : location.hash === '#download' ? <DownloadHarness /> : location.hash === '#queue' ? <QueueHarness /> : <Harness />)

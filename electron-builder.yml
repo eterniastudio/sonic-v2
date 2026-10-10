@@ -15,12 +15,16 @@ files:
 asar: true
 compression: maximum
 
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+
 win:
   target:
     - target: nsis
       arch:
         - x64
-  icon: build/icon.png
+  icon: build/icon.ico
   artifactName: ${productName}-${version}-setup.${ext}
 
 nsis:

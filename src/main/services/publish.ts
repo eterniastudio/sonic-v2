@@ -28,6 +28,7 @@ import { libraryFile } from './paths'
 import { createId } from '../lib/id'
 import { libraryService } from './library'
 import { settingsService } from './settings'
+import { capturePhysicalIdentity } from '../lib/fileIdentity'
 
 export interface PublishInput {
   signal?: AbortSignal
@@ -41,6 +42,7 @@ export interface PublishInput {
   sourceUrl: string | null
   videoId: string | null
   uploader: string | null
+  thumbnail?: string | null
   sourceTitle: string | null
   evidence: Evidence[]
   conflicts: MetadataConflict[]
@@ -138,6 +140,7 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
 
   input.signal?.throwIfAborted()
   let sidecarPath: string | null = null
+  let sidecarId: string | null = null
   const owned: OwnedOutput[] = []
   let libraryCommitAttempted = false
   let pendingBeatId: string | null = null
@@ -148,12 +151,14 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
   try { await pipeline(createReadStream(input.stagedPath), output.createWriteStream(), { signal: input.signal }) }
   finally { await output.close() }
   input.signal?.throwIfAborted()
-  sidecarPath = settings.writeSidecar
+  const sidecarPayload = settings.writeSidecar ? buildSidecar({ ...input, fileName, filePath, extension }) : null
+  sidecarId = sidecarPayload?.id ?? null
+  sidecarPath = sidecarPayload
     ? await writeSidecar({
         directory,
         fileName,
         inSubfolder: settings.sidecarInSubfolder,
-        payload: buildSidecar({ ...input, fileName, filePath, extension }), owned
+        payload: sidecarPayload, owned
       })
     : null
 
@@ -171,6 +176,8 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
     filePath,
     fileName,
     fileOwnership: 'sonic-export',
+    ownershipEvidence: { audio: await capturePhysicalIdentity(filePath),
+      ...(sidecarPath && sidecarId ? { sidecar: { id: sidecarId, file: await capturePhysicalIdentity(sidecarPath) } } : {}) },
     sidecarPath,
     publishedTags: input.tagReadback ?? null,
     sizeBytes: input.output.sizeBytes,
@@ -180,6 +187,7 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
     channels: input.output.channels,
     sourceUrl: input.sourceUrl,
     sourceChannel: input.uploader,
+    thumbnail: input.thumbnail ?? null,
     namingTemplate: settings.namingTemplate,
     namingIndex: input.index,
     sourceKind: input.sourceKind,
@@ -246,6 +254,7 @@ function buildSidecar(
       videoId: input.videoId,
       uploader: input.uploader,
       channel: input.uploader,
+      thumbnail: input.thumbnail ?? null,
       title: input.sourceTitle
     },
     metadata: input.metadata,

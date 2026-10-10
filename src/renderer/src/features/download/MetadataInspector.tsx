@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CircleAlert, RotateCcw, Wand2, X } from 'lucide-react'
 import type { Job, MetadataDraft, MetadataField } from '@shared/domain'
 import { formatBpm, formatCents, formatDuration } from '@shared/format'
@@ -28,19 +28,35 @@ function MetaField({
   placeholder?: string
   mono?: boolean
   type?: 'text' | 'number'
-  onCommit: (raw: string) => void
+  onCommit: (raw: string) => Promise<void>
 }): ReactNode {
   const fieldId = useId()
   const external = value == null ? '' : String(value)
   const [local, setLocal] = useState(external)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  const dirty = useRef(false)
+  const saving = useRef(false)
 
   // Adopt external changes (probe results, resets) without stomping typing.
   useEffect(() => {
-    setLocal(external)
-  }, [external])
+    if (!dirty.current) setLocal(external)
+  }, [external, pending])
 
-  const commit = (): void => {
-    if (local !== external) onCommit(local)
+  const commit = async (): Promise<void> => {
+    if (saving.current || local === external) return
+    saving.current = true
+    setPending(true)
+    setError('')
+    try {
+      await onCommit(local)
+      dirty.current = false
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      saving.current = false
+      setPending(false)
+    }
   }
 
   return (
@@ -49,19 +65,32 @@ function MetaField({
         id={fieldId}
         type={type}
         value={local}
+        disabled={pending}
+        aria-busy={pending || undefined}
+        aria-invalid={Boolean(error) || undefined}
+        aria-describedby={error ? `${fieldId}-error` : undefined}
         placeholder={placeholder}
         spellCheck={false}
         className={cn('h-7 rounded-[4px] bg-transparent px-2 text-[12.5px] focus:bg-transparent', mono && 'font-mono')}
-        onChange={(event) => setLocal(event.target.value)}
-        onBlur={commit}
+        onChange={(event) => {
+          dirty.current = event.target.value !== external
+          setLocal(event.target.value)
+          setError('')
+        }}
+        onBlur={() => void commit()}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault()
-            commit()
+            void commit()
           }
-          if (event.key === 'Escape') setLocal(external)
+          if (event.key === 'Escape') {
+            dirty.current = false
+            setLocal(external)
+            setError('')
+          }
         }}
       />
+      {error ? <p id={`${fieldId}-error`} role="alert" className="text-[11px] text-danger">{error}</p> : null}
     </Field>
   )
 }
@@ -83,14 +112,14 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
   const draft = job.metadata
   const final = draft.final
 
-  const edit = (field: MetadataField, raw: string): void => {
+  const edit = async (field: MetadataField, raw: string): Promise<void> => {
     const numeric = field === 'bpm' || field === 'altBpm' || field === 'detune'
     let value: string | number | null = raw.trim() === '' ? null : raw
     if (numeric) {
       const parsed = Number(raw)
       value = raw.trim() === '' || !Number.isFinite(parsed) ? null : parsed
     }
-    void updateJob(job.id, { metadataEdit: { field, value } })
+    await updateJob(job.id, { metadataEdit: { field, value } })
   }
 
   const preview = useMemo(
@@ -131,7 +160,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
         <div className="flex min-w-0 items-center gap-3 pb-1">
-          <TrackArtwork sourceUrl={job.url} title={final.title || job.sourceTitle || 'Untitled'} className="size-11 rounded-[6px]" iconClassName="size-5" />
+          <TrackArtwork thumbnail={job.thumbnail} sourceUrl={job.url} title={final.title || job.sourceTitle || 'Untitled'} className="size-11 rounded-[6px]" iconClassName="size-5" />
           <div className="min-w-0">
             <p className="truncate text-[13px] font-medium text-fg">{final.title || job.sourceTitle || 'Untitled'}</p>
             <p className="mt-0.5 truncate text-[11.5px] text-fg-subtle">{final.producer || job.uploader || 'Unknown producer'}</p>

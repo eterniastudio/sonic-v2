@@ -80,7 +80,7 @@ export function PlaybackDock(): ReactNode {
     >
       <div className="grid min-w-0 grid-cols-[minmax(260px,1.1fr)_112px_minmax(180px,1.15fr)_auto] items-center gap-x-4">
         <div className="flex min-w-0 items-center gap-3">
-          <TrackArtwork sourceUrl={beat?.sourceUrl} title={beat?.title ?? 'No track selected'}
+          <TrackArtwork thumbnail={beat?.thumbnail} sourceUrl={beat?.sourceUrl} title={beat?.title ?? 'No track selected'}
             className="size-[52px] shrink-0 rounded-[8px] border border-line" iconClassName="size-5" />
           <div className="min-w-0 flex-1">
             <span className="sr-only" role="status">{statusLabel}</span>

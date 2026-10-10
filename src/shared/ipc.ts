@@ -25,6 +25,8 @@ import type { AudioAnalysis } from './analysis'
 import type { OrganizationCommand, OrganizationSnapshot } from './organization'
 import type { BatchRequest, BatchSession } from './batch'
 import type { PlaybackCheckpoint, PlaybackIdentity, PlaybackSessionSnapshot } from './playback'
+import type { RecoveryReview, RecoverySelection } from './recovery'
+import type { PlaylistReview } from './playlist'
 
 export type ToolName = 'yt-dlp' | 'ffmpeg' | 'ffprobe'
 
@@ -68,6 +70,8 @@ export interface IpcMap {
   }
 
   'probe:url': { args: [url: string]; result: ProbeResult }
+  'playlist:inspect': { args: [url: string, requestId: string]; result: PlaylistReview }
+  'playlist:cancel': { args: [requestId: string]; result: void }
 
   'queue:snapshot': { args: []; result: QueueSnapshot }
   'queue:add': { args: [urls: string[]]; result: QueueSnapshot }
@@ -84,6 +88,11 @@ export interface IpcMap {
   'queue:openOutput': { args: [id: string]; result: boolean }
 
   'library:list': { args: []; result: LibraryBeat[] }
+  'recovery:chooseFile': { args: [beatId: string]; result: { planId: string | null } }
+  'recovery:chooseFolder': { args: [beatIds: string[]]; result: { planId: string | null } }
+  'recovery:status': { args: [planId: string]; result: RecoveryReview }
+  'recovery:apply': { args: [planId: string, selected: RecoverySelection[]]; result: RecoveryReview }
+  'recovery:cancel': { args: [planId: string]; result: RecoveryReview }
   'organization:snapshot': { args: []; result: OrganizationSnapshot }
   'organization:command': { args: [command: OrganizationCommand]; result: OrganizationSnapshot }
   'batch:start': { args: [request: BatchRequest]; result: BatchSession }
@@ -196,6 +205,8 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'settings:chooseDir',
   'settings:previewTemplate',
   'probe:url',
+  'playlist:inspect',
+  'playlist:cancel',
   'queue:snapshot',
   'queue:add',
   'queue:remove',
@@ -210,6 +221,11 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'queue:revealOutput',
   'queue:openOutput',
   'library:list',
+  'recovery:chooseFile',
+  'recovery:chooseFolder',
+  'recovery:status',
+  'recovery:apply',
+  'recovery:cancel',
   'organization:snapshot',
   'organization:command',
   'batch:start',

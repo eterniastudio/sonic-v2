@@ -31,7 +31,9 @@ function parseOutTime(line: string): number | null {
  * reviewed metadata as container tags.
  */
 export async function transcode(options: TranscodeOptions): Promise<void> {
-  const ffmpeg = await engineService.resolve('ffmpeg')
+  options.signal.throwIfAborted()
+  const ffmpeg = await engineService.resolve('ffmpeg', false, options.signal)
+  options.signal.throwIfAborted()
   if (!ffmpeg.path) {
     throw new Error('ffmpeg is not installed. Run media engine setup from Settings.')
   }

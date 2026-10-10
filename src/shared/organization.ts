@@ -16,7 +16,7 @@ export interface SmartCollectionRule {
   bpmMin?: number
   bpmMax?: number
   key?: string
-  sourceKind?: 'youtube' | 'local' | 'unknown'
+  sourceKind?: 'youtube' | 'soundcloud' | 'local' | 'unknown'
   fileOwnership?: 'external' | 'sonic-export'
   reviewState?: 'all' | 'incomplete' | 'disagreement'
   fileState?: 'all' | 'present' | 'missing'
@@ -66,7 +66,7 @@ export function validateSmartCollectionRule(value: unknown): value is SmartColle
   if (value.bpmMax !== undefined && (typeof value.bpmMax !== 'number' || !Number.isFinite(value.bpmMax) || value.bpmMax < 20 || value.bpmMax > 400)) return false
   if (typeof value.bpmMin === 'number' && typeof value.bpmMax === 'number' && value.bpmMin > value.bpmMax) return false
   if (value.key !== undefined && (!text(value.key, 30) || value.key.trim().length === 0)) return false
-  if (value.sourceKind !== undefined && (typeof value.sourceKind !== 'string' || !['youtube', 'local', 'unknown'].includes(value.sourceKind))) return false
+  if (value.sourceKind !== undefined && (typeof value.sourceKind !== 'string' || !['youtube', 'soundcloud', 'local', 'unknown'].includes(value.sourceKind))) return false
   if (value.fileOwnership !== undefined && (typeof value.fileOwnership !== 'string' || !['external', 'sonic-export'].includes(value.fileOwnership))) return false
   if (value.reviewState !== undefined && (typeof value.reviewState !== 'string' || !['all', 'incomplete', 'disagreement'].includes(value.reviewState))) return false
   if (value.fileState !== undefined && (typeof value.fileState !== 'string' || !['all', 'present', 'missing'].includes(value.fileState))) return false

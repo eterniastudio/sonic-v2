@@ -146,36 +146,11 @@ class AnalysisService extends EventEmitter {
     let acquired = false
     const scratch: string[] = []
     try {
-      const ffmpeg = await engineService.resolve('ffmpeg', false, controller.signal)
+      // Bound the whole preparation path, including streaming file hashes, so
+      // a burst of requests cannot saturate disk before waiting for DSP capacity.
+      await this.acquire(controller.signal)
+      acquired = true
       this.throwIfAborted(controller.signal)
-      if (!ffmpeg.path) {
-        return {
-          ok: false,
-          analysis: null,
-          fromCache: false,
-          cancelled: false,
-          error: 'ffmpeg is not installed, so audio cannot be decoded for analysis.',
-          elapsedMs: Date.now() - started
-        }
-      }
-
-      // If the caller does not know how long the file is, measure it.
-      //
-      // Window planning needs a real duration: assuming one would analyse a few
-      // seconds of a three-minute track and report "inconclusive" for material
-      // that is perfectly analysable. This was a live defect — a 133 s beat was
-      // being judged on 6 s of audio.
-      let durationSec = request.durationSec
-      if (!(durationSec > 0)) {
-        try {
-          const info = await probeMediaFile(request.inputPath, controller.signal)
-          durationSec = info.durationSec
-        } catch {
-          this.throwIfAborted(controller.signal)
-          // Leave it unknown; the window planner handles that case generously.
-          durationSec = 0
-        }
-      }
 
       let inputId: string
       try {
@@ -210,9 +185,33 @@ class AnalysisService extends EventEmitter {
         }
       }
 
-      await this.acquire(controller.signal)
-      acquired = true
+      // A cache hit needs only the byte identity. Resolve tools and measure
+      // unknown duration only for work that will actually decode the audio.
+      const ffmpeg = await engineService.resolve('ffmpeg', false, controller.signal)
       this.throwIfAborted(controller.signal)
+      if (!ffmpeg.path) {
+        return {
+          ok: false,
+          analysis: null,
+          fromCache: false,
+          cancelled: false,
+          error: 'ffmpeg is not installed, so audio cannot be decoded for analysis.',
+          elapsedMs: Date.now() - started
+        }
+      }
+
+      // Window planning needs the real duration when it is available.
+      let durationSec = request.durationSec
+      if (!(durationSec > 0)) {
+        try {
+          const info = await probeMediaFile(request.inputPath, controller.signal)
+          durationSec = info.durationSec
+        } catch {
+          this.throwIfAborted(controller.signal)
+          // Leave it unknown; the window planner handles that case generously.
+          durationSec = 0
+        }
+      }
 
       const workDir = analysisDir()
       this.emitProgress(request.requestId, 'starting', 'Preparing audio…')

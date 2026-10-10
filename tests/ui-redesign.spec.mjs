@@ -33,7 +33,7 @@ test('minimal workspace stays usable in both themes and compact desktop sizes', 
           await navigate(view)
           await expect(page.locator('main h1')).toHaveText(view === 'Download' ? 'Downloads' : view === 'Library' ? /^Library/ : 'Settings')
           if (view === 'Download') {
-            const links = page.getByRole('textbox', { name: 'YouTube beat links', exact: true })
+            const links = page.getByRole('textbox', { name: 'YouTube or SoundCloud beat links', exact: true })
             await links.fill('https://www.youtube.com/watch?v=abcdefghijk')
             const queueButton = page.getByRole('button', { name: 'Add to queue', exact: true })
             await expect(queueButton).toBeEnabled()

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ArrowDownUp,
@@ -31,10 +31,11 @@ import { Input } from '@/components/ui/Input'
 import { Segmented } from '@/components/ui/Segmented'
 import { Switch } from '@/components/ui/Switch'
 import { toast } from '@/components/ui/Toaster'
-import { BeatCard } from './BeatCard'
+import { LibraryBeatRow } from './LibraryBeatRow'
 import { PreviewTransport } from './PreviewTransport'
 import { ImportAudio } from './ImportAudio'
-import { createLibraryIndex, searchLibrary, searchSmartCollection, type LibrarySort } from './librarySearch'
+import { RecoveryDialog } from './RecoveryDialog'
+import { createLibraryIndex, searchLibrary, searchSmartCollection, type LibraryIndex, type LibrarySort } from './librarySearch'
 import { CollectionWorkspace } from './CollectionWorkspace'
 import { AnnotationEditor } from './AnnotationEditor'
 import { usePlaybackActions, usePlaybackIdentity } from '@/features/playback/playbackSession'
@@ -85,7 +86,7 @@ export function LibraryView(): ReactNode {
   const [keyFilter, setKeyFilter] = useWorkspaceField('keyFilter')
   const [selectedId, setSelectedId] = useWorkspaceField('selectedId')
   const [selectedIds, setSelectedIds] = useWorkspaceField('selectedIds')
-  const [selectionAnchor, setSelectionAnchor] = useWorkspaceField('selectionAnchor')
+  const [, setSelectionAnchor] = useWorkspaceField('selectionAnchor')
   const [organization, setOrganization] = useState<OrganizationSnapshot | null>(null)
   const [organizationError, setOrganizationError] = useState(false)
   const [organizationAttempt, setOrganizationAttempt] = useState(0)
@@ -103,6 +104,16 @@ export function LibraryView(): ReactNode {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
+  const [recoveryPlanId, setRecoveryPlanId] = useState<string | null>(null)
+  const [pickingRecovery, setPickingRecovery] = useState(false)
+  const recoveryPicker = useRef(false)
+  const locateFile = async (beatId: string): Promise<void> => {
+    if (recoveryPicker.current) return
+    recoveryPicker.current = true; setPickingRecovery(true)
+    try { const result = await ipc.invoke('recovery:chooseFile', beatId); if (result.planId) setRecoveryPlanId(result.planId) }
+    catch (error) { toast({ kind: 'error', title: 'Could not locate audio', description: String(error) }) }
+    finally { recoveryPicker.current = false; setPickingRecovery(false) }
+  }
 
   useEffect(() => {
     let live = true
@@ -184,17 +195,26 @@ export function LibraryView(): ReactNode {
     return () => { document.removeEventListener('pointerdown', dismiss, true); document.removeEventListener('keydown', keydown) }
   }, [menu])
 
-  const openMenu = (event: React.MouseEvent, beat: LibraryBeat): void => {
+  const openMenu = useCallback((event: React.MouseEvent, beat: LibraryBeat): void => {
     event.preventDefault()
     event.stopPropagation()
-    if (!selectedIds.has(beat.id)) { setSelectedIds(new Set([beat.id])); setSelectionAnchor(beat.id) }
+    if (!useLibraryWorkspace.getState().selectedIds.has(beat.id)) { setSelectedIds(new Set([beat.id])); setSelectionAnchor(beat.id) }
     setMenu({ id: beat.id, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - 216)) })
-  }
+  }, [setSelectedIds, setSelectionAnchor])
 
   const cardRefs = useRef(new Map<string, HTMLDivElement>())
+  const registerCard = useCallback((id: string, node: HTMLDivElement | null): void => {
+    if (node) cardRefs.current.set(id, node)
+    else cardRefs.current.delete(id)
+  }, [])
 
-  const index = useMemo(() => createLibraryIndex(library), [library])
+  const indexCache = useRef<LibraryIndex | undefined>(undefined)
+  const index = useMemo(() => {
+    const next = createLibraryIndex(library, indexCache.current)
+    indexCache.current = next
+    return next
+  }, [library])
 
   const availableFormats = useMemo(
     () => [...new Set(library.map((beat) => beat.format))].sort(),
@@ -221,6 +241,8 @@ export function LibraryView(): ReactNode {
   }, [library, index, organization, activeScope, activeCollection, query, sort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter])
 
   const auditionLabel = activeCollection?.name ?? (activeScope === FAVORITES_COLLECTION_ID ? 'Favorites' : 'All audio')
+  const visibleRef = useRef(visible)
+  useLayoutEffect(() => { visibleRef.current = visible }, [visible])
   const playDisplayed = (): void => {
     const ids = visible.map(beat => beat.id)
     if (ids.length) playQueue(ids, ids[0], auditionLabel)
@@ -250,7 +272,7 @@ export function LibraryView(): ReactNode {
     }
   }, [])
 
-  const toggleSelectedId = (id: string): void => {
+  const toggleSelectedId = useCallback((id: string): void => {
     setSelectedIds(previous => {
       const next = new Set(previous)
       if (next.has(id)) next.delete(id)
@@ -258,11 +280,12 @@ export function LibraryView(): ReactNode {
       return next
     })
     setSelectionAnchor(id)
-  }
+  }, [setSelectedIds, setSelectionAnchor])
 
-  const selectCard = (event: ReactMouseEvent | ReactKeyboardEvent, beat: LibraryBeat): void => {
+  const selectCard = useCallback((event: ReactMouseEvent | ReactKeyboardEvent, beat: LibraryBeat): void => {
+    const { selectedId, selectionAnchor } = useLibraryWorkspace.getState()
     if (event.shiftKey) {
-      const ids = visible.map(item => item.id)
+      const ids = visibleRef.current.map(item => item.id)
       const anchor = ids.indexOf(selectionAnchor ?? beat.id)
       const end = ids.indexOf(beat.id)
       if (anchor >= 0 && end >= 0) setSelectedIds(previous => new Set([...previous, ...ids.slice(Math.min(anchor, end), Math.max(anchor, end) + 1)]))
@@ -271,7 +294,7 @@ export function LibraryView(): ReactNode {
     if (event.ctrlKey || event.metaKey) { toggleSelectedId(beat.id); return }
     setSelectedId(selectedId === beat.id ? null : beat.id)
     setSelectionAnchor(beat.id)
-  }
+  }, [setSelectedIds, setSelectedId, setSelectionAnchor, toggleSelectedId])
 
   const selected = useMemo(
     () => library.find((beat) => beat.id === selectedId) ?? null,
@@ -307,6 +330,14 @@ export function LibraryView(): ReactNode {
   const needsAnalysis = library.filter(
     (beat) => !beat.missing && (beat.analysisStatus === 'not-analyzed' || beat.analysisStatus === 'failed')
   ).length
+  const recoverable = visible.filter(beat => (beat.missing || beat.fileAccessError) && (selectedIds.size === 0 || selectedIds.has(beat.id)))
+  const findMissingFiles = async (): Promise<void> => {
+    if (recoveryPicker.current || !recoverable.length) return
+    recoveryPicker.current = true; setPickingRecovery(true)
+    try { const result = await ipc.invoke('recovery:chooseFolder', recoverable.map(beat => beat.id)); if (result.planId) setRecoveryPlanId(result.planId) }
+    catch (error) { toast({ kind: 'error', title: 'Could not scan for audio', description: String(error) }) }
+    finally { recoveryPicker.current = false; setPickingRecovery(false) }
+  }
 
   return (
     <div className="workspace-page flex h-full min-h-0 flex-col gap-3">
@@ -382,6 +413,7 @@ export function LibraryView(): ReactNode {
           </Dropdown>
 
           <span className="flex-1" />
+          {recoverable.length > 0 ? <Button variant="ghost" size="sm" disabled={pickingRecovery} onClick={() => void findMissingFiles()}>Find missing files…</Button> : null}
           <Segmented
             value={layout}
             onChange={changeLayout}
@@ -562,25 +594,19 @@ export function LibraryView(): ReactNode {
         ) : layout === 'grid' ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2 pb-1">
             {visible.map((beat) => (
-              <div
-                key={beat.id}
-                ref={(node) => {
-                  if (node) cardRefs.current.set(beat.id, node)
-                  else cardRefs.current.delete(beat.id)
-                }}
-              >
-                <BeatCard
+                <LibraryBeatRow
+                  key={beat.id}
                   beat={beat}
                   layout="grid"
                   playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
                   selected={selectedId === beat.id}
                   batchSelected={selectedIds.has(beat.id)}
-                  onToggleSelection={() => toggleSelectedId(beat.id)}
-                  onSelect={(event) => selectCard(event, beat)}
-                  onPlay={() => playOne(beat.id)}
-                  onContextMenu={(event) => openMenu(event, beat)}
+                  onToggleSelection={toggleSelectedId}
+                  onSelect={selectCard}
+                  onPlay={playOne}
+                  onContextMenu={openMenu}
+                  registerCard={registerCard}
                 />
-              </div>
             ))}
           </div>
         ) : (
@@ -594,22 +620,19 @@ export function LibraryView(): ReactNode {
               <span className="hidden w-12 shrink-0 text-right @min-[620px]:block">Format</span>
             </div>
             {visible.map((beat) => (
-              <div key={beat.id} ref={node => {
-                if (node) cardRefs.current.set(beat.id, node)
-                else cardRefs.current.delete(beat.id)
-              }}>
-                <BeatCard
+                <LibraryBeatRow
+                  key={beat.id}
                   beat={beat}
                   layout="list"
                   playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
                   selected={selectedId === beat.id}
                   batchSelected={selectedIds.has(beat.id)}
-                  onToggleSelection={() => toggleSelectedId(beat.id)}
-                  onSelect={(event) => selectCard(event, beat)}
-                  onPlay={() => playOne(beat.id)}
-                  onContextMenu={(event) => openMenu(event, beat)}
+                  onToggleSelection={toggleSelectedId}
+                  onSelect={selectCard}
+                  onPlay={playOne}
+                  onContextMenu={openMenu}
+                  registerCard={registerCard}
                 />
-              </div>
             ))}
           </div>
         )}
@@ -617,9 +640,10 @@ export function LibraryView(): ReactNode {
 
       {selected ? (
         <aside aria-label="Beat inspector" className="min-h-0 w-[300px] max-w-[39%] shrink-0 overflow-y-auto rounded-[10px] bg-surface">
-        <PreviewTransport
+          <PreviewTransport
           key={`preview-${selected.id}`}
           beat={selected}
+          onLocateFile={() => void locateFile(selected.id)}
           onClose={() => setSelectedId(null)}
           onRequestDelete={() => {
             setAlsoDeleteFiles(selected.fileOwnership === 'sonic-export')
@@ -659,9 +683,10 @@ export function LibraryView(): ReactNode {
             )
             return <>
               {item('Play this beat', () => playOne(beat.id), beat.missing)}
-              {beat.sourceKind === 'youtube' && beat.sourceUrl ? <>
-                {item('Open on YouTube', async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid YouTube link is saved for this beat.') })}
-                {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.setState({ library: refreshed }) })}
+              {beat.missing || beat.fileAccessError ? item('Locate file…', () => locateFile(beat.id), pickingRecovery) : null}
+              {(beat.sourceKind === 'youtube' || beat.sourceKind === 'soundcloud') && beat.sourceUrl ? <>
+                {item(beat.sourceKind === 'soundcloud' ? 'Open on SoundCloud' : 'Open on YouTube', async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid source link is saved for this beat.') })}
+                {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.getState().setLibrarySnapshot(refreshed) })}
               </> : null}
               {item(beat.fileOwnership === 'external' ? 'Rename in library…' : 'Rename beat and file…', () => { setRenameTarget(beat); setRenameTitle(beat.title); setRenameError('') })}
               {beat.fileOwnership === 'external' ? item('Export prepared copy…', () => {
@@ -756,6 +781,7 @@ export function LibraryView(): ReactNode {
           <p className="mt-2 font-mono text-[10.5px] break-all text-fg-subtle">{deleteTarget.fileName}</p>
         ) : null}
       </ConfirmDialog>
+      {recoveryPlanId ? <RecoveryDialog planId={recoveryPlanId} onClose={() => setRecoveryPlanId(null)} /> : null}
     </div>
   )
 }

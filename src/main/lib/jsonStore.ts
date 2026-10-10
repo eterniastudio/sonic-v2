@@ -6,12 +6,28 @@ import path from 'node:path'
 
 const instance = `${process.pid}-${randomUUID()}`
 export const storageEvents = new EventEmitter()
-type State = { cached: unknown; loaded: boolean; revision: number; persisted: number; pending?: unknown; error: string | null; retry?: () => void; writing?: boolean }
+type State = { cached: unknown; loaded: boolean; revision: number; persisted: number; pending?: unknown; error: string | null; retry?: () => void; writing?: boolean; prepareRetry?: () => Promise<void>; retryTask?: Promise<void> }
 const states = new Map<string, State>()
 export function storageStatus(): { file: string; revision: number; persisted: number; error: string | null }[] {
   return [...states].map(([file, s]) => ({ file, revision: s.revision, persisted: s.persisted, error: s.error }))
 }
-export function retryStorage(): void { for (const s of states.values()) if (s.error && s.retry) s.retry() }
+export function retryStorage(): void | Promise<void> {
+  const tasks: Promise<void>[] = []
+  for (const s of states.values()) {
+    if (!s.error || !s.retry) continue
+    if (s.retryTask) { tasks.push(s.retryTask); continue }
+    if (!s.prepareRetry) { s.retry(); continue }
+    const revision = s.revision
+    const task = s.prepareRetry().then(() => {
+      if (s.revision !== revision || !s.retry) throw new Error('The pending save changed during validation. Retry saving again.')
+      s.retry()
+    }).catch(error => { s.error = String(error); storageEvents.emit('changed'); throw error })
+    s.retryTask = task
+    void task.finally(() => { if (s.retryTask === task) s.retryTask = undefined }).catch(() => undefined)
+    tasks.push(task)
+  }
+  if (tasks.length) return Promise.all(tasks).then(() => undefined)
+}
 export function storageDiagnostic(file: string, details: Record<string, unknown>): void {
   const record = JSON.stringify({ time: new Date().toISOString(), pid: process.pid, instance, file, ...details }) + '\n'
   // A removed profile must not be recreated by a late callback.
@@ -78,7 +94,7 @@ export class JsonStore<T> {
       throw error
     } finally { if (created) { try { unlinkSync(temporary) } catch { /* Only this operation owns this path. */ } } }
   }
-  write(value: T, options: { replacePending?: boolean } = {}): T {
+  write(value: T, options: { replacePending?: boolean; prepareRetry?: () => Promise<void> } = {}): T {
     const start = performance.now()
     const s = this.state
     if (s.writing) throw new Error(`Reentrant write rejected for ${this.file}; retry after the active commit.`)
@@ -89,7 +105,8 @@ export class JsonStore<T> {
     const snapshot = JSON.parse(data) as T
     s.revision += 1
     s.pending = snapshot
-    s.retry = () => { this.write(s.pending as T, { replacePending: true }) }
+    s.prepareRetry = options.prepareRetry
+    s.retry = () => { this.write(s.pending as T, { replacePending: true, prepareRetry: s.prepareRetry }) }
     s.writing = true
     try {
       if (s.loaded) this.replace(`${this.file}.backup`, JSON.stringify(s.cached, null, 2))
@@ -104,6 +121,7 @@ export class JsonStore<T> {
       s.pending = undefined
       s.error = null
       s.retry = undefined
+      s.prepareRetry = undefined
       storageDiagnostic(this.file, { operation: 'committed', revision: s.persisted, bytes: Buffer.byteLength(data), elapsedMs: performance.now() - start })
       storageEvents.emit('changed')
       return this.read()
@@ -112,6 +130,20 @@ export class JsonStore<T> {
       storageEvents.emit('changed')
       throw error
     } finally { s.writing = false }
+  }
+  /** Abandon an uncommitted operation without discarding the last acknowledged snapshot.
+   * The storage fault stays visible. Its next retry writes the already committed state.
+   */
+  async settleRetry(): Promise<void> { await this.state.retryTask?.catch(() => undefined) }
+
+  discardPending(revision: number): void {
+    const s = this.state
+    if (s.writing || s.retryTask || !s.error || s.revision !== revision || s.pending === undefined) {
+      throw new Error('This pending save changed. Refresh its status before cancelling.')
+    }
+    s.pending = JSON.parse(JSON.stringify(this.read())) as T
+    s.prepareRetry = undefined
+    storageEvents.emit('changed')
   }
   update(mutator: (current: T) => T): T { return this.write(mutator(structuredClone(this.read()))) }
 }

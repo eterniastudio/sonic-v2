@@ -54,6 +54,57 @@ test.afterEach(async ({}, info) => {
   expect(rendererErrors).toEqual([])
 })
 
+test('Download previews and Library audition share one audio owner without launching an external player', async () => {
+  await app.evaluate(({ shell }) => {
+    globalThis.__previewExternalOpens = 0
+    globalThis.__previewOriginalOpenPath = shell.openPath
+    shell.openPath = async () => { globalThis.__previewExternalOpens++; return '' }
+  })
+  await page.evaluate(() => {
+    const active = new Set()
+    const start = AudioBufferSourceNode.prototype.start
+    const stop = AudioBufferSourceNode.prototype.stop
+    const evidence = window.__previewAudio = { maximum: 0, starts: 0, stops: 0, active: () => active.size }
+    AudioBufferSourceNode.prototype.start = function (...args) {
+      const result = start.apply(this, args)
+      active.add(this); evidence.starts++; evidence.maximum = Math.max(evidence.maximum, active.size)
+      this.addEventListener('ended', () => active.delete(this), { once: true })
+      return result
+    }
+    AudioBufferSourceNode.prototype.stop = function (...args) {
+      const result = stop.apply(this, args)
+      active.delete(this); evidence.stops++
+      return result
+    }
+  })
+  try {
+    const downloadPreview = () => page.locator('[data-job-id="job-0"]').getByRole('button', { name: 'Preview in Sonic', exact: true })
+    await downloadPreview().click()
+    await expect(player()).toHaveAttribute('data-playback-beat-id', beats[0].id)
+    await expect(player()).toHaveAttribute('data-playback-state', 'playing')
+    await expect.poll(position).toBeGreaterThan(0.2)
+    await downloadPreview().click()
+    await playBeat(beats[1])
+    await expect.poll(() => page.evaluate(() => window.__previewAudio.active())).toBe(1)
+    expect(await page.evaluate(() => window.__previewAudio.stops)).toBeGreaterThan(0)
+    await page.locator('nav').getByRole('button', { name: /^Download/ }).first().click()
+    await downloadPreview().click()
+    await expect(player()).toHaveAttribute('data-playback-beat-id', beats[0].id)
+    await expect(player()).toHaveAttribute('data-playback-state', 'playing')
+    expect(await page.evaluate(() => window.__previewAudio.maximum)).toBe(1)
+    expect(await app.evaluate(() => globalThis.__previewExternalOpens)).toBe(0)
+    await expect(player().locator('[data-waveform]')).toHaveCount(1)
+    await player().getByRole('button', { name: 'Pause audition', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => window.__previewAudio.active())).toBe(0)
+    await invoke('library:remove', beats[0].id, false)
+    await downloadPreview().click()
+    await expect(page.getByText('This download is no longer in your library. Import its audio to preview it.', { exact: true })).toBeVisible()
+    expect(await app.evaluate(() => globalThis.__previewExternalOpens)).toBe(0)
+  } finally {
+    await app.evaluate(({ shell }) => { shell.openPath = globalThis.__previewOriginalOpenPath })
+  }
+})
+
 test('real playback, position, volume and one waveform survive navigation and theme; restart is paused', async ({}, info) => {
   await playBeat(beats[0])
   const initial = await position()
@@ -127,6 +178,37 @@ test('immediate normal close drains a pending seek and volume revision before ex
     beatId: beats[0].id, restoredPosition: await position(), volume: saved.volume,
     close: 'normal process exit with no pre-close playback:get acknowledgement poll'
   }, null, 2))
+})
+
+test('waveform seeking while paused saves immediately and seeking a finished track resumes there', async ({}, info) => {
+  await playBeat(beats[0])
+  await player().getByRole('button', { name: 'Pause audition' }).click()
+  await expect(player()).toHaveAttribute('data-playback-state', 'paused')
+  const waveform = player().locator('[data-waveform]')
+  const bounds = await waveform.boundingBox()
+  await waveform.click({ position: { x: Math.round(bounds.width * 0.5), y: Math.round(bounds.height / 2) } })
+  await expect.poll(position).toBeGreaterThan(7)
+  await expect.poll(async () => (await invoke('playback:get')).positions.find(entry => entry.beatId === beats[0].id)?.positionSec ?? 0).toBeGreaterThan(7)
+
+  const seek = player().getByLabel('Seek preview')
+  const seekBounds = await seek.boundingBox()
+  await seek.click({ position: { x: Math.round(seekBounds.width * 0.96), y: Math.round(seekBounds.height / 2) } })
+  await player().getByRole('button', { name: 'Play audition', exact: true }).click()
+  await expect(player()).toHaveAttribute('data-playback-state', 'ended', { timeout: 10_000 })
+  await waveform.click({ position: { x: Math.round(bounds.width * 0.25), y: Math.round(bounds.height / 2) } })
+  await expect(player()).toHaveAttribute('data-playback-state', 'paused')
+  await expect.poll(position).toBeGreaterThan(3)
+  expect(await position()).toBeLessThan(6)
+  await player().getByRole('button', { name: 'Play audition', exact: true }).click()
+  await expect(player()).toHaveAttribute('data-playback-state', 'playing')
+  expect(await position()).toBeGreaterThan(3)
+  await player().getByRole('button', { name: 'Pause audition', exact: true }).click()
+  const saved = await position()
+  await closeOwnedApp(app, page, info)
+  await reopen(info)
+  await expect(player()).toHaveAttribute('data-playback-state', 'paused', { timeout: 20_000 })
+  await expect.poll(position).toBeGreaterThan(saved - 1)
+  expect(await position()).toBeLessThan(saved + 1)
 })
 
 test('captured collection sequence remains separate from selection, annotation edits and smart results', async ({}, info) => {

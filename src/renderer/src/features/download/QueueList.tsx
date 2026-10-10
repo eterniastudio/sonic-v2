@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useCallback, type ReactNode } from 'react'
 import { Download, ListChecks, Pause, Play } from 'lucide-react'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/Button'
@@ -18,6 +18,9 @@ export function QueueList(): ReactNode {
   const setPaused = useApp((state) => state.setPaused)
   const setConcurrency = useApp((state) => state.setConcurrency)
   const clearFinished = useApp((state) => state.clearFinished)
+  const selectJob = useCallback((id: string): void => {
+    setSelectedJob(useApp.getState().selectedJobId === id ? null : id)
+  }, [setSelectedJob])
   const readyCount = jobs.filter((job) => job.stage === 'ready').length
   const activeCount = jobs.filter((job) => !TERMINAL.has(job.stage)).length
   const finishedCount = jobs.filter((job) => job.stage === 'complete' || job.stage === 'cancelled').length
@@ -54,7 +57,7 @@ export function QueueList(): ReactNode {
         ) : (
           <div className="divide-y divide-line">
             {jobs.map((job) => (
-              <JobRow key={job.id} job={job} selected={selectedJobId === job.id} onSelect={() => setSelectedJob(selectedJobId === job.id ? null : job.id)} />
+              <JobRow key={job.id} job={job} selected={selectedJobId === job.id} onSelect={selectJob} />
             ))}
           </div>
         )}

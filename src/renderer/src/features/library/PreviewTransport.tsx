@@ -33,12 +33,14 @@ export function PreviewTransport({
   beat,
   onClose,
   onRequestDelete,
-  onRequestExport
+  onRequestExport,
+  onLocateFile
 }: {
   beat: LibraryBeat
   onClose: () => void
   onRequestDelete: () => void
   onRequestExport: () => void
+  onLocateFile?: () => void
 }): ReactNode {
   const { playOne } = usePlaybackActions()
   const updateBeatMetadata = useApp((state) => state.updateBeatMetadata)
@@ -91,7 +93,7 @@ export function PreviewTransport({
         <IconButton label="Close preview" size="icon-xs" onClick={onClose}><X /></IconButton>
       </div>
       <div className="[@media(max-height:760px)]:flex [@media(max-height:760px)]:items-start [@media(max-height:760px)]:gap-3">
-        <TrackArtwork sourceUrl={beat.sourceUrl} title={beat.title} className="mb-3.5 h-[140px] w-full rounded-[5px] [@media(max-height:760px)]:mb-0 [@media(max-height:760px)]:size-[72px]" iconClassName="size-7" />
+        <TrackArtwork thumbnail={beat.thumbnail} sourceUrl={beat.sourceUrl} title={beat.title} className="mb-3.5 h-[140px] w-full rounded-[5px] [@media(max-height:760px)]:mb-0 [@media(max-height:760px)]:size-[72px]" iconClassName="size-7" />
         <div className="min-w-0">
           <h2 title={beat.title} className="text-[17px] leading-[1.35] font-semibold tracking-[-0.02em] break-words text-fg [@media(max-height:760px)]:line-clamp-3 [@media(max-height:760px)]:text-[15px] [@media(max-height:760px)]:leading-[1.3]">{beat.title}</h2>
           <p className="mt-1.5 text-[12.5px] leading-snug text-fg-muted [@media(max-height:760px)]:mt-1 [@media(max-height:760px)]:truncate [@media(max-height:760px)]:text-[12px]">{beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')}</p>
@@ -100,7 +102,16 @@ export function PreviewTransport({
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-subtle nums">
         <span>{beat.format.toUpperCase()}</span><span>·</span><span>{formatDuration(beat.durationSec)}</span><span>·</span><span>{formatBytes(beat.sizeBytes)}</span>
       </div>
-      {beat.missing ? <p className="mt-3 text-[11px] leading-relaxed text-warning">Audio file is missing. Restore it to its original location, then rescan the library.</p> : null}
+      {beat.missing || beat.fileAccessError ? <div className="mt-3 space-y-2">
+        <p className="text-[11px] leading-relaxed text-warning">{beat.fileAccessError ? `Audio file is unavailable: ${beat.fileAccessError}` : 'Audio file is missing. Locate the same file to keep this library entry and its metadata.'}</p>
+        <p className="select-text break-all font-mono text-[10px] text-fg-subtle" title={beat.filePath}>{beat.filePath}</p>
+        {onLocateFile ? <Button size="sm" variant="secondary" onClick={onLocateFile}>Locate file…</Button> : null}
+      </div> : null}
+      {beat.recoveryInfo ? <div className="mt-3 space-y-1 text-[11px] text-fg-muted">
+        <p>{beat.recoveryInfo.sidecar === 'unresolved' ? 'Audio reconnected; sidecar unresolved.' : 'Audio reconnected.'}</p>
+        <p className="select-text break-all font-mono text-[10px]" title={beat.filePath}>{beat.filePath}</p>
+        {beat.recoveryInfo.ownership === 'read-only' ? <p>This file remains read-only. Metadata changes stay in your library; export a prepared copy when needed.</p> : null}
+      </div> : null}
 
       <dl className="my-4 grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-x-5 border-y border-line py-3.5 [@media(max-height:760px)]:my-2 [@media(max-height:760px)]:gap-x-4 [@media(max-height:760px)]:py-2">
         <div className="min-w-0 [@media(max-height:760px)]:grid [@media(max-height:760px)]:grid-cols-[auto_minmax(0,1fr)]">
@@ -116,7 +127,7 @@ export function PreviewTransport({
       </dl>
 
       <div className="flex items-center gap-2">
-        <Button variant="secondary" className="flex-1" leading={<Play className="fill-current" />} disabled={beat.missing} onClick={() => playOne(beat.id)}>Play this beat</Button>
+        <Button variant="secondary" className="flex-1" leading={<Play className="fill-current" />} disabled={beat.missing || !!beat.fileAccessError} onClick={() => playOne(beat.id)}>Play this beat</Button>
         <Dropdown align="end" trigger={({ toggle }) => <IconButton label="Beat actions" variant="secondary" onClick={toggle}><MoreHorizontal /></IconButton>}>
           {close => <>
             <DropdownItem icon={<FolderOpen />} onSelect={async () => { await ipc.invoke('library:revealFile', beat.id); close() }}>Reveal in folder</DropdownItem>
@@ -159,7 +170,7 @@ export function PreviewTransport({
         </dl>
         <p className="mt-3 break-all font-mono text-[10px] text-fg-subtle">{beat.fileName}</p>
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {beat.fileOwnership === 'external' ? <Badge size="sm" tone="outline">local original</Badge> : null}
+          {beat.fileOwnership === 'external' ? <Badge size="sm" tone="outline">{beat.recoveryInfo ? 'read-only file' : 'local original'}</Badge> : null}
           {beat.overrides.length > 0 ? <Badge size="sm" tone="accent">{beat.overrides.length} manual</Badge> : null}
           <Badge size="sm" tone={librarySaved ? 'success' : 'warning'}>{librarySaved ? 'library saved' : libraryStorage ? 'library save pending' : 'library status checking'}</Badge>
           {beat.sidecarPath ? <Badge size="sm" tone={beat.sidecarSync?.status === 'error' ? 'danger' : beat.sidecarSync?.status === 'synced' ? 'success' : 'warning'}>sidecar {beat.sidecarSync?.status ?? 'pending'}</Badge> : null}

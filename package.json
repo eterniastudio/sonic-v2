@@ -3,7 +3,7 @@
   "productName": "Sonic V2",
   "version": "2.0.0",
   "private": true,
-  "description": "Sonic V2 \u00e2\u20ac\u201d a fast, beautiful YouTube beat downloader and library for music producers.",
+  "description": "Sonic V2 \u00e2\u20ac\u201d a fast, beautiful YouTube and SoundCloud beat downloader and library for music producers.",
   "author": "Eternia Studios",
   "license": "SEE LICENSE IN LICENSE",
   "main": "./out/main/index.js",
@@ -23,7 +23,8 @@
     "test:services": "node scripts/service-selftest.mjs",
     "test:analysis": "node --test tests/library-analysis.test.mjs",
     "test:dsp": "node scripts/dsp-selftest.mjs",
-    "test:ui": "node scripts/build-component-harness.mjs && playwright test",
+    "test:unit": "node --test tests/*.test.mjs",
+    "test:ui": "electron-vite build && node scripts/build-component-harness.mjs && playwright test",
     "test:idle": "playwright test tests/interactions.spec.mjs --grep \"offline pointer\" --repeat-each=10",
     "test:loaded": "playwright test tests/interactions.spec.mjs --grep \"loaded analysis\" --repeat-each=3"
   },

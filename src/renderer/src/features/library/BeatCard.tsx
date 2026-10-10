@@ -19,6 +19,8 @@ export interface BeatCardProps {
 }
 
 export function BeatCard({ beat, layout, selected, batchSelected = false, playbackState, onSelect, onPlay, onToggleSelection, onContextMenu }: BeatCardProps): ReactNode {
+  const unavailable = beat.missing || !!beat.fileAccessError
+  const unavailableLabel = beat.fileAccessError ? `Audio file is unavailable: ${beat.fileAccessError}` : 'Audio file is missing'
   const credit = beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')
   const playbackLabel = playbackState === 'playing' ? 'Playing' : playbackState === 'paused' ? 'Paused' : playbackState === 'loading' ? 'Loading' : playbackState === 'ended' ? 'Ended' : playbackState === 'error' ? 'Playback error' : playbackState === 'ready' ? 'Ready' : null
   const stateId = `beat-state-${beat.id}`
@@ -41,8 +43,8 @@ export function BeatCard({ beat, layout, selected, batchSelected = false, playba
       {selected ? <span aria-hidden="true" className="absolute inset-y-3 left-0 w-0.5 rounded-full bg-fg-muted" /> : null}
       {selectionControl}
       <span className="relative size-9 shrink-0 overflow-hidden rounded-[5px]">
-        <TrackArtwork sourceUrl={beat.sourceUrl} title={beat.title} className="size-full" iconClassName="size-4" />
-        {onPlay ? <button type="button" aria-label={`Play ${beat.title}`} disabled={beat.missing}
+        <TrackArtwork thumbnail={beat.thumbnail} sourceUrl={beat.sourceUrl} title={beat.title} className="size-full" iconClassName="size-4" />
+        {onPlay ? <button type="button" aria-label={`Play ${beat.title}`} disabled={unavailable}
           onClick={event => { event.stopPropagation(); onPlay() }}
           className="absolute inset-0 grid place-items-center bg-surface-3/95 text-fg opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent disabled:pointer-events-none">
           <Play className="size-3.5 fill-current" />
@@ -58,7 +60,7 @@ export function BeatCard({ beat, layout, selected, batchSelected = false, playba
         <span className="hidden w-14 shrink-0 text-right text-[11.5px] text-fg-muted @min-[480px]:block">{beat.camelot ?? '—'}</span>
         <span className="w-11 shrink-0 text-right text-[11.5px] text-fg-subtle nums">{formatDuration(beat.durationSec)}</span>
         <span className="hidden w-12 shrink-0 text-right text-[10px] font-medium tracking-wide text-fg-subtle uppercase @min-[620px]:block">{beat.format}</span>
-        {beat.missing ? <span role="img" aria-label="Audio file is missing" title="Audio file is missing"><TriangleAlert aria-hidden="true" className="size-3.5 shrink-0 text-warning" /></span> : null}
+        {unavailable ? <span role="img" aria-label={unavailableLabel} title={unavailableLabel}><TriangleAlert aria-hidden="true" className="size-3.5 shrink-0 text-warning" /></span> : null}
       </button>
     </div>
   }
@@ -71,7 +73,7 @@ export function BeatCard({ beat, layout, selected, batchSelected = false, playba
     {selected ? <span aria-hidden="true" className="absolute inset-y-4 left-0 w-0.5 rounded-full bg-fg-muted" /> : null}
     <button type="button" aria-label={`Preview ${beat.title}`} aria-describedby={stateId} aria-pressed={selected} onClick={onSelect}
       className="flex h-28 w-full items-center gap-3.5 rounded-[6px] px-3 py-4 text-left focus-visible:outline-2 focus-visible:outline-accent">
-      <TrackArtwork sourceUrl={beat.sourceUrl} title={beat.title} className="size-16 rounded-[5px]" iconClassName="size-5" />
+      <TrackArtwork thumbnail={beat.thumbnail} sourceUrl={beat.sourceUrl} title={beat.title} className="size-16 rounded-[5px]" iconClassName="size-5" />
       <span className="min-w-0 flex-1 pr-4">
         <span className="flex items-center gap-1.5"><span className="truncate text-[13px] font-medium text-fg" title={beat.title}>{beat.title}</span>{selected ? <PanelRightOpen aria-hidden="true" className="size-3 shrink-0 text-fg-muted" /> : null}</span>
         <span className="mt-1 flex items-center gap-2"><span className="truncate text-[11.5px] text-fg-muted" title={credit}>{credit}</span>{playbackMark}</span>
@@ -79,12 +81,12 @@ export function BeatCard({ beat, layout, selected, batchSelected = false, playba
           <span className="nums">{beat.bpm != null ? `${formatBpm(beat.bpm)} BPM` : 'No BPM'}</span>
           {beat.camelot ? <><span>·</span><span>{beat.camelot}</span></> : null}
           <span className="ml-auto nums">{formatDuration(beat.durationSec)}</span>
-          {beat.missing ? <span role="img" aria-label="Audio file is missing" title="Audio file is missing"><TriangleAlert aria-hidden="true" className="size-3 text-warning" /></span> : null}
+          {unavailable ? <span role="img" aria-label={unavailableLabel} title={unavailableLabel}><TriangleAlert aria-hidden="true" className="size-3 text-warning" /></span> : null}
         </span>
       </span>
     </button>
     {selectionControl ? <span className="absolute top-3 right-3 z-10">{selectionControl}</span> : null}
-    {onPlay ? <button type="button" aria-label={`Play ${beat.title}`} disabled={beat.missing}
+    {onPlay ? <button type="button" aria-label={`Play ${beat.title}`} disabled={unavailable}
       onClick={event => { event.stopPropagation(); onPlay() }}
       className="absolute top-6 left-3 grid size-16 place-items-center rounded-[5px] bg-surface-3/95 text-fg opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none">
       <Play className="size-3.5 translate-x-px fill-current" />

@@ -19,6 +19,7 @@ export type AnalysisProgressEvent = IpcEvents['analysis:progress']
 import { DEFAULT_PRESET_ID } from '@shared/presets'
 import { DEFAULT_NAMING_TEMPLATE } from '@shared/template'
 import { ipc } from '../lib/ipc'
+import { reuseQueueSnapshot, reuseSnapshotItems } from './snapshots'
 
 export type ViewId = 'download' | 'library' | 'settings'
 
@@ -72,6 +73,8 @@ interface AppState {
   setSelectedJob: (id: string | null) => void
   setCommandOpen: (open: boolean) => void
   setLibraryFocus: (id: string | null) => void
+  setQueueSnapshot: (queue: QueueSnapshot) => void
+  setLibrarySnapshot: (library: LibraryBeat[]) => void
 
   patchSettings: (patch: Partial<Settings>) => Promise<void>
   chooseDownloadDir: () => Promise<void>
@@ -136,13 +139,22 @@ export const useApp = create<AppState>()((set, get) => ({
       ipc.invoke('queue:snapshot'),
       ipc.invoke('library:list')
     ])
-    set({ info, settings, engine, queue, library, booted: true })
+    set({ info, settings, engine, queue: reuseQueueSnapshot(get().queue, queue),
+      library: reuseSnapshotItems(get().library, library), booted: true })
   },
 
   setView: (view) => set({ view }),
   setSelectedJob: (selectedJobId) => set({ selectedJobId }),
   setCommandOpen: (commandOpen) => set({ commandOpen }),
   setLibraryFocus: (libraryFocusId) => set({ libraryFocusId }),
+  setQueueSnapshot: (queue) => set(state => {
+    const next = reuseQueueSnapshot(state.queue, queue)
+    return next === state.queue ? state : { queue: next }
+  }),
+  setLibrarySnapshot: (library) => set(state => {
+    const next = reuseSnapshotItems(state.library, library)
+    return next === state.library ? state : { library: next }
+  }),
 
   async patchSettings(patch) {
     const settings = await ipc.invoke('settings:patch', patch)
@@ -179,47 +191,47 @@ export const useApp = create<AppState>()((set, get) => ({
 
   async addUrls(urls) {
     const queue = await ipc.invoke('queue:add', urls)
-    set({ queue })
+    get().setQueueSnapshot(queue)
   },
 
   async startJobs(ids) {
     const queue = await ipc.invoke('queue:start', ids)
-    set({ queue })
+    get().setQueueSnapshot(queue)
   },
 
   async cancelJob(id) {
     const queue = await ipc.invoke('queue:cancel', id)
-    set({ queue })
+    get().setQueueSnapshot(queue)
   },
 
   async retryJob(id) {
     const queue = await ipc.invoke('queue:retry', id)
-    set({ queue })
+    get().setQueueSnapshot(queue)
   },
 
   async removeJob(id) {
     const queue = await ipc.invoke('queue:remove', id)
-    set({ queue, selectedJobId: get().selectedJobId === id ? null : get().selectedJobId })
+    set({ queue: reuseQueueSnapshot(get().queue, queue), selectedJobId: get().selectedJobId === id ? null : get().selectedJobId })
   },
 
   async clearFinished() {
     const queue = await ipc.invoke('queue:clearFinished')
-    set({ queue })
+    get().setQueueSnapshot(queue)
   },
 
   async setPaused(paused) {
     const queue = await ipc.invoke('queue:setPaused', paused)
-    set({ queue })
+    get().setQueueSnapshot(queue)
   },
 
   async setConcurrency(value) {
     const queue = await ipc.invoke('queue:setConcurrency', value)
-    set({ queue, settings: { ...get().settings, concurrency: queue.concurrency } })
+    set({ queue: reuseQueueSnapshot(get().queue, queue), settings: { ...get().settings, concurrency: queue.concurrency } })
   },
 
   async reorderJobs(ids) {
     const queue = await ipc.invoke('queue:reorder', ids)
-    set({ queue })
+    get().setQueueSnapshot(queue)
   },
 
   async updateJob(id, patch) {
@@ -234,12 +246,12 @@ export const useApp = create<AppState>()((set, get) => ({
 
   async rescanLibrary() {
     const library = await ipc.invoke('library:rescan')
-    set({ library })
+    get().setLibrarySnapshot(library)
   },
 
   async updateBeatMetadata(id, patch, clearOverrides) {
     const library = await ipc.invoke('library:updateMetadata', id, patch, clearOverrides)
-    set({ library })
+    get().setLibrarySnapshot(library)
   },
 
   async analyzeBeat(id, force = false) {
@@ -266,13 +278,13 @@ export const useApp = create<AppState>()((set, get) => ({
 
   async removeBeat(id, deleteFiles, expected) {
     const library = await ipc.invoke('library:remove', id, deleteFiles, expected)
-    set({ library })
+    get().setLibrarySnapshot(library)
   },
 
   async reexportBeat(id, presetId) {
     const result = await ipc.invoke('library:reexport', id, presetId)
     const library = await ipc.invoke('library:list')
-    set({ library })
+    get().setLibrarySnapshot(library)
     return { ok: result.ok, error: result.error }
   }
 }))

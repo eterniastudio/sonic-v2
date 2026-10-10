@@ -28,7 +28,7 @@ export function StorageFeedback(): React.JSX.Element | null {
         await retryPlaybackSave()
         setStores(await ipc.invoke('storage:status'))
       } else setStores(await ipc.invoke('storage:retry'))
-      for (const beat of sidecars) useApp.setState({ library: await ipc.invoke('library:retrySidecar', beat.id) })
+      for (const beat of sidecars) useApp.getState().setLibrarySnapshot(await ipc.invoke('library:retrySidecar', beat.id))
     } catch (e) { setError(String(e)) } finally { setBusy(false) }
   }
   return <div role="alert" className="z-10 flex items-center gap-3 border-b border-warning/30 bg-bg-raised px-4 py-2 text-xs text-fg">

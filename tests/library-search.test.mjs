@@ -15,7 +15,7 @@ await build({
   format: 'cjs',
   alias: { '@shared': path.resolve('src/shared') }
 })
-const { createLibraryIndex, searchLibrary } = require(output)
+const { createLibraryIndex, searchLibrary, searchSmartCollection } = require(output)
 
 function beat(id, patch = {}) {
   return {
@@ -51,4 +51,26 @@ assert.deepEqual(ids({ reviewFilter: 'incomplete' }), ['review'])
 assert.deepEqual(ids({ reviewFilter: 'disagreement' }), ['review'])
 assert.deepEqual(ids({ bpm: 'invalid' }), [])
 assert.deepEqual(ids({ key: 'A' }), [])
-console.log('Library search: 11 cases passed')
+assert.deepEqual(ids({ query: '140 pulse' }), ['old-title'])
+assert.deepEqual(ids({ query: '140 8A pulse' }), ['old-title'])
+assert.deepEqual(searchSmartCollection(beats, index, { query: '140 pulse' }, {}, 'newest').map(item => item.id), ['old-title'])
+
+const statusUpdate = beats.map(item => ({ ...item, missing: true, analysisStatus: 'analyzing',
+  analysis: { status: 'running' }, sidecarSync: { status: 'pending', error: null } }))
+const reused = createLibraryIndex(statusUpdate, index)
+assert.equal(reused, index, 'non-search metadata must reuse the existing index')
+assert.deepEqual(searchLibrary(statusUpdate, reused, { ...defaults, query: '140 pulse', fileFilter: 'missing' }).map(item => item.id), ['old-title'])
+assert.equal(searchLibrary(statusUpdate, reused, { ...defaults, query: '140 pulse' })[0], statusUpdate[0], 'results use current records')
+
+for (const [field, value] of Object.entries({ title: 'Changed title', producer: 'New credit',
+  sourceChannel: 'New channel', fileName: 'New filename.wav', key: 'D minor', camelot: '7A', format: 'wav', bpm: 145 })) {
+  const changed = beats.map((item, position) => position === 0 ? { ...item, [field]: value } : item)
+  assert.notEqual(createLibraryIndex(changed, index), index, `${field} changes must rebuild the index`)
+}
+const changedTempo = beats.map((item, position) => position === 0 ? { ...item, bpm: 145 } : item)
+assert.deepEqual(searchLibrary(changedTempo, createLibraryIndex(changedTempo, index), { ...defaults, query: '145 pulse' }).map(item => item.id), ['old-title'])
+assert.notEqual(createLibraryIndex(beats.slice(1), index), index)
+assert.notEqual(createLibraryIndex([...beats, beat('added')], index), index)
+assert.notEqual(createLibraryIndex([...beats].reverse(), index), index)
+assert.deepEqual(beats.map(item => item.id), ['old-title', 'new-producer', 'double', 'missing', 'review'])
+console.log('Library search and index reuse: all regression cases passed')

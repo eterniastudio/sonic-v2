@@ -76,11 +76,16 @@ function createWaveSurfer(container: HTMLElement): PlaybackEngine {
         case 'play': wave.on('play', () => callback()); break
         case 'pause': wave.on('pause', () => callback()); break
         case 'timeupdate': wave.on('timeupdate', time => callback(time)); break
+        case 'interaction': wave.on('interaction', time => callback(time)); break
         case 'finish': wave.on('finish', () => callback()); break
         case 'error': wave.on('error', error => callback(error)); break
       }
     },
-    destroy: () => wave.destroy()
+    destroy: () => {
+      // WaveSurfer treats its WebAudio backend as external media, so destroy()
+      // removes the waveform without pausing the live source. We own playback.
+      try { wave.pause() } finally { wave.destroy() }
+    }
   }
 }
 
@@ -219,6 +224,17 @@ export function usePlayback(): PlaybackState & PlaybackActions & { beat: Library
   const actions = usePlaybackActions()
   const state = useContext(StateContext)
   if (!state) throw new Error('Playback state must be inside PlaybackProvider.')
-  const beat = useApp(store => store.library.find(item => item.id === state.beatId) ?? null)
+  const selectBeat = useMemo(() => {
+    let library: LibraryBeat[] | undefined
+    let selected: LibraryBeat | null = null
+    return (store: ReturnType<typeof useApp.getState>): LibraryBeat | null => {
+      if (library !== store.library) {
+        library = store.library
+        selected = library.find(item => item.id === state.beatId) ?? null
+      }
+      return selected
+    }
+  }, [state.beatId])
+  const beat = useApp(selectBeat)
   return { ...state, ...actions, beat }
 }

@@ -35,8 +35,8 @@ function BootSplash(): ReactNode {
  * components read from the store rather than re-subscribing.
  */
 function useMainProcessBridge(): void {
-  useIpcEvent('queue:changed', (queue) => useApp.setState({ queue }))
-  useIpcEvent('library:changed', (library) => useApp.setState({ library }))
+  useIpcEvent('queue:changed', (queue) => useApp.getState().setQueueSnapshot(queue))
+  useIpcEvent('library:changed', (library) => useApp.getState().setLibrarySnapshot(library))
   useIpcEvent('settings:changed', (settings) => useApp.setState({ settings }))
   useIpcEvent('engine:status', (engine) => useApp.setState({ engine }))
   useIpcEvent('engine:progress', (engineProgress) => useApp.setState({ engineProgress }))
