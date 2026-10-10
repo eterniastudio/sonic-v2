@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Gauge,
@@ -23,6 +23,7 @@ import { formatBpm, formatBytes, formatDuration } from '@shared/format'
 import { coverArtFor } from '@shared/url'
 import { cn } from '@/lib/cn'
 import { useApp } from '@/store/app'
+import { reconcileWorkspace, useLibraryWorkspace, useWorkspaceField } from '@/store/libraryWorkspace'
 import { AmbientBackground } from '@/components/aceternity/AmbientBackground'
 import { AnimatedTooltip } from '@/components/aceternity/AnimatedTooltip'
 import { BentoCard, BentoGrid } from '@/components/aceternity/BentoGrid'
@@ -41,7 +42,7 @@ import { toast } from '@/components/ui/Toaster'
 import { BeatCard } from './BeatCard'
 import { PreviewTransport } from './PreviewTransport'
 import { ImportAudio } from './ImportAudio'
-import { createLibraryIndex, searchLibrary, searchSmartCollection, type FileFilter, type LibrarySort, type ReviewFilter } from './librarySearch'
+import { createLibraryIndex, searchLibrary, searchSmartCollection, type LibrarySort } from './librarySearch'
 import { CollectionWorkspace } from './CollectionWorkspace'
 import { AnnotationEditor } from './AnnotationEditor'
 import { usePlaybackActions } from '@/features/playback/playbackSession'
@@ -77,25 +78,27 @@ export function LibraryView(): ReactNode {
   const focusId = useApp((state) => state.libraryFocusId)
   const setLibraryFocus = useApp((state) => state.setLibraryFocus)
 
-  const [query, setQuery] = useState('')
-  const [layout, setLayout] = useState<'grid' | 'list'>('grid')
-  const [sort, setSort] = useState<LibrarySort>('newest')
-  const [bands, setBands] = useState<Set<string>>(new Set())
-  const [formats, setFormats] = useState<Set<string>>(new Set())
-  const [fileFilter, setFileFilter] = useState<FileFilter>('all')
-  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all')
-  const [bpmFilter, setBpmFilter] = useState('')
-  const [bpmTolerance, setBpmTolerance] = useState(3)
-  const [includeHalfDouble, setIncludeHalfDouble] = useState(false)
-  const [keyFilter, setKeyFilter] = useState('')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const selectionAnchor = useRef<string | null>(null)
+  const [query, setQuery] = useWorkspaceField('query')
+  const [layout, setLayout] = useWorkspaceField('layout')
+  const [sort, setSort] = useWorkspaceField('sort')
+  const [bands, setBands] = useWorkspaceField('bands')
+  const [formats, setFormats] = useWorkspaceField('formats')
+  const [fileFilter, setFileFilter] = useWorkspaceField('fileFilter')
+  const [reviewFilter, setReviewFilter] = useWorkspaceField('reviewFilter')
+  const [bpmFilter, setBpmFilter] = useWorkspaceField('bpmFilter')
+  const [bpmTolerance, setBpmTolerance] = useWorkspaceField('bpmTolerance')
+  const [includeHalfDouble, setIncludeHalfDouble] = useWorkspaceField('includeHalfDouble')
+  const [keyFilter, setKeyFilter] = useWorkspaceField('keyFilter')
+  const [selectedId, setSelectedId] = useWorkspaceField('selectedId')
+  const [selectedIds, setSelectedIds] = useWorkspaceField('selectedIds')
+  const [selectionAnchor, setSelectionAnchor] = useWorkspaceField('selectionAnchor')
   const [organization, setOrganization] = useState<OrganizationSnapshot | null>(null)
+  const [organizationError, setOrganizationError] = useState(false)
+  const [organizationAttempt, setOrganizationAttempt] = useState(0)
   const [batch, setBatch] = useState<BatchSession | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<LibraryBeat | null>(null)
   const [alsoDeleteFiles, setAlsoDeleteFiles] = useState(true)
-  const [showFilters, setShowFilters] = useState(false)
+  const [showFilters, setShowFilters] = useWorkspaceField('showFilters')
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [renameTarget, setRenameTarget] = useState<LibraryBeat | null>(null)
   const [renameTitle, setRenameTitle] = useState('')
@@ -109,15 +112,20 @@ export function LibraryView(): ReactNode {
 
   useEffect(() => {
     let live = true
+    setOrganizationError(false)
     void ipc.invoke('organization:snapshot').then(snapshot => {
       if (!live) return
       setOrganization(snapshot)
       setLayout(snapshot.view.layout)
       setSort(snapshot.view.sort)
-    }).catch(error => toast({ kind: 'error', title: 'Collections unavailable', description: String(error) }))
+    }).catch(error => {
+      if (!live) return
+      setOrganizationError(true)
+      toast({ kind: 'error', title: 'Collections unavailable', description: String(error) })
+    })
     const off = ipc.on('organization:changed', snapshot => { if (live) setOrganization(snapshot) })
     return () => { live = false; off() }
-  }, [])
+  }, [organizationAttempt, setLayout, setSort])
   useEffect(() => {
     if (!organization) return
     setLayout(organization.view.layout)
@@ -151,7 +159,7 @@ export function LibraryView(): ReactNode {
     await executeOrganization({ type: 'set-view', activeCollectionId: id, layout, sort: nextSort })
     setSort(nextSort)
     setSelectedIds(new Set())
-    selectionAnchor.current = null
+    setSelectionAnchor(null)
   }
 
   const changeLayout = (next: 'grid' | 'list'): void => {
@@ -185,7 +193,7 @@ export function LibraryView(): ReactNode {
   const openMenu = (event: React.MouseEvent, beat: LibraryBeat): void => {
     event.preventDefault()
     event.stopPropagation()
-    if (!selectedIds.has(beat.id)) { setSelectedIds(new Set([beat.id])); selectionAnchor.current = beat.id }
+    if (!selectedIds.has(beat.id)) { setSelectedIds(new Set([beat.id])); setSelectionAnchor(beat.id) }
     setMenu({ id: beat.id, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - 216)) })
   }
@@ -229,28 +237,24 @@ export function LibraryView(): ReactNode {
   }
 
   const selectionScope = `${activeScope}\u0000${activeCollection?.type === 'smart' ? JSON.stringify(activeCollection.rules) : ''}\u0000${query}\u0000${[...bands].sort()}\u0000${[...formats].sort()}\u0000${fileFilter}\u0000${reviewFilter}\u0000${bpmFilter}\u0000${bpmTolerance}\u0000${includeHalfDouble}\u0000${keyFilter}`
-  useEffect(() => { setSelectedIds(new Set()); selectionAnchor.current = null }, [selectionScope])
-  useEffect(() => {
-    const existing = new Set(library.map(beat => beat.id))
-    setSelectedIds(previous => {
-      if ([...previous].every(id => existing.has(id))) return previous
-      return new Set([...previous].filter(id => existing.has(id)))
-    })
-  }, [library])
-  useEffect(() => {
-    // Manual membership and smart-rule results can change without changing the
-    // active collection ID. Hidden tracks must not remain batch targets.
-    const matching = new Set(visible.map(beat => beat.id))
-    setSelectedIds(previous => {
-      if ([...previous].every(id => matching.has(id))) return previous
-      return new Set([...previous].filter(id => matching.has(id)))
-    })
-  }, [visible])
-  const visibleIdsKey = visible.map(beat => beat.id).sort().join('\u0000')
-  useEffect(() => {
-    const ids = new Set(visible.map(beat => beat.id))
-    setSelectedIds(previous => [...previous].every(id => ids.has(id)) ? previous : new Set([...previous].filter(id => ids.has(id))))
-  }, [visibleIdsKey])
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const restoredScroll = useRef(false)
+  useLayoutEffect(() => {
+    if (!organization) return
+    const previousScope = useLibraryWorkspace.getState().selectionScope
+    reconcileWorkspace(selectionScope, visible.map(beat => beat.id), library.map(beat => beat.id))
+    const node = scrollRef.current
+    if (node && (!restoredScroll.current || previousScope !== selectionScope)) {
+      node.scrollTop = useLibraryWorkspace.getState().scrollTop
+      restoredScroll.current = true
+    }
+  }, [organization, selectionScope, visible, library])
+  useLayoutEffect(() => {
+    const node = scrollRef.current
+    return () => {
+      if (node && restoredScroll.current) useLibraryWorkspace.setState({ scrollTop: node.scrollTop })
+    }
+  }, [])
 
   const toggleSelectedId = (id: string): void => {
     setSelectedIds(previous => {
@@ -259,20 +263,20 @@ export function LibraryView(): ReactNode {
       else next.add(id)
       return next
     })
-    selectionAnchor.current = id
+    setSelectionAnchor(id)
   }
 
   const selectCard = (event: ReactMouseEvent | ReactKeyboardEvent, beat: LibraryBeat): void => {
     if (event.shiftKey) {
       const ids = visible.map(item => item.id)
-      const anchor = ids.indexOf(selectionAnchor.current ?? beat.id)
+      const anchor = ids.indexOf(selectionAnchor ?? beat.id)
       const end = ids.indexOf(beat.id)
       if (anchor >= 0 && end >= 0) setSelectedIds(previous => new Set([...previous, ...ids.slice(Math.min(anchor, end), Math.max(anchor, end) + 1)]))
       return
     }
     if (event.ctrlKey || event.metaKey) { toggleSelectedId(beat.id); return }
     setSelectedId(selectedId === beat.id ? null : beat.id)
-    selectionAnchor.current = beat.id
+    setSelectionAnchor(beat.id)
   }
 
   const selected = useMemo(
@@ -282,12 +286,12 @@ export function LibraryView(): ReactNode {
 
   // Honour a focus request coming from the command palette.
   useEffect(() => {
-    if (!focusId) return
+    if (!focusId || !organization) return
     setSelectedId(focusId)
     setLibraryFocus(null)
     const node = cardRefs.current.get(focusId)
     node?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [focusId, setLibraryFocus])
+  }, [focusId, setLibraryFocus, setSelectedId, organization])
 
   const totals = useMemo(
     () => ({
@@ -554,14 +558,14 @@ export function LibraryView(): ReactNode {
         ) : null}
       </div>
 
-      <CollectionWorkspace organization={organization} activeId={organization?.view.activeCollectionId ?? null}
+      {organization ? <CollectionWorkspace organization={organization} activeId={organization.view.activeCollectionId}
         library={library} visible={visible} selectedIds={selectedIds}
-        clearSelection={() => { setSelectedIds(new Set()); selectionAnchor.current = null }}
-        selectAll={() => { setSelectedIds(new Set(visible.map(beat => beat.id))); selectionAnchor.current = visible[0]?.id ?? null }}
+        clearSelection={() => { setSelectedIds(new Set()); setSelectionAnchor(null) }}
+        selectAll={() => { setSelectedIds(new Set(visible.map(beat => beat.id))); setSelectionAnchor(visible[0]?.id ?? null) }}
         onPlayDisplayed={playDisplayed}
         onPlaySelected={playSelected}
         onScope={changeScope} command={executeOrganization} batch={batch} setBatch={setBatch}
-        defaultPresetId={defaultPresetId} manualSort={sort === 'manual'} />
+        defaultPresetId={defaultPresetId} manualSort={sort === 'manual'} /> : null}
 
       {library.length > 0 ? (
         <BentoGrid className="shrink-0">
@@ -588,8 +592,18 @@ export function LibraryView(): ReactNode {
         </BentoGrid>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {library.length === 0 ? (
+      <div ref={scrollRef} data-library-scroll className="min-h-0 flex-1 overflow-y-auto"
+        onScroll={event => {
+          if (restoredScroll.current) useLibraryWorkspace.setState({ scrollTop: event.currentTarget.scrollTop })
+        }}>
+        {!organization ? (
+          <div className="p-3 text-fg-subtle">
+            {organizationError ? <>
+              <p>Library workspace could not be loaded.</p>
+              <Button variant="secondary" onClick={() => setOrganizationAttempt(value => value + 1)}>Retry</Button>
+            </> : 'Loading Library workspace…'}
+          </div>
+        ) : library.length === 0 ? (
           <div className="relative grid h-full min-h-[340px] place-items-center overflow-hidden rounded-[14px] border border-line bg-surface">
             <AmbientBackground variant="full" intensity={0.7} />
             <div className="relative max-w-[470px] px-8 text-center">
@@ -823,7 +837,7 @@ export function LibraryView(): ReactNode {
           const id = deleteTarget.id
           await removeBeat(id, deleteTarget.fileOwnership === 'sonic-export' && alsoDeleteFiles,
             { filePath: deleteTarget.filePath, fingerprint: deleteTarget.fingerprint })
-          if (selectedId === id) setSelectedId(null)
+          setSelectedId(current => current === id ? null : current)
           setDeleteTarget(null)
         }}
       >
