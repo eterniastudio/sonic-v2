@@ -25,5 +25,6 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test:unit
+        timeout-minutes: 3
       - run: npm run test:key
       - run: npm run build

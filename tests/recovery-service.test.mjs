@@ -24,6 +24,17 @@ function deferred() {
   return { promise, resolve }
 }
 
+async function waitForFileOpen(entered, file, timeoutMs) {
+  let timer
+  try {
+    await Promise.race([entered, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Recovery did not reach the file-open barrier for ${file} within ${timeoutMs} ms.`)), timeoutMs)
+    })])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function beat(id, filePath, patch = {}) {
   return {
     id, title: id, producer: null, bpm: null, altBpm: null, key: null, camelot: null,
@@ -38,7 +49,10 @@ function beat(id, filePath, patch = {}) {
 }
 
 async function fixture(t) {
-  const profile = await fsp.mkdtemp(path.join(os.tmpdir(), 'sonic-recovery-service-'))
+  // Hosted Windows runners expose TEMP through an 8.3 alias (RUNNER~1).
+  // Fixture paths must be real paths so the production linked-path guard can stay strict.
+  const tempRoot = await fsp.realpath(os.tmpdir())
+  const profile = await fsp.mkdtemp(path.join(tempRoot, 'sonic-recovery-service-'))
   const oldRoot = path.join(profile, 'old')
   const selectedRoot = path.join(profile, 'selected')
   const libraryFile = path.join(profile, 'library.json')
@@ -102,7 +116,7 @@ async function fixture(t) {
     for (const release of releases) release()
     await recovery.shutdown()
     await library.shutdown()
-    assert.ok(profile.startsWith(path.join(os.tmpdir(), 'sonic-recovery-service-')))
+    assert.ok(profile.startsWith(path.join(tempRoot, 'sonic-recovery-service-')))
     await fsp.rm(profile, { recursive: true, force: true })
   })
 
@@ -114,7 +128,7 @@ async function fixture(t) {
     denyOpen: file => { beforeOpen = key => {
       if (key === path.resolve(file)) throw Object.assign(new Error('Injected candidate read denied'), { code: 'EACCES' })
     } },
-    holdOpen: file => {
+    holdOpen: (file, timeoutMs = 8000) => {
       const entered = deferred(), released = deferred()
       let used = false
       releases.add(released.resolve)
@@ -125,7 +139,10 @@ async function fixture(t) {
           await released.promise
         }
       }
-      return { entered: entered.promise, release: released.resolve }
+      return {
+        get entered() { return waitForFileOpen(entered.promise, file, timeoutMs) },
+        release: released.resolve
+      }
     },
     clearOpenHook: () => { beforeOpen = null },
     add: (id, patch = {}) => {
@@ -255,6 +272,24 @@ test('cancelling a scan at a filesystem barrier prevents any recovery commit', a
   assert.deepEqual(cancelled.committedIds, [])
   await assert.rejects(f.recovery.apply(planId, owner, [{ beatId: 'track', candidateId: 'invented' }]), /scan to finish/)
   assertUnchanged(f, before)
+})
+
+test('a scan that fails before opening its candidate cannot leave a barrier wait hanging', async t => {
+  const f = await fixture(t)
+  f.add('track')
+  const candidate = path.join(f.selectedRoot, 'missing-folder', 'track.wav')
+  const gate = f.holdOpen(candidate, 20)
+  const planId = f.recovery.begin(owner, ['track'], candidate, 'file')
+  const deadline = Date.now() + 8000
+  while (f.recovery.status(planId, owner).phase === 'scanning') {
+    assert.ok(Date.now() < deadline, 'the missing recovery root must fail within eight seconds')
+    await nextTurn()
+  }
+  const review = f.recovery.status(planId, owner)
+  assert.equal(review.phase, 'error')
+  assert.match(review.error, /ENOENT/)
+  assert.equal(f.openCount(candidate), 0)
+  await assert.rejects(gate.entered, /did not reach the file-open barrier/)
 })
 
 test('a failed replacement keeps old paths committed until real guarded storage retry succeeds', async t => {

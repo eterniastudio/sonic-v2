@@ -174,7 +174,7 @@ Validation completed for this change:
 | Check | Result |
 | --- | --- |
 | Node and renderer typechecks | Pass |
-| Complete unit suite | 181/181 pass |
+| Complete unit suite | 182/182 pass |
 | Complete hidden interface suite | 88 pass; two native-window checks skipped |
 | Final rebuilt palette, editor, overlay, and analysis follow-up | 13/13 pass |
 | Electron service regressions | 21/21 pass on the final build |
@@ -194,6 +194,10 @@ A Windows GitHub Actions workflow now runs typechecking, the complete unit suite
 the strict key-regression matrix, and a production build for pull requests and
 updates to `main`. It has read-only repository permissions. The legacy DSP gate's
 known failures are documented above and are not represented as a passing CI check.
+Recovery test fixtures resolve shortened Windows temporary paths before use and
+bound their controlled waits, so a rejected scan fails the test instead of leaving
+the runner waiting indefinitely. The CI unit step also has a three-minute limit.
+The application's recovery path-safety checks remain unchanged.
 
 ### Reproducible evidence
 
