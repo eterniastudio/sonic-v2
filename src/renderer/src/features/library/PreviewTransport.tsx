@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
   Copy,
   MoreHorizontal,
@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import type { LibraryBeat } from '@shared/domain'
 import type { StorageStatus } from '@shared/ipc'
-import { analyzedValuesFrom, describeAnalysisStatus } from '@shared/analysis'
+import { analyzedValuesFrom, describeAnalysisStatus, needsAnalysisRefresh } from '@shared/analysis'
 import { decideMetadataField, publishedTagStatus, BPM_MIN as MIN_BPM, BPM_MAX as MAX_BPM, type FieldOrigin } from '@shared/metadata'
 import { parseKeyString } from '@shared/music'
 import { formatBitrate, formatBpm, formatBytes, formatChannelCount, formatDuration, formatRelativeTime, formatSampleRate } from '@shared/format'
@@ -212,6 +212,7 @@ function AnalysisStatusBadge({ beat }: { beat: LibraryBeat }): ReactNode {
       <Badge size="sm" tone={tone[beat.analysisStatus] ?? 'neutral'}>
         {describeAnalysisStatus(beat.analysisStatus).toLowerCase()}
       </Badge>
+      {beat.analysis && needsAnalysisRefresh(beat) ? <Badge size="sm" tone="warning">analysis update available</Badge> : null}
       {mismatch > 0 ? (
         <Badge size="sm" tone="warning" icon={<TriangleAlert />}>
           source disagrees with audio
@@ -243,7 +244,8 @@ function AnalyzeButton({ beat }: { beat: LibraryBeat }): ReactNode {
   return (
     <button
       type="button"
-      disabled={beat.missing}
+      disabled={beat.missing || !!beat.fileAccessError}
+      title={reanalyze && needsAnalysisRefresh(beat) ? 'Run the latest analysis. Your manual BPM and key corrections are preserved.' : undefined}
       onClick={() => {
         void analyzeBeat(beat.id, reanalyze).then((result) => {
           if (!result.ok && result.error) {
@@ -251,7 +253,7 @@ function AnalyzeButton({ beat }: { beat: LibraryBeat }): ReactNode {
           } else if (result.ok) {
             toast({ kind: 'success', title: `Analyzed ${beat.title}` })
           }
-        })
+        }).catch(error => toast({ kind: 'error', title: 'Analysis could not start', description: String(error) }))
       }}
       className="h-7 rounded-[6px] px-2 text-[11px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
     >
@@ -262,6 +264,9 @@ function AnalyzeButton({ beat }: { beat: LibraryBeat }): ReactNode {
 
 export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
   const update = useApp(state => state.updateBeatMetadata)
+  const editorId = useId()
+  const bpmRef = useRef<HTMLInputElement>(null)
+  const keyRef = useRef<HTMLInputElement>(null)
   const evidenceInput = { current: beat, overrides: beat.overrides, sources: beat.sources,
     embedded: beat.embedded, analyzed: beat.analysis ? analyzedValuesFrom(beat.analysis) : {} }
   const bpmDecision = decideMetadataField('bpm', evidenceInput)
@@ -276,13 +281,20 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
   const [pending, setPending] = useState(false)
   const pendingRef = useRef(false)
   const [error, setError] = useState('')
+  const [invalidField, setInvalidField] = useState<'bpm' | 'key' | null>(null)
+  const [feedback, setFeedback] = useState('')
+  const analysis = beat.analysis?.key
+  const candidates = [...new Set([analysis?.key, ...(analysis?.alternatives.map(candidate => candidate.key) ?? [])]
+    .filter((candidate): candidate is string => Boolean(candidate)))].slice(0, 4)
   const save = async (action?: { kind: 'reset' | 'measured'; field: 'bpm' | 'key' }): Promise<void> => {
     if (pendingRef.current) return
+    setInvalidField(null); setFeedback('')
     const patch: { bpm?: number | null; key?: string | null } = {}
     if (!action && draft.bpm !== null) {
       const value = draft.bpm.trim()
       if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < MIN_BPM || Number(value) > MAX_BPM)) {
         setError(`Tempo must be ${MIN_BPM}–${MAX_BPM} BPM.`)
+        setInvalidField('bpm'); bpmRef.current?.focus()
         return
       }
       patch.bpm = value === '' ? null : Number(value)
@@ -292,6 +304,7 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
       const parsed = parseKeyString(value)
       if (value !== '' && !parsed) {
         setError('Enter a key with its mode (for example F# minor) or a Camelot code (11A).')
+        setInvalidField('key'); keyRef.current?.focus()
         return
       }
       patch.key = parsed?.key ?? null
@@ -307,6 +320,7 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
     try {
       await update(beat.id, patch, action?.kind === 'reset' ? action.field === 'key' ? ['key', 'camelot'] : ['bpm', 'altBpm'] : undefined)
       setDraft(current => action ? { ...current, [action.field]: null } : { bpm: null, key: null })
+      setFeedback(action ? `${action.field === 'bpm' ? 'BPM' : 'Key'} correction saved.` : 'Corrections saved.')
     } catch (failure) {
       // A rejected operation can still have committed the library before an
       // optional output failed. Keep the submitted draft and explain the error;
@@ -315,9 +329,27 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
     } finally { pendingRef.current = false; setPending(false) }
   }
   return <details className="mt-3 border-t border-line pt-3 text-[11px] text-fg-muted"><summary className="cursor-pointer font-medium marker:text-fg-subtle">Correct BPM / key</summary>
-    <fieldset disabled={pending} className="mt-3 grid grid-cols-2 gap-2 [&_button]:rounded-[6px] [&_button]:px-2 [&_button]:py-1.5 [&_button]:text-[10px] [&_button]:transition-colors [&_button:disabled]:opacity-40">
-      <label className="text-[10px] text-fg-subtle">BPM<input aria-label="Manual BPM" className="mt-1 h-8 w-full rounded-[6px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={bpm} onChange={event => setDraft(current => ({ ...current, bpm: event.target.value }))} /></label>
-      <label className="text-[10px] text-fg-subtle">Key<input aria-label="Manual key" className="mt-1 h-8 w-full rounded-[6px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={key} onChange={event => setDraft(current => ({ ...current, key: event.target.value }))} /></label>
+    <fieldset disabled={pending} aria-busy={pending || undefined} onKeyDown={event => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && dirty) { event.preventDefault(); void save() }
+    }} className="mt-3 grid grid-cols-2 gap-2 [&_button]:rounded-[6px] [&_button]:px-2 [&_button]:py-1.5 [&_button]:text-[10px] [&_button]:transition-colors [&_button:disabled]:opacity-40">
+      <label className="text-[10px] text-fg-subtle">BPM<input ref={bpmRef} inputMode="decimal" aria-label="Manual BPM" aria-invalid={invalidField === 'bpm' || undefined} aria-describedby={invalidField === 'bpm' ? `${editorId}-error` : undefined} className="mt-1 h-8 w-full rounded-[6px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={bpm} onChange={event => { setDraft(current => ({ ...current, bpm: event.target.value })); setFeedback(''); setInvalidField(null); setError('') }} /></label>
+      <label className="text-[10px] text-fg-subtle">Key<input ref={keyRef} aria-label="Manual key" aria-invalid={invalidField === 'key' || undefined} aria-describedby={`${editorId}-key-help${invalidField === 'key' ? ` ${editorId}-error` : ''}`} className="mt-1 h-8 w-full rounded-[6px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={key} onChange={event => { setDraft(current => ({ ...current, key: event.target.value })); setFeedback(''); setInvalidField(null); setError('') }} /></label>
+      <p id={`${editorId}-key-help`} className="col-span-2 text-[10px] leading-relaxed text-fg-subtle">Enter a key and mode (F# minor), or a Camelot code (11A). Ctrl+Enter saves your corrections.</p>
+      {candidates.length ? <section aria-label="Detected key candidates" className="col-span-2 space-y-2 rounded-[6px] border border-line p-2">
+        <p className="text-[11px] text-fg">{analysis?.status === 'estimated' ? `Audio suggests ${analysis.key}` : 'Key needs a listening check'}</p>
+        <p className="text-[10px] leading-relaxed text-fg-subtle">Choose a candidate to try, then save. Related keys can share notes; these are suggestions, not certainty.</p>
+        <div className="flex flex-wrap gap-1">
+          {candidates.map(candidate => {
+            const parsed = parseKeyString(candidate)
+            const selected = (parseKeyString(key)?.key ?? key) === candidate
+            return <button key={candidate} type="button" aria-label={`Try ${candidate}${parsed?.camelot ? ` (${parsed.camelot})` : ''}`} aria-pressed={selected}
+              className={selected ? 'bg-accent-soft text-accent' : 'border border-line hover:bg-surface-2'}
+              onClick={() => { setDraft(current => ({ ...current, key: candidate })); setInvalidField(null); setError(''); setFeedback(`${candidate} selected. Save corrections to apply it.`) }}>
+              {candidate}{parsed?.camelot ? <span className="ml-1 text-fg-subtle">{parsed.camelot}</span> : null}
+            </button>
+          })}
+        </div>
+      </section> : null}
       <button type="button" disabled={!dirty || pending} onClick={() => void save()} className="col-span-2 bg-accent-soft font-medium text-accent hover:bg-[var(--sonic-accent-line)]">{pending ? 'Saving…' : 'Save corrections'}</button>
       <button type="button" aria-label="Reset BPM to evidence priority" disabled={!beat.overrides.includes('bpm')} className="border border-line hover:bg-surface-2" onClick={() => void save({ kind: 'reset', field: 'bpm' })} title={`Evidence priority: ${bpmDecision.resetOrigin}`}>
         Reset BPM
@@ -327,6 +359,7 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
       </button>
       <button type="button" disabled={bpmDecision.measuredValue == null} className="hover:bg-surface-2" onClick={() => void save({ kind: 'measured', field: 'bpm' })} title="Choose the audio estimate as a manual correction">Use measured BPM</button>
       <button type="button" disabled={keyDecision.measuredValue == null} className="hover:bg-surface-2" onClick={() => void save({ kind: 'measured', field: 'key' })} title="Choose the audio estimate as a manual correction">Use measured key</button>
-    </fieldset>{error ? <p role="alert" className="mt-1 text-danger">{error}</p> : null}
+    </fieldset>{error ? <p id={`${editorId}-error`} role="alert" className="mt-1 text-danger">{error}</p> : null}
+    <p role="status" aria-live="polite" className="mt-1 text-[10px] text-fg-muted">{feedback}</p>
   </details>
 }

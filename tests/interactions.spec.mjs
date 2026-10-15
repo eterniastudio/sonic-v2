@@ -171,7 +171,7 @@ test('offline pointer, keyboard, deletion, persistence, and preview', async ({},
   await menuCheck(page.getByRole('button', { name: 'MP3 320', exact: true }))
   await page.getByRole('button', { name: 'Commands', exact: false }).click()
   await page.getByPlaceholder('Search beats, commands and settings…').fill('FLAC')
-  await page.getByRole('dialog').getByRole('button', { name: /FLAC/ }).click()
+  await page.getByRole('dialog').getByRole('option', { name: /FLAC/ }).click()
   await expect(page.getByRole('button', { name: 'FLAC', exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: /Library/, exact: false }).first().click()

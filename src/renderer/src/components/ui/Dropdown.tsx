@@ -45,6 +45,7 @@ export function Dropdown({
   const panelRef = useRef<HTMLDivElement | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const id = useId()
+  const typeahead = useRef({ value: '', at: 0 })
 
   const phase = usePresence(open, panelRef, {
     openDurationVar: '--dropdown-open-dur',
@@ -85,7 +86,11 @@ export function Dropdown({
     button?.setAttribute('aria-haspopup', 'menu')
     button?.setAttribute('aria-expanded', String(open))
     button?.setAttribute('aria-controls', `${id}-panel`)
-    if (button) button.disabled = Boolean(disabled)
+    if (button) {
+      button.disabled = Boolean(disabled)
+      if (!button.id) button.id = `${id}-trigger`
+      panelRef.current?.setAttribute('aria-labelledby', button.id)
+    }
   }, [open, id, disabled])
   const focusItem = (last = false): void => {
     const items = panelRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
@@ -94,7 +99,7 @@ export function Dropdown({
   return (
     <div ref={wrapperRef} className={cn('relative inline-flex', className)} onClick={event => event.stopPropagation()}
       onKeyDown={event => {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || (!open && (event.key === 'Enter' || event.key === ' '))) {
           event.preventDefault(); if (disabled) return
           setOpen(true); requestAnimationFrame(() => focusItem(event.key === 'ArrowUp'))
         }
@@ -112,6 +117,15 @@ export function Dropdown({
             const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
             items[next]?.focus()
           } else if (event.key === 'Tab') close()
+          else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && event.key !== ' ') {
+            event.preventDefault()
+            const now = performance.now()
+            const value = `${now - typeahead.current.at < 700 ? typeahead.current.value : ''}${event.key.toLocaleLowerCase()}`
+            typeahead.current = { value, at: now }
+            const prefix = [...value].every(char => char === value[0]) ? value[0] : value
+            const ordered = [...items.slice(index + 1), ...items.slice(0, index + 1)]
+            ordered.find(item => item.textContent?.trim().toLocaleLowerCase().startsWith(prefix))?.focus()
+          }
         }}
         className={cn('t-dropdown fixed z-[410] rounded-[12px] border border-line bg-surface p-1 shadow-pop', open && 'is-open', !open && phase === 'closing' && 'is-closing', phase === 'closed' && 'invisible', panelClassName)}
         style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight, overflowY: 'auto', pointerEvents: open ? 'auto' : 'none' }}>

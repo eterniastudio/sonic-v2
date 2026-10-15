@@ -1,10 +1,11 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CornerDownLeft, Search } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { overlayRoot, useOverlay } from '../motion/overlay'
 import { useReducedMotion } from '@/lib/theme'
 import { cn } from '@/lib/cn'
+import { indexCommands, searchCommands } from './spotlightSearch'
 
 /**
  * Ported from ObsidianUI's *Apple Spotlight*.
@@ -34,27 +35,6 @@ export interface AppleSpotlightProps {
   emptyLabel?: string
 }
 
-/** Substring + word-prefix scoring; enough for a few dozen commands. */
-function score(item: SpotlightItem, query: string): number {
-  if (query.length === 0) return 1
-  const haystack = `${item.label} ${item.group} ${item.keywords ?? ''}`.toLowerCase()
-  const needle = query.toLowerCase()
-
-  const direct = haystack.indexOf(needle)
-  if (direct !== -1) return 100 - direct
-
-  // Fall back to matching every character in order.
-  let cursor = 0
-  let gaps = 0
-  for (const char of needle) {
-    const found = haystack.indexOf(char, cursor)
-    if (found === -1) return 0
-    gaps += found - cursor
-    cursor = found + 1
-  }
-  return Math.max(1, 40 - gaps)
-}
-
 export function AppleSpotlight({
   open,
   onClose,
@@ -63,39 +43,35 @@ export function AppleSpotlight({
   emptyLabel = 'Nothing matches that.'
 }: AppleSpotlightProps): ReactNode {
   const reduced = useReducedMotion()
+  const overlayRef = useRef<HTMLDivElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
   useOverlay([panelRef], onClose, open, true)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
+  const listId = useId()
 
-  const results = useMemo(() => {
-    const scored = items
-      .filter((item) => !item.disabled)
-      .map((item) => ({ item, value: score(item, query) }))
-      .filter((entry) => entry.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .map((entry) => entry.item)
+  const catalog = useMemo(() => open ? indexCommands(items) : [], [items, open])
+  const matches = useMemo(() => searchCommands(catalog, query), [catalog, query])
+  const results = matches.items
+  const active = Math.min(activeIndex, Math.max(0, results.length - 1))
 
-    // Group while preserving the relevance order established above.
-    const groups = new Map<string, SpotlightItem[]>()
-    for (const item of scored) {
-      const bucket = groups.get(item.group)
-      if (bucket) bucket.push(item)
-      else groups.set(item.group, [item])
+  // Reset before paint so the first keystroke after reopening cannot be
+  // overwritten by a delayed passive effect from the opening render.
+  useLayoutEffect(() => {
+    // AnimatePresence keeps the removed child's last props during exit. Update
+    // its actual wrapper immediately so a fading palette cannot capture focus
+    // or intercept another click after it has logically closed.
+    const overlay = overlayRef.current
+    if (overlay) {
+      overlay.inert = !open
+      overlay.style.pointerEvents = open ? 'auto' : 'none'
+      overlay.setAttribute('aria-hidden', String(!open))
     }
-    return [...groups.entries()].flatMap(([, groupItems]) => groupItems)
-  }, [items, query])
-
-  // Reset the cursor whenever the result set changes.
-  useEffect(() => {
-    setActiveIndex(0)
-  }, [query, open])
-
-  useEffect(() => {
     if (open) {
       setQuery('')
+      setActiveIndex(0)
       const frame = requestAnimationFrame(() => inputRef.current?.focus())
       return () => cancelAnimationFrame(frame)
     }
@@ -104,9 +80,9 @@ export function AppleSpotlight({
 
   // Keep the highlighted row in view during keyboard navigation.
   useEffect(() => {
-    const element = listRef.current?.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`)
+    const element = listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)
     element?.scrollIntoView({ block: 'nearest' })
-  }, [activeIndex])
+  }, [active, results])
 
   const commit = (item: SpotlightItem | undefined): void => {
     if (!item) return
@@ -115,6 +91,7 @@ export function AppleSpotlight({
   }
 
   const onKeyDown = (event: React.KeyboardEvent): void => {
+    if (event.nativeEvent.isComposing) return
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       setActiveIndex((index) => (results.length === 0 ? 0 : (index + 1) % results.length))
@@ -125,8 +102,10 @@ export function AppleSpotlight({
       )
     } else if (event.key === 'Enter') {
       event.preventDefault()
-      commit(results[activeIndex])
-
+      commit(results[active])
+    } else if ((event.key === 'Home' || event.key === 'End') && event.ctrlKey) {
+      event.preventDefault()
+      setActiveIndex(event.key === 'Home' ? 0 : Math.max(0, results.length - 1))
     }
   }
 
@@ -135,7 +114,7 @@ export function AppleSpotlight({
   return createPortal(
     <AnimatePresence>
       {open ? (
-        <div inert={!open} style={{ pointerEvents: open ? 'auto' : 'none' }} className="fixed inset-0 z-[400] flex items-start justify-center pt-[14vh]">
+        <div ref={overlayRef} data-command-palette-overlay inert={!open} style={{ pointerEvents: open ? 'auto' : 'none' }} className="fixed inset-0 z-[400] flex items-start justify-center pt-[14vh]">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -162,8 +141,15 @@ export function AppleSpotlight({
               <Search className="size-4 shrink-0 text-fg-subtle" />
               <input
                 ref={inputRef}
+                role="combobox"
+                aria-label="Search beats, commands and settings"
+                aria-autocomplete="list"
+                aria-expanded={open}
+                aria-controls={listId}
+                aria-activedescendant={results.length ? `${listId}-${active}` : undefined}
+                aria-describedby={`${listId}-help`}
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => { setQuery(event.target.value); setActiveIndex(0) }}
                 placeholder={placeholder}
                 spellCheck={false}
                 className="h-13 w-full bg-transparent text-[14px] text-fg outline-none placeholder:text-fg-subtle"
@@ -173,39 +159,47 @@ export function AppleSpotlight({
               </kbd>
             </div>
 
-            <div ref={listRef} className="max-h-[46vh] overflow-y-auto p-2">
+            <p id={`${listId}-help`} className="sr-only">Use Up and Down to choose a result, Enter to open it, and Escape to close. Control Home and Control End jump to the first and last result.</p>
+            <div id={listId} role="listbox" aria-label="Search results" ref={listRef} className="max-h-[46vh] overflow-y-auto p-2">
               {results.length === 0 ? (
                 <div className="px-3 py-10 text-center text-[13px] text-fg-subtle">{emptyLabel}</div>
               ) : (
                 results.map((item, index) => {
                   const showHeader = item.group !== lastGroup
                   lastGroup = item.group
-                  const active = index === activeIndex
+                  const selected = index === active
 
                   return (
-                    <div key={item.id}>
+                    <div key={item.id} role="presentation">
                       {showHeader ? (
-                        <div className="px-2.5 pt-2.5 pb-1 text-[10.5px] font-semibold tracking-[0.12em] text-fg-subtle uppercase">
+                        <div aria-hidden="true" className="px-2.5 pt-2.5 pb-1 text-[10.5px] font-semibold tracking-[0.12em] text-fg-subtle uppercase">
                           {item.group}
                         </div>
                       ) : null}
 
                       <button
                         type="button"
+                        id={`${listId}-${index}`}
+                        role="option"
+                        aria-label={item.label}
+                        aria-describedby={item.hint ? `${listId}-${index}-hint` : undefined}
+                        aria-selected={selected}
+                        tabIndex={-1}
                         data-index={index}
                         onMouseMove={() => setActiveIndex(index)}
+                        onMouseDown={event => event.preventDefault()}
                         onClick={() => commit(item)}
                         className={cn(
                           'flex w-full items-center gap-3 rounded-[9px] px-2.5 py-2 text-left',
                           'transition-colors duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
-                          active ? 'bg-accent-soft' : 'hover:bg-surface-2'
+                          selected ? 'bg-accent-soft' : 'hover:bg-surface-2'
                         )}
                       >
                         {item.icon ? (
                           <span
                             className={cn(
                               'grid size-4 shrink-0 place-items-center',
-                              active ? 'text-accent' : 'text-fg-subtle'
+                              selected ? 'text-accent' : 'text-fg-subtle'
                             )}
                           >
                             {item.icon}
@@ -215,17 +209,17 @@ export function AppleSpotlight({
                         <span
                           className={cn(
                             'flex-1 truncate text-[13px]',
-                            active ? 'text-fg' : 'text-fg-muted'
+                            selected ? 'text-fg' : 'text-fg-muted'
                           )}
                         >
                           {item.label}
                         </span>
 
                         {item.hint ? (
-                          <span className="shrink-0 text-[11px] text-fg-subtle nums">{item.hint}</span>
+                          <span id={`${listId}-${index}-hint`} className="shrink-0 text-[11px] text-fg-subtle nums">{item.hint}</span>
                         ) : null}
 
-                        {active ? (
+                        {selected ? (
                           <CornerDownLeft className="size-3.5 shrink-0 text-accent" />
                         ) : null}
                       </button>
@@ -234,6 +228,9 @@ export function AppleSpotlight({
                 })
               )}
             </div>
+            <p role="status" aria-live="polite" aria-atomic="true" className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">
+              {matches.total > results.length ? `Showing ${results.length} of ${matches.total} matches. Keep typing to narrow your search.` : `${matches.total} result${matches.total === 1 ? '' : 's'}`}
+            </p>
           </motion.div>
         </div>
       ) : null}

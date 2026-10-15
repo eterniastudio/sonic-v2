@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { LibraryBeat, PresetId } from '@shared/domain'
+import { needsAnalysisRefresh } from '@shared/analysis'
 import { FAVORITES_COLLECTION_ID, type OrganizationCommand, type OrganizationSnapshot } from '@shared/organization'
 import type { BatchSession } from '@shared/batch'
 import { PRESETS } from '@shared/presets'
@@ -301,14 +302,33 @@ export function LibraryView(): ReactNode {
     [library, selectedId]
   )
 
-  // Honour a focus request coming from the command palette.
+  const revealingScope = useRef(false)
+  // A global search result must become visible even when a retained collection
+  // or filter excludes it. Consume the request only after its row is mounted.
   useEffect(() => {
     if (!focusId || !organization) return
-    setSelectedId(focusId)
-    setLibraryFocus(null)
+    if (!library.some(beat => beat.id === focusId)) { setLibraryFocus(null); return }
     const node = cardRefs.current.get(focusId)
-    node?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'instant' : 'smooth' })
-  }, [focusId, setLibraryFocus, setSelectedId, organization, reducedMotion])
+    if (node) {
+      setSelectedId(focusId)
+      node.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'instant' : 'smooth' })
+      node.querySelector<HTMLButtonElement>('button[aria-label^="Preview "]')?.focus({ preventScroll: true })
+      setLibraryFocus(null)
+      return
+    }
+    const workspace = useLibraryWorkspace.getState()
+    if (workspace.query || workspace.bands.size || workspace.formats.size || workspace.fileFilter !== 'all' || workspace.reviewFilter !== 'all' || workspace.bpmFilter || workspace.keyFilter) {
+      useLibraryWorkspace.setState({ query: '', bands: new Set(), formats: new Set(), fileFilter: 'all',
+        reviewFilter: 'all', bpmFilter: '', keyFilter: '', selectedIds: new Set(), selectionAnchor: null })
+    }
+    if (organization.view.activeCollectionId !== null && !revealingScope.current) {
+      revealingScope.current = true
+      void changeScope(null).catch(error => {
+        if (useApp.getState().libraryFocusId === focusId) setLibraryFocus(null)
+        toast({ kind: 'error', title: 'Could not reveal this beat', description: String(error) })
+      }).finally(() => { revealingScope.current = false })
+    }
+  }, [focusId, setLibraryFocus, setSelectedId, organization, reducedMotion, visible, library])
 
   const totals = useMemo(
     () => ({
@@ -327,9 +347,7 @@ export function LibraryView(): ReactNode {
   const activeFilterCount = bands.size + formats.size + (fileFilter === 'all' ? 0 : 1) +
     (reviewFilter === 'all' ? 0 : 1) + (bpmFilter.trim() ? 1 : 0) + (keyFilter.trim() ? 1 : 0)
 
-  const needsAnalysis = library.filter(
-    (beat) => !beat.missing && (beat.analysisStatus === 'not-analyzed' || beat.analysisStatus === 'failed')
-  ).length
+  const needsAnalysis = useMemo(() => library.filter(beat => !beat.missing && !beat.fileAccessError && needsAnalysisRefresh(beat)).length, [library])
   const recoverable = visible.filter(beat => (beat.missing || beat.fileAccessError) && (selectedIds.size === 0 || selectedIds.has(beat.id)))
   const findMissingFiles = async (): Promise<void> => {
     if (recoveryPicker.current || !recoverable.length) return
@@ -347,7 +365,7 @@ export function LibraryView(): ReactNode {
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
           {needsAnalysis > 0 ? <Button variant="ghost" size="md" aria-label="Analyze now" leading={<Sparkles />}
-            title={`${needsAnalysis} tracks ready for BPM and key analysis`} onClick={() => {
+            title={`${needsAnalysis} tracks with missing or outdated BPM and key analysis`} onClick={() => {
               void analyzeMissing().then(queued => toast({ kind: 'info', title: `Analyzing ${queued} track${queued === 1 ? '' : 's'}`,
                 description: 'Working from the files on disk — nothing is re-downloaded.' }))
             }}>Analyze <span className="ml-1 text-fg-subtle nums">{needsAnalysis}</span></Button> : null}

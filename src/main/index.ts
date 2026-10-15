@@ -17,6 +17,7 @@ import { localImportService } from './services/localImport'
 import { batchOperations } from './services/batchOperations'
 import { playbackSessionService } from './services/playbackSession'
 import { recoveryService } from './services/recovery'
+import { engineService } from './services/engine'
 
 let readyToQuit = false
 let closing: Promise<void> | null = null
@@ -48,7 +49,7 @@ function requestShutdown(): void {
     storageDiagnostic(queueFile(), { operation: 'shutdown-start' })
     await flushRendererPlayback()
     shutdownWork ??= (async () => {
-      await Promise.all([queueService.stopAll(), libraryAnalysis.shutdown(), analysisService.shutdown(), stopReexports(), localImportService.shutdown(), batchOperations.shutdown(), recoveryService.shutdown()])
+      await Promise.all([queueService.stopAll(), libraryAnalysis.shutdown(), analysisService.shutdown(), stopReexports(), localImportService.shutdown(), batchOperations.shutdown(), recoveryService.shutdown(), engineService.shutdown()])
       await settleOperations()
       await libraryService.shutdown()
       await settleChildren()

@@ -42,8 +42,15 @@ export async function readPcmFile(filePath: string): Promise<Float32Array> {
   const buffer = await readFile(filePath)
   // A Float32Array view needs a byte length that is a multiple of 4. ffmpeg
   // always emits whole samples, so a remainder means a truncated write.
-  const usableBytes = buffer.byteLength - (buffer.byteLength % 4)
-  const pcm = new Float32Array(usableBytes / 4)
+  if (buffer.byteLength % 4 !== 0) throw new Error('Decoded audio contains a truncated sample.')
+  // On little-endian hosts the Buffer is already the canonical float storage.
+  // Retaining a view avoids millions of scalar reads and a second PCM allocation.
+  if (new Uint8Array(new Uint16Array([1]).buffer)[0] === 1) {
+    return buffer.byteOffset % 4 === 0
+      ? new Float32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 4)
+      : new Float32Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength))
+  }
+  const pcm = new Float32Array(buffer.byteLength / 4)
   for (let index = 0; index < pcm.length; index += 1) {
     pcm[index] = buffer.readFloatLE(index * 4)
   }
@@ -79,8 +86,8 @@ export async function decodeWindow(window: DecodeWindow): Promise<DecodedWindow>
   }
 
   const info = await stat(window.outputPath)
-  const usableBytes = info.size - (info.size % 4)
-  const sampleCount = usableBytes / 4
+  if (info.size % 4 !== 0) throw new Error('Decoded audio contains a truncated sample.')
+  const sampleCount = info.size / 4
 
   return {
     path: window.outputPath,

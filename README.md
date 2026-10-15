@@ -6,6 +6,11 @@ into organised, tagged, producer-ready audio files.
 Built from the ground up as an Electron application — new architecture, new interface,
 no code or design language carried over from the original Tauri build.
 
+Read the [plain-language change history](docs/CHANGELOG.md) for the features,
+reliability fixes, and measured improvements delivered by the previous pull requests.
+The [October 14 improvement review](docs/IMPROVEMENTS-2026-10-14.md) explains the
+current changes, performance measurements, and verification limits.
+
 > **Use responsibly.** Sonic is for media you own or are authorised to download. It does
 > not bypass DRM, authentication, private-video access, or geographic restrictions, and
 > it is not affiliated with or endorsed by YouTube or SoundCloud.
@@ -20,11 +25,28 @@ no code or design language carried over from the original Tauri build.
 | **Parse** | Tempo, key, Camelot position, detune and producer are read from the title, description and container tags — every value traceable to the exact substring that produced it. |
 | **Review** | A four-layer metadata model (`declared → embedded → suggested → final`) keeps what the source said separate from what you decided. |
 | **Export** | Eight recipes, a naming template with live preview, embedded tags, cover art, a versioned sidecar, and no-clobber publication. |
-| **Library** | A searchable archive with waveform auditioning, tempo correction, filters and conservative deletion. |
+| **Library** | Import your own audio, audition a stable listening queue, save notes and collections, analyze or export a shortlist, and reconnect missing files. |
 
-Paste YouTube video links or SoundCloud track links into the same download box. SoundCloud share links resolve before inspection; playlists and profiles are not supported. Both sources use the existing media engine, export formats, metadata review, and audio analysis. If an older share link has expired, paste the full `soundcloud.com/artist/track` URL instead.
+Paste YouTube video links or SoundCloud track links into the same download box.
+YouTube playlist links open a review where you choose which tracks to queue.
+SoundCloud share links resolve before inspection; SoundCloud playlists and profiles
+are not supported. Both sources use the existing media engine, export formats,
+metadata review, and audio analysis. If an older share link has expired, paste the
+full `soundcloud.com/artist/track` URL instead.
 
-Library cards show the credited producer when one is known, otherwise the saved source channel or artist. Right-click a beat to open its saved YouTube or SoundCloud link, refresh its source information, rename the beat and audio file, reveal the file, or delete it. Source links, channel names, and artwork URLs are stored in the local `library.json` record; the sidecar carries the same source provenance when enabled. User profiles, downloads, and test artifacts are excluded from the source repository.
+Use **Import audio** to add local files or folders without changing the originals.
+Your corrections, notes, tags, and collections stay in Sonic. Re-export a reviewed
+copy when you want a new file with updated tags. Playback continues across views;
+after restarting, the last track and saved position return paused. Missing files
+can be reconnected through **Locate file…** or **Find missing files…**.
+
+Library cards show the credited producer when one is known, otherwise the saved
+source channel or artist. Track menus offer source links, source refresh, reveal,
+rename, and removal where available. Renaming or removing an imported original
+changes its library record only; Sonic-owned exports also offer guarded file
+operations. Source links, channel names, and artwork URLs are stored in the local
+`library.json` record; the sidecar carries the same source provenance when enabled.
+User profiles, downloads, and test artifacts are excluded from the source repository.
 
 Export filenames include every known BPM and key even when a custom naming template omits those tokens. Later manual corrections and accepted analysis rename Sonic-owned audio safely, with collision suffixes and a matching sidecar. A rename leaves existing audio tags unchanged; **re-export** to rewrite tags. FL Studio can read specific WAV tempo-sync metadata, but a BPM printed in a filename does not by itself set the FL Studio project tempo. Check the BPM badge and set or confirm the project tempo when importing; Sonic's acoustic estimate can be inconclusive or wrong.
 
@@ -58,19 +80,27 @@ Sonic V2 is built to handle.
 
 #### What the analyser does
 
-- Decodes once through ffmpeg to **22050 Hz mono** float PCM — no second download, no
-  upload, no Python, no native module, no WASM, and no copyleft dependency.
+- Decodes bounded excerpts through ffmpeg to **22050 Hz mono** float PCM, sharing
+  overlapping tempo/key audio — no second download or upload. Analysis itself
+  needs no Python, native module, WASM, or additional DSP dependency.
 - **Tempo:** spectral-flux onset envelope → autocorrelation *and* a comb filter, combined
   with an Ellis-2007 log-Gaussian tempo prior, then octave-aware peak picking. Half- and
   double-time readings are reported as alternatives rather than collapsed away.
-- **Key:** a frequency-weighted pitch-class profile (1/f weighting, because the FFT is
-  linear in frequency) → Krumhansl–Schmuckler correlation against all 24 rotated profiles,
-  with a tuning estimate and the runner-up keys reported alongside the winner.
+- **Key:** interpolated spectral peaks → tuning-corrected pitch-class profiles →
+  correlation against all 24 published Shaath major/minor profiles. Complete
+  tonic-chord observations can support close relative-key decisions; unresolved
+  evidence remains inconclusive. Tuning and alternative keys stay available for
+  review. See the [algorithm, sources, and measured limits](docs/IMPROVEMENTS-2026-10-14.md).
 - Runs on a **worker thread**, so a multi-second analysis never blocks the UI, with bounded
   concurrency, cancellation, timeouts and scratch-file cleanup.
 - Results are cached by **input hash + engine version**, and the stage order is
   download → tags → **analyze** → cover → convert → tag readback → publish, so accepted
   estimates reach the file name, the embedded tags and the sidecar.
+
+The current analyzer is `sonic-dsp/3`. The Library's **Analyze** count includes
+missing results and tracks last measured by an older engine. Reanalysis preserves your manual
+corrections; use the inspector to review the new estimate or choose a suggested
+alternative. Confidence is an evidence indicator, not a probability of correctness.
 
 #### Text declarations Sonic parses (capability A)
 
@@ -165,6 +195,8 @@ missing on Windows, Sonic can fetch a static build for you.
 | `pnpm preview` | Preview the production build |
 | `pnpm typecheck` | Typecheck the Node and web projects |
 | `pnpm test:unit` | Run the complete isolated unit regression suite |
+| `pnpm test:key` | Check all 24 keys across tuning, voicing, and sample-rate fixtures |
+| `pnpm benchmark:analysis` | Measure decode/PCM-load time and scratch bytes on generated audio |
 | `pnpm test:ui` | Build the current application and component harness, then run the Windows UI suite |
 | `pnpm test:ui:hidden` | Build and test the UI with Electron windows hidden; skip native window and OS pointer checks |
 | `pnpm smoke` | Headless boot self-check (DOM, theme, parser, templates) |
@@ -221,6 +253,9 @@ backend.
 | --- | --- |
 | `%APPDATA%\Sonic V2\settings.json` | Preferences |
 | `%APPDATA%\Sonic V2\library.json` | Beat library records |
+| `%APPDATA%\Sonic V2\organization.json` | Notes, tags, collections, and saved Library view preferences |
+| `%APPDATA%\Sonic V2\playback-session.json` | Last track, volume, and saved listening positions |
+| `%APPDATA%\Sonic V2\analysis-cache.json` | Audio analysis cached by file content and analyzer version |
 | `%APPDATA%\Sonic V2\queue.json` | Queue state, used for crash recovery |
 | `%APPDATA%\Sonic V2\engine\` | Managed yt-dlp / FFmpeg binaries |
 | `%APPDATA%\Sonic V2\staging\` | In-flight downloads and conversions |

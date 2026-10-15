@@ -7,7 +7,7 @@ export function overlayRoot(): HTMLElement {
   if (!root) { root = document.createElement('div'); root.id = 'sonic-overlays'; document.body.append(root) }
   return root
 }
-const focusable = 'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]'
+const focusable = 'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled):not([tabindex="-1"]), textarea:not(:disabled):not([tabindex="-1"]), select:not(:disabled):not([tabindex="-1"]), a[href]:not([tabindex="-1"]), summary:not([tabindex="-1"]), [tabindex="0"]'
 function inside(entry: Entry, target: Node | null): boolean {
   return entry.refs.some(ref => ref.current?.contains(target))
 }
@@ -55,7 +55,16 @@ export function useOverlay(refs: RefObject<HTMLElement | null>[], dismiss: () =>
       document.removeEventListener('pointerdown', pointer, true)
       document.removeEventListener('keydown', key, true)
       document.removeEventListener('focusin', focus, true)
-      if (wasTop && (modal || inside(entry, document.activeElement))) restore(entry.previous)
+      if (wasTop && (modal || inside(entry, document.activeElement))) {
+        // React restores input selection after layout-effect cleanup. Restoring
+        // here synchronously lets that commit refocus an exiting palette, whose
+        // later removal drops focus to the body. Wait until the commit finishes,
+        // and preserve a destination that another action explicitly focused.
+        queueMicrotask(() => {
+          const focused = document.activeElement
+          if (!focused || focused === document.body || inside(entry, focused)) restore(entry.previous)
+        })
+      }
     }
   }, [active, modal])
 }

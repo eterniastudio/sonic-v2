@@ -7,7 +7,7 @@ import type {
   AnalysisStatus,
   AudioAnalysis
 } from '@shared/analysis'
-import { analyzedValuesFrom, deriveAnalysisStatus } from '@shared/analysis'
+import { analyzedValuesFrom, deriveAnalysisStatus, needsAnalysisRefresh } from '@shared/analysis'
 import type { BeatMetadata, BeatSidecar, LibraryBeat, MetadataField, MetadataValues, MetadataVerification, PresetId, SourceKind, SourceValues } from '@shared/domain'
 import { reconcile, decideMetadataField, BPM_MIN, BPM_MAX } from '@shared/metadata'
 import { parseKeyString } from '@shared/music'
@@ -743,11 +743,7 @@ class LibraryService extends EventEmitter {
 
   /** Tracks that still need an analysis run. */
   listNeedingAnalysis(): LibraryBeat[] {
-    return this.list().filter(
-      (beat) =>
-        !beat.missing &&
-        (beat.analysisStatus === 'not-analyzed' || beat.analysisStatus === 'failed')
-    )
+    return this.list().filter(needsAnalysisRefresh)
   }
 
   /** Retry the optional output only; the saved acoustic result remains authoritative. */

@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { overlayRoot, useOverlay } from '../motion/overlay'
 import { X } from 'lucide-react'
@@ -37,6 +37,7 @@ export function Modal({
   blocking
 }: ModalProps): ReactNode {
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const titleId = useId()
 
   const phase = usePresence(open, panelRef, {
     openDurationVar: '--modal-open-dur',
@@ -65,7 +66,8 @@ export function Modal({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
+        aria-describedby={description ? `${titleId}-description` : undefined}
         tabIndex={-1}
         className={cn(
           't-modal relative max-h-[calc(100dvh-48px)] w-full overflow-y-auto rounded-[16px] border border-line-strong bg-surface shadow-pop outline-none',
@@ -76,9 +78,9 @@ export function Modal({
       >
         <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
           <div className="min-w-0">
-            <h2 className="text-[17px] font-semibold tracking-tight text-fg">{title}</h2>
+            <h2 id={titleId} className="text-[17px] font-semibold tracking-tight text-fg">{title}</h2>
             {description ? (
-              <p className="mt-1 text-[12.5px] leading-relaxed text-fg-muted">{description}</p>
+              <p id={`${titleId}-description`} className="mt-1 text-[12.5px] leading-relaxed text-fg-muted">{description}</p>
             ) : null}
           </div>
           <IconButton disabled={blocking} label="Close" size="icon-sm" onClick={onClose} className="-mt-0.5 -mr-1">

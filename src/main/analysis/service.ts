@@ -76,6 +76,8 @@ interface InFlight {
   deadlineMs: number
 }
 
+type DecodedWorkerWindow = AnalysisWorkerWindow & { sampleCount: number }
+
 /**
  * Orchestrates audio analysis.
  *
@@ -223,7 +225,7 @@ class AnalysisService extends EventEmitter {
       const decodeOne = async (
         window: { offsetSec: number; durationSec: number },
         index: number
-      ): Promise<AnalysisWorkerWindow> => {
+      ): Promise<DecodedWorkerWindow> => {
         const outputPath = path.join(
           workDir,
           `${safeSegment(request.requestId)}_${index}.f32`
@@ -242,21 +244,43 @@ class AnalysisService extends EventEmitter {
         return {
           path: decoded.path,
           sampleRate: decoded.sampleRate,
-          sourceDurationSec: durationSec > 0 ? durationSec : decoded.durationSec
+          sourceDurationSec: durationSec > 0 ? durationSec : decoded.durationSec,
+          sampleCount: decoded.sampleCount
         }
       }
 
       this.emitProgress(request.requestId, 'decoding', 'Decoding audio…')
       // Decode branches independently; a bad window does not erase the other branch.
-      let tempoWindow: AnalysisWorkerWindow | null = null
+      let tempoWindow: DecodedWorkerWindow | null = null
       try { tempoWindow = await decodeOne(plan.tempo, 0) } catch (error) {
         if (controller.signal.aborted) throw error
       }
 
       const keyWindows: AnalysisWorkerWindow[] = []
+      const examined = tempoWindow
+        ? [{ start: plan.tempo.offsetSec, end: plan.tempo.offsetSec + tempoWindow.sampleCount / tempoWindow.sampleRate }]
+        : []
       for (let index = 0; index < plan.key.length; index += 1) {
         if (this.cancelled.has(request.requestId)) throw new Error('Cancelled')
-        try { keyWindows.push(await decodeOne(plan.key[index], index + 1)) } catch (error) {
+        const planned = plan.key[index]
+        // The first key excerpt normally lives inside the longer tempo excerpt.
+        // Share that file and read only its intended samples in the worker.
+        const sampleOffset = tempoWindow ? Math.round((planned.offsetSec - plan.tempo.offsetSec) * tempoWindow.sampleRate) : -1
+        // Match buildDecodeArgs' millisecond -t precision, including short
+        // fractional-length files close to the detector's minimum duration.
+        const requestedSamples = tempoWindow ? Math.round(Number(planned.durationSec.toFixed(3)) * tempoWindow.sampleRate) : 0
+        if (tempoWindow && sampleOffset >= 0 && planned.offsetSec + planned.durationSec <= plan.tempo.offsetSec + plan.tempo.durationSec) {
+          const sampleCount = Math.max(0, Math.min(requestedSamples, tempoWindow.sampleCount - sampleOffset))
+          if (sampleCount > 0) {
+            keyWindows.push({ ...tempoWindow, sampleOffset, sampleCount })
+            continue
+          }
+        }
+        try {
+          const decoded = await decodeOne(planned, index + 1)
+          keyWindows.push(decoded)
+          examined.push({ start: planned.offsetSec, end: planned.offsetSec + decoded.sampleCount / decoded.sampleRate })
+        } catch (error) {
           if (controller.signal.aborted) throw error
         }
       }
@@ -299,7 +323,14 @@ class AnalysisService extends EventEmitter {
         warning: 'Key analysis did not run.'
       }
 
-      const analyzedSeconds = plan.tempo.durationSec + plan.key.reduce((total, w) => total + w.durationSec, 0)
+      // Report the actual distinct audio covered, not planned lengths counted
+      // twice for overlapping tempo/key windows or for windows that failed.
+      let analyzedSeconds = 0
+      let coveredUntil = 0
+      for (const window of examined.sort((a, b) => a.start - b.start)) {
+        analyzedSeconds += Math.max(0, window.end - Math.max(window.start, coveredUntil))
+        coveredUntil = Math.max(coveredUntil, window.end)
+      }
 
       const analysis = assembleAnalysis({
         tempo,

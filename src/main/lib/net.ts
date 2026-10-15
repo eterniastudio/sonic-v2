@@ -1,5 +1,6 @@
 import { createWriteStream } from 'node:fs'
-import { once } from 'node:events'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { ensureDir, removeFile } from './fsx'
 import path from 'node:path'
 
@@ -24,17 +25,22 @@ export async function downloadToFile(
   destination: string,
   options: DownloadOptions = {}
 ): Promise<void> {
+  options.signal?.throwIfAborted()
   await ensureDir(path.dirname(destination))
+  options.signal?.throwIfAborted()
 
   const controller = new AbortController()
-  const onOuterAbort = (): void => controller.abort()
+  const onOuterAbort = (): void => controller.abort(options.signal?.reason)
   options.signal?.addEventListener('abort', onOuterAbort, { once: true })
+  if (options.signal?.aborted) onOuterAbort()
 
   let idleTimer: NodeJS.Timeout | null = null
+  let stalled = false
+  let destinationOpened = false
   const idleTimeout = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT
   const resetIdle = (): void => {
     if (idleTimer) clearTimeout(idleTimer)
-    idleTimer = setTimeout(() => controller.abort(), idleTimeout)
+    idleTimer = setTimeout(() => { stalled = true; controller.abort() }, idleTimeout)
   }
 
   try {
@@ -50,6 +56,7 @@ export async function downloadToFile(
     })
 
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined)
       throw new Error(`${response.status} ${response.statusText} for ${url}`)
     }
     if (!response.body) {
@@ -60,37 +67,34 @@ export async function downloadToFile(
     const totalBytes = Number.isFinite(declaredLength) && declaredLength > 0 ? declaredLength : null
 
     const file = createWriteStream(destination)
-    const reader = response.body.getReader()
+    file.once('open', () => { destinationOpened = true })
+    const source = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>)
     let received = 0
     let lastReport = 0
-
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      resetIdle()
-
-      const chunk = Buffer.from(value)
-      received += chunk.byteLength
-      if (!file.write(chunk)) {
-        await once(file, 'drain')
+    const progress = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        try {
+          resetIdle()
+          received += chunk.byteLength
+          // Throttle UI updates to roughly 20/s.
+          const now = Date.now()
+          if (options.onProgress && now - lastReport > 50) {
+            lastReport = now
+            options.onProgress(received, totalBytes)
+          }
+          callback(null, chunk)
+        } catch (error) {
+          callback(error instanceof Error ? error : new Error(String(error)))
+        }
       }
-
-      // Throttle UI updates to roughly 20/s.
-      const now = Date.now()
-      if (options.onProgress && now - lastReport > 50) {
-        lastReport = now
-        options.onProgress(received, totalBytes)
-      }
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      file.end((error?: Error | null) => (error ? reject(error) : resolve()))
     })
-
+    // Own both streams until they close. A failed socket or disk write must not
+    // leave a Windows file handle open when partial-download cleanup begins.
+    await pipeline(source, progress, file, { signal: controller.signal })
     options.onProgress?.(received, totalBytes ?? received)
   } catch (error) {
-    await removeQuietly(destination)
-    if (controller.signal.aborted && !options.signal?.aborted) {
+    if (destinationOpened) await removeQuietly(destination)
+    if (stalled && !options.signal?.aborted) {
       throw new Error('Download stalled and was cancelled')
     }
     throw error
@@ -107,7 +111,10 @@ export async function fetchText(url: string, signal?: AbortSignal): Promise<stri
     signal,
     headers: { 'user-agent': 'SonicV2/2.0', accept: 'text/plain,*/*' }
   })
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText} for ${url}`)
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined)
+    throw new Error(`${response.status} ${response.statusText} for ${url}`)
+  }
   return response.text()
 }
 

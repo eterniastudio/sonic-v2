@@ -73,7 +73,7 @@ export function mergeKeyAnalyses(analyses: KeyAnalysis[]): KeyAnalysis {
     return {
       ...winner,
       confidence: Math.min(1, (winner.confidence ?? 0.5) + (usable.length === analyses.length ? 0.1 : 0)),
-      warning: failureWarning,
+      warning: [winner.warning, failureWarning].filter(Boolean).join(' ') || null,
       // A confirmed result still carries the runner-up keys for inspection.
       alternatives: alternatives.filter((entry) => entry.key !== winner.key)
     }

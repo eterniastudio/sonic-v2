@@ -11,7 +11,7 @@
  * that would produce different numbers for the same input; it participates in
  * the analysis cache key.
  */
-export const ANALYSIS_ENGINE = 'sonic-dsp/2'
+export const ANALYSIS_ENGINE = 'sonic-dsp/3'
 
 /** Coarse status shown for a whole track. */
 export type AnalysisStatus =
@@ -116,6 +116,18 @@ export interface AudioAnalysis {
   key: KeyAnalysis
   /** Non-fatal notes: short input, monotonal material, decode oddities. */
   warnings: string[]
+}
+
+/** User-requested batch refresh includes records measured by older engines. */
+export function needsAnalysisRefresh(beat: {
+  missing: boolean
+  fileAccessError?: string | null
+  analysisStatus: AnalysisStatus
+  analysis: Pick<AudioAnalysis, 'engine'> | null
+}): boolean {
+  if (beat.missing || beat.fileAccessError || beat.analysisStatus === 'queued' || beat.analysisStatus === 'analyzing') return false
+  return !beat.analysis || beat.analysis.engine !== ANALYSIS_ENGINE ||
+    beat.analysisStatus === 'not-analyzed' || beat.analysisStatus === 'failed' || beat.analysisStatus === 'cancelled'
 }
 
 /** The subset of metadata an analysis can propose. */
