@@ -17,6 +17,9 @@ import { formatBpm } from '@shared/format'
 import { useApp } from '@/store/app'
 import { toast } from '@/components/ui/Toaster'
 import { usePlaybackActions } from '@/features/playback/playbackSession'
+import type { LibraryBeat } from '@shared/domain'
+
+const NO_BEATS: LibraryBeat[] = []
 
 /** The ⌘K surface: navigation, queue control, appearance and beat search. */
 export function CommandPalette(): ReactNode {
@@ -25,12 +28,29 @@ export function CommandPalette(): ReactNode {
   const setCommandOpen = useApp((state) => state.setCommandOpen)
   const setView = useApp((state) => state.setView)
   const setLibraryFocus = useApp((state) => state.setLibraryFocus)
-  const library = useApp((state) => state.library)
-  const jobs = useApp((state) => state.queue.jobs)
+  const library = useApp((state) => open ? state.library : NO_BEATS)
+  const ready = useApp((state) => open ? state.queue.jobs.reduce((count, job) => count + Number(job.stage === 'ready'), 0) : 0)
   const paused = useApp((state) => state.queue.paused)
   const settings = useApp((state) => state.settings)
 
+  const beatItems = useMemo<SpotlightItem[]>(() => library.flatMap(beat => {
+    const meta = [beat.bpm != null ? `${formatBpm(beat.bpm)} BPM` : null, beat.camelot ?? beat.key].filter(Boolean).join(' · ')
+    const keywords = `${beat.producer ?? ''} ${beat.sourceChannel ?? ''} ${beat.fileName} ${beat.format} ${beat.bpm ?? ''} ${beat.key ?? ''} ${beat.camelot ?? ''}`
+    const entry: SpotlightItem = {
+      id: `beat-${beat.id}`, group: 'Beats',
+      label: beat.producer ? `${beat.title} — ${beat.producer}` : beat.title,
+      hint: meta || undefined, keywords,
+      onSelect: () => { setView('library'); setLibraryFocus(beat.id) }
+    }
+    return beat.missing || beat.fileAccessError ? [entry] : [entry, {
+      id: `play-beat-${beat.id}`, group: 'Play beats', label: `Play ${beat.title}`,
+      hint: meta || undefined, icon: <Play />, keywords: `${keywords} audition listen`,
+      onSelect: () => playOne(beat.id)
+    }]
+  }), [library, setLibraryFocus, setView, playOne])
+
   const items = useMemo<SpotlightItem[]>(() => {
+    if (!open) return []
     const list: SpotlightItem[] = []
 
     list.push(
@@ -60,12 +80,11 @@ export function CommandPalette(): ReactNode {
       }
     )
 
-    const ready = jobs.filter((job) => job.stage === 'ready')
-    if (ready.length > 0) {
+    if (ready > 0) {
       list.push({
         id: 'queue-start-all',
         group: 'Queue',
-        label: `Start ${ready.length} ready download${ready.length === 1 ? '' : 's'}`,
+        label: `Start ${ready} ready download${ready === 1 ? '' : 's'}`,
         icon: <Play />,
         keywords: 'begin export run',
         onSelect: () => {
@@ -153,35 +172,9 @@ export function CommandPalette(): ReactNode {
       })
     }
 
-    // Beat search: capped so the palette stays snappy on a large library.
-    for (const beat of library.slice(0, 400)) {
-      const meta = [beat.bpm != null ? `${formatBpm(beat.bpm)} BPM` : null, beat.camelot ?? beat.key]
-        .filter(Boolean)
-        .join(' · ')
-      list.push({
-        id: `beat-${beat.id}`,
-        group: 'Beats',
-        label: beat.producer ? `${beat.title} — ${beat.producer}` : beat.title,
-        hint: meta || undefined,
-        keywords: `${beat.fileName} ${beat.format} ${beat.key ?? ''} ${beat.camelot ?? ''}`,
-        onSelect: () => {
-          setView('library')
-          setLibraryFocus(beat.id)
-        }
-      })
-      if (!beat.missing) list.push({
-        id: `play-beat-${beat.id}`,
-        group: 'Play beats',
-        label: `Play ${beat.title}`,
-        hint: meta || undefined,
-        icon: <Play />,
-        keywords: `${beat.producer ?? ''} ${beat.fileName} audition listen`,
-        onSelect: () => playOne(beat.id)
-      })
-    }
-
-    return list
-  }, [jobs, library, paused, settings.defaultPresetId, settings.downloadDir, settings.theme, setLibraryFocus, setView, playOne])
+    // The catalog is complete; only the rendered results are capped by Spotlight.
+    return list.concat(beatItems)
+  }, [open, ready, beatItems, paused, settings.defaultPresetId, settings.downloadDir, settings.theme, setView])
 
   return (
     <AppleSpotlight

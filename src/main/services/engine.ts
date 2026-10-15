@@ -1,5 +1,4 @@
 import { EventEmitter } from 'node:events'
-import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { EngineComponent, EngineProgress, EngineStatus } from '@shared/domain'
@@ -75,7 +74,9 @@ async function probeVersion(binary: string, signal?: AbortSignal): Promise<strin
 class EngineService extends EventEmitter {
   private cached: { status: EngineStatus; at: number } | null = null
   private setupPromise: Promise<EngineStatus> | null = null
+  private setupController: AbortController | null = null
   private setupError: string | null = null
+  private stopped = false
 
   get directory(): string {
     return engineDir()
@@ -114,16 +115,18 @@ class EngineService extends EventEmitter {
     return { name, path: null, version: null, origin: null }
   }
 
-  async status(force = false): Promise<EngineStatus> {
+  async status(force = false, signal?: AbortSignal): Promise<EngineStatus> {
+    signal?.throwIfAborted()
     if (!force && this.cached && Date.now() - this.cached.at < 20_000 && this.setupPromise == null) {
       return this.cached.status
     }
 
     const [ytdlp, ffmpeg, ffprobe] = await Promise.all([
-      this.resolve('yt-dlp', true),
-      this.resolve('ffmpeg', true),
-      this.resolve('ffprobe', true)
+      this.resolve('yt-dlp', true, signal),
+      this.resolve('ffmpeg', true, signal),
+      this.resolve('ffprobe', true, signal)
     ])
+    signal?.throwIfAborted()
 
     const components: EngineComponent[] = [ytdlp, ffmpeg, ffprobe].map((tool) => ({
       name: tool.name,
@@ -151,21 +154,30 @@ class EngineService extends EventEmitter {
 
   /** Installs whatever is missing. Concurrent calls share a single run. */
   async setup(): Promise<EngineStatus> {
+    if (this.stopped) throw new Error('Sonic is closing; media engine setup cannot start.')
     if (this.setupPromise) return this.setupPromise
 
-    this.setupPromise = this.runSetup()
+    this.setupController = new AbortController()
+    this.setupPromise = this.runSetup(this.setupController.signal)
       .catch((error: unknown) => {
         this.setupError = error instanceof Error ? error.message : String(error)
         throw error
       })
       .finally(() => {
         this.setupPromise = null
+        this.setupController = null
       })
 
     return this.setupPromise
   }
 
-  private async runSetup(): Promise<EngineStatus> {
+  async shutdown(): Promise<void> {
+    this.stopped = true
+    this.setupController?.abort(new Error('Media engine setup was cancelled because Sonic is closing.'))
+    await this.setupPromise?.catch(() => undefined)
+  }
+
+  private async runSetup(signal: AbortSignal): Promise<EngineStatus> {
     this.setupError = null
     await ensureDir(engineDir())
     this.emitProgress({
@@ -177,19 +189,24 @@ class EngineService extends EventEmitter {
       message: 'Checking installed tools…'
     })
 
-    const ytdlp = await this.resolve('yt-dlp', true)
+    signal.throwIfAborted()
+    const ytdlp = await this.resolve('yt-dlp', true, signal)
+    signal.throwIfAborted()
     if (!ytdlp.path) {
-      await this.installYtDlp()
+      await this.installYtDlp(signal)
     }
 
-    const ffmpeg = await this.resolve('ffmpeg', true)
-    const ffprobe = await this.resolve('ffprobe', true)
+    const ffmpeg = await this.resolve('ffmpeg', true, signal)
+    signal.throwIfAborted()
+    const ffprobe = await this.resolve('ffprobe', true, signal)
+    signal.throwIfAborted()
     if (!ffmpeg.path || !ffprobe.path) {
-      await this.installFfmpeg()
+      await this.installFfmpeg(signal)
     }
 
+    signal.throwIfAborted()
     this.cached = null
-    const status = await this.status(true)
+    const status = await this.status(true, signal)
     this.emitProgress({
       phase: status.ready ? 'done' : 'error',
       component: 'engine',
@@ -217,14 +234,16 @@ class EngineService extends EventEmitter {
       message: 'Fetching the yt-dlp checksum manifest…'
     })
 
-    let expectedHash: string | null = null
+    let expectedHash: string | null
     try {
       const manifest = await fetchText(`${YTDLP_RELEASE_BASE}/SHA2-256SUMS`, signal)
       expectedHash = parseChecksumManifest(manifest, binaryName)
-    } catch {
-      // Without a manifest we still install, but report that verification was skipped.
-      expectedHash = null
+    } catch (error) {
+      signal?.throwIfAborted()
+      throw new Error(`Could not verify the yt-dlp release checksums. Setup left the installed tool unchanged; please retry. ${error instanceof Error ? error.message : String(error)}`)
     }
+    if (!expectedHash) throw new Error('The yt-dlp release has no valid checksum for this platform. Setup left the installed tool unchanged; please retry later.')
+    signal?.throwIfAborted()
 
     this.emitProgress({
       phase: 'downloading',
@@ -235,21 +254,21 @@ class EngineService extends EventEmitter {
       message: 'Downloading yt-dlp…'
     })
 
-    await downloadToFile(`${YTDLP_RELEASE_BASE}/${binaryName}`, partial, {
-      signal,
-      onProgress: (received, total) => {
-        this.emitProgress({
-          phase: 'downloading',
-          component: 'yt-dlp',
-          receivedBytes: received,
-          totalBytes: total,
-          percent: total ? received / total : null,
-          message: 'Downloading yt-dlp…'
-        })
-      }
-    })
+    try {
+      await downloadToFile(`${YTDLP_RELEASE_BASE}/${binaryName}`, partial, {
+        signal,
+        onProgress: (received, total) => {
+          this.emitProgress({
+            phase: 'downloading',
+            component: 'yt-dlp',
+            receivedBytes: received,
+            totalBytes: total,
+            percent: total ? received / total : null,
+            message: 'Downloading yt-dlp…'
+          })
+        }
+      })
 
-    if (expectedHash) {
       this.emitProgress({
         phase: 'verifying',
         component: 'yt-dlp',
@@ -258,24 +277,26 @@ class EngineService extends EventEmitter {
         percent: null,
         message: 'Verifying the yt-dlp download…'
       })
-      const actual = await sha256File(partial)
+      const actual = await sha256File(partial, signal)
       if (actual.toLowerCase() !== expectedHash.toLowerCase()) {
-        await removeFile(partial)
         throw new Error(
           'The yt-dlp download did not match its published checksum and was discarded.'
         )
       }
-    }
 
-    await moveFile(partial, target)
-    if (!IS_WINDOWS) {
-      try {
-        chmodSync(target, 0o755)
-      } catch {
-        // Non-fatal: the archive bit may already be correct.
+      signal?.throwIfAborted()
+      await moveFile(partial, target)
+      if (!IS_WINDOWS) {
+        try {
+          chmodSync(target, 0o755)
+        } catch {
+          // Non-fatal: the archive bit may already be correct.
+        }
       }
+      this.cached = null
+    } finally {
+      await removeFile(partial)
     }
-    this.cached = null
   }
 
   /**
@@ -291,73 +312,81 @@ class EngineService extends EventEmitter {
 
     const workDir = path.join(stagingDir(), 'ffmpeg-download')
     const archive = path.join(stagingDir(), 'ffmpeg.zip')
-    await ensureDir(workDir)
+    try {
+      await ensureDir(workDir)
 
-    this.emitProgress({
-      phase: 'downloading',
-      component: 'ffmpeg',
-      receivedBytes: 0,
-      totalBytes: null,
-      percent: 0,
-      message: 'Downloading FFmpeg (about 185 MB)…'
-    })
+      this.emitProgress({
+        phase: 'downloading',
+        component: 'ffmpeg',
+        receivedBytes: 0,
+        totalBytes: null,
+        percent: 0,
+        message: 'Downloading FFmpeg (about 185 MB)…'
+      })
 
-    await downloadToFile(FFMPEG_ZIP_URL, archive, {
-      signal,
-      onProgress: (received, total) => {
-        this.emitProgress({
-          phase: 'downloading',
-          component: 'ffmpeg',
-          receivedBytes: received,
-          totalBytes: total,
-          percent: total ? received / total : null,
-          message: 'Downloading FFmpeg…'
-        })
+      await downloadToFile(FFMPEG_ZIP_URL, archive, {
+        signal,
+        onProgress: (received, total) => {
+          this.emitProgress({
+            phase: 'downloading',
+            component: 'ffmpeg',
+            receivedBytes: received,
+            totalBytes: total,
+            percent: total ? received / total : null,
+            message: 'Downloading FFmpeg…'
+          })
+        }
+      })
+
+      this.emitProgress({
+        phase: 'verifying',
+        component: 'ffmpeg',
+        receivedBytes: 0,
+        totalBytes: null,
+        percent: null,
+        message: 'Extracting FFmpeg…'
+      })
+
+      await removeDir(workDir)
+      await ensureDir(workDir)
+
+      signal?.throwIfAborted()
+      const extract = await run(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          `Expand-Archive -LiteralPath '${archive.replace(/'/g, "''")}' -DestinationPath '${workDir.replace(/'/g, "''")}' -Force`
+        ],
+        { timeoutMs: 300_000, signal, maxCaptureBytes: 16 * 1024 }
+      )
+
+      if (extract.aborted || signal?.aborted) throw new Error('FFmpeg setup was cancelled.')
+      if (extract.timedOut) throw new Error('Extracting FFmpeg timed out after five minutes. Please retry setup.')
+      if (extract.code !== 0) {
+        throw new Error(`Could not extract the FFmpeg archive: ${extract.stderr.slice(0, 300) || 'unknown error'}`)
       }
-    })
 
-    this.emitProgress({
-      phase: 'verifying',
-      component: 'ffmpeg',
-      receivedBytes: 0,
-      totalBytes: null,
-      percent: null,
-      message: 'Extracting FFmpeg…'
-    })
+      const ffmpegSource = findFileRecursive(workDir, 'ffmpeg.exe')
+      const ffprobeSource = findFileRecursive(workDir, 'ffprobe.exe')
+      if (!ffmpegSource || !ffprobeSource) {
+        throw new Error('The FFmpeg archive did not contain the expected binaries.')
+      }
 
-    await removeDir(workDir)
-    await ensureDir(workDir)
+      await ensureDir(engineDir())
+      signal?.throwIfAborted()
+      await moveFile(ffmpegSource, path.join(engineDir(), 'ffmpeg.exe'))
+      signal?.throwIfAborted()
+      await moveFile(ffprobeSource, path.join(engineDir(), 'ffprobe.exe'))
 
-    const extract = spawnSync(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-Command',
-        `Expand-Archive -LiteralPath '${archive.replace(/'/g, "''")}' -DestinationPath '${workDir.replace(/'/g, "''")}' -Force`
-      ],
-      { timeout: 300_000, windowsHide: true, encoding: 'utf8' }
-    )
-
-    if (extract.status !== 0) {
-      throw new Error(`Could not extract the FFmpeg archive: ${extract.stderr?.slice(0, 300) ?? 'unknown error'}`)
+      this.cached = null
+    } finally {
+      await removeDir(workDir)
+      await removeFile(archive)
     }
-
-    const ffmpegSource = findFileRecursive(workDir, 'ffmpeg.exe')
-    const ffprobeSource = findFileRecursive(workDir, 'ffprobe.exe')
-    if (!ffmpegSource || !ffprobeSource) {
-      throw new Error('The FFmpeg archive did not contain the expected binaries.')
-    }
-
-    await ensureDir(engineDir())
-    await moveFile(ffmpegSource, path.join(engineDir(), 'ffmpeg.exe'))
-    await moveFile(ffprobeSource, path.join(engineDir(), 'ffprobe.exe'))
-
-    await removeDir(workDir)
-    await removeFile(archive)
-    this.cached = null
   }
 
   private emitProgress(progress: EngineProgress): void {
@@ -372,7 +401,7 @@ function parseChecksumManifest(manifest: string, fileName: string): string | nul
     const parts = trimmed.split(/\s+/)
     if (parts.length < 2) continue
     const candidate = parts[parts.length - 1].replace(/^\*/, '')
-    if (candidate === fileName) return parts[0]
+    if (candidate === fileName && /^[a-f0-9]{64}$/i.test(parts[0])) return parts[0]
   }
   return null
 }

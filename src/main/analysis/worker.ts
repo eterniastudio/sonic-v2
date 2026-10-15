@@ -4,6 +4,7 @@ import { emptyKeyAnalysis, emptyTempoAnalysis } from '@shared/analysis'
 import { readPcmFile } from './decode'
 import { estimateKey, estimateTempo } from './dsp'
 import { mergeKeyAnalyses } from './merge'
+import type { AnalysisWorkerJob, AnalysisWorkerReply, AnalysisWorkerWindow } from './protocol'
 
 /**
  * Analysis worker entry.
@@ -16,19 +17,6 @@ import { mergeKeyAnalyses } from './merge'
  * main thread.
  */
 
-export interface AnalysisWorkerJob {
-  tempo: { path: string; sampleRate: number; sourceDurationSec: number } | null
-  key: { path: string; sampleRate: number; sourceDurationSec: number }[]
-}
-
-export interface AnalysisWorkerReply {
-  ok: boolean
-  tempo: TempoAnalysis | null
-  key: KeyAnalysis | null
-  error: string | null
-  elapsedMs: number
-}
-
 async function run(): Promise<AnalysisWorkerReply> {
   const started = Date.now()
   const job = workerData as AnalysisWorkerJob | undefined
@@ -37,10 +25,22 @@ async function run(): Promise<AnalysisWorkerReply> {
     return { ok: false, tempo: null, key: null, error: 'Analysis worker started without a job', elapsedMs: 0 }
   }
 
+  const decoded = new Map<string, Float32Array>()
+  const readWindow = async (window: AnalysisWorkerWindow): Promise<Float32Array> => {
+    let pcm = decoded.get(window.path)
+    if (!pcm) { pcm = await readPcmFile(window.path); decoded.set(window.path, pcm) }
+    const start = window.sampleOffset ?? 0
+    const count = window.sampleCount ?? pcm.length - start
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(count) || start < 0 || count < 0 || start + count > pcm.length) {
+      throw new Error('Decoded audio window is outside the available samples.')
+    }
+    return pcm.subarray(start, start + count)
+  }
+
   let tempo: TempoAnalysis | null = null
   if (job.tempo) {
     try {
-      const pcm = await readPcmFile(job.tempo.path)
+      const pcm = await readWindow(job.tempo)
       tempo = estimateTempo({ pcm, sampleRate: job.tempo.sampleRate, sourceDurationSec: job.tempo.sourceDurationSec })
     } catch (error) {
       tempo = { ...emptyTempoAnalysis(), status: 'failed', warning: `Tempo input could not be read: ${error instanceof Error ? error.message : String(error)}` }
@@ -50,7 +50,7 @@ async function run(): Promise<AnalysisWorkerReply> {
   const keyResults: KeyAnalysis[] = []
   for (const window of job.key) {
     try {
-      const pcm = await readPcmFile(window.path)
+      const pcm = await readWindow(window)
       keyResults.push(estimateKey({ pcm, sampleRate: window.sampleRate, sourceDurationSec: window.sourceDurationSec }))
     } catch (error) {
       keyResults.push({ ...emptyKeyAnalysis(), status: 'failed', warning: `Key window input could not be read: ${error instanceof Error ? error.message : String(error)}` })

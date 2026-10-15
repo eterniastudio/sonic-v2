@@ -40,6 +40,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       ) : null}
       <input
         ref={ref}
+        aria-invalid={invalid || undefined}
         className={cn(
           fieldSurface,
           'h-8 px-2.5 text-[12px]',
@@ -66,6 +67,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   return (
     <textarea
       ref={ref}
+      aria-invalid={invalid || undefined}
       className={cn(
         fieldSurface,
         'resize-none px-3 py-2.5 text-[12.5px] leading-relaxed',

@@ -11,6 +11,9 @@ export interface AnalysisWorkerWindow {
   path: string
   sampleRate: number
   sourceDurationSec: number
+  /** Slice within a shared decoded file; omitted means the whole file. */
+  sampleOffset?: number
+  sampleCount?: number
 }
 
 export interface AnalysisWorkerJob {

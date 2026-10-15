@@ -78,6 +78,8 @@ editorTest('validation and intentional clearing use canonical shared rules', asy
   await page.getByLabel('Manual key', { exact: true }).fill('not a key')
   await page.getByRole('button', { name: 'Save corrections', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('Enter a key')
+  await expect(page.getByLabel('Manual key', { exact: true })).toHaveAttribute('aria-invalid', 'true')
+  await expect(page.getByLabel('Manual key', { exact: true })).toBeFocused()
   expect(await page.evaluate(() => window.editor.calls)).toEqual([])
   await page.getByLabel('Manual key', { exact: true }).fill('11A')
   await page.getByRole('button', { name: 'Save corrections', exact: true }).click()
@@ -94,6 +96,31 @@ editorTest('validation and intentional clearing use canonical shared rules', asy
   const record = JSON.parse(await page.getByLabel('Current record').textContent())
   expect(record.key).toBeNull(); expect(record.camelot).toBeNull(); expect(record.overrides).toContain('key')
 })
+
+editorTest('ambiguous key candidates can be tried without losing an unsaved tempo, then saved with the keyboard', async page => {
+  await page.evaluate(() => window.editor.revise({ analysis: {
+    engine: 'sonic-dsp/test', inputId: 'test', inputName: 'fixture.wav', analyzedAt: 0,
+    analyzedSeconds: 20, durationSec: 20, sampleRate: 22050, channels: 1, warnings: [],
+    tempo: { status: 'estimated', bpm: 120, bpmExact: 120, alternatives: [], confidence: 0.7, warning: null },
+    key: { status: 'inconclusive', key: null, camelot: null, confidence: 0.1, tuningCents: 0,
+      warning: 'Relative keys are close', alternatives: [
+        { key: 'F# minor', camelot: '11A', correlation: 0.8 },
+        { key: 'A major', camelot: '11B', correlation: 0.79 }
+      ] }
+  } }))
+  const candidates = page.getByRole('region', { name: 'Detected key candidates' })
+  await expect(candidates).toContainText('Key needs a listening check')
+  await expect(page.getByRole('button', { name: 'Use measured key', exact: true })).toBeDisabled()
+  await page.getByLabel('Manual BPM', { exact: true }).fill('133')
+  await candidates.getByRole('button', { name: 'Try F# minor (11A)', exact: true }).click()
+  await expect(page.getByLabel('Manual key', { exact: true })).toHaveValue('F# minor')
+  await expect(page.getByLabel('Manual BPM', { exact: true })).toHaveValue('133')
+  expect(await page.evaluate(() => window.editor.calls)).toEqual([])
+  await expect(page.locator('details').getByRole('status')).toContainText('Save corrections to apply it')
+  await page.getByLabel('Manual key', { exact: true }).press('Control+Enter')
+  expect(await page.evaluate(() => window.editor.calls)).toEqual([{ patch: { bpm: 133, key: 'F# minor' }, reset: undefined }])
+  await expect(page.locator('details').getByRole('status')).toHaveText('Corrections saved.')
+})
 test('component overlays: nesting, flipping, focus, interrupted transitions and failed confirmation', async ({}, info) => {
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
   const app = await electron.launch({ args: ['tests/harness/electron.cjs', `--user-data-dir=${path.resolve(info.outputPath('profile'))}`], env })
@@ -101,6 +128,15 @@ test('component overlays: nesting, flipping, focus, interrupted transitions and 
   await app.context().tracing.start({ screenshots: true, snapshots: true })
   try {
     const picker = page.getByRole('button', { name: 'Pick 0', exact: true })
+    await picker.focus(); await page.keyboard.press('Enter')
+    await expect(page.getByRole('menu', { name: 'Pick 0', exact: true })).toBeVisible()
+    await expect(page.getByRole('menuitemradio', { name: 'Option 0', exact: true })).toBeFocused()
+    await page.keyboard.press('o')
+    await expect(page.getByRole('menuitemradio', { name: 'Option 1', exact: true })).toBeFocused()
+    await page.keyboard.press('o')
+    await expect(page.getByRole('menuitemradio', { name: 'Option 2', exact: true })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(picker).toBeFocused()
     await picker.click()
     const last = page.getByRole('menuitemradio', { name: 'Option 17', exact: true })
     await last.scrollIntoViewIfNeeded(); await last.click()
@@ -108,6 +144,7 @@ test('component overlays: nesting, flipping, focus, interrupted transitions and 
     for (let i = 0; i < 3; i++) {
       await page.getByRole('button', { name: 'Open dialog', exact: true }).click()
       const dialog = page.getByRole('dialog', { name: 'Nested overlay' })
+      await expect(dialog).toHaveAccessibleDescription('Choose an option before closing this dialog.')
       await expect(dialog).toBeFocused()
       const nested = dialog.getByRole('button', { name: 'Pick 17', exact: true })
       await nested.click(); await nested.click(); await nested.click()

@@ -130,6 +130,22 @@ test('returning restores the inspector but discards unsaved metadata and annotat
   expect((await invoke('library:list')).find(beat => beat.id === beats[0].id).bpm).toBe(140)
   expect((await invoke('organization:snapshot')).annotations[beats[0].id]?.notes ?? '').toBe('')
 })
+
+test('command palette reveals a beat excluded by retained filters and a collection', async () => {
+  await invoke('organization:command', { type: 'create-manual', name: 'Small collection', beatIds: beats.slice(0, 2).map(beat => beat.id) })
+  await page.getByRole('button', { name: 'Collection: Small collection', exact: true }).click()
+  await search().fill('Offline beat 00')
+  await navigate('Settings')
+  await page.getByRole('button', { name: 'Commands', exact: false }).click()
+  const palette = page.getByRole('combobox', { name: 'Search beats, commands and settings', exact: true })
+  await palette.fill(beats[39].title)
+  await palette.press('Enter')
+  await expect(card(beats[39].id)).toHaveAttribute('data-inspected', 'true')
+  await expect(card(beats[39].id).getByRole('button', { name: `Preview ${beats[39].title}`, exact: true })).toBeFocused()
+  await expect(page.locator('[data-preview-state]')).toContainText(beats[39].title)
+  await expect(search()).toHaveValue('')
+  expect((await invoke('organization:snapshot')).view.activeCollectionId).toBeNull()
+})
 test('pending delete, rename and export dialogs do not return or execute after a page change', async () => {
   const before = await invoke('library:list')
   for (const operation of ['delete', 'rename', 'export']) {

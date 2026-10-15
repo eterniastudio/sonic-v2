@@ -1,8 +1,9 @@
 /**
  * Sonic V2 — self-contained audio-analysis DSP.
  *
- * Estimates tempo (from the signal only) and musical key (Krumhansl–Schmuckler
- * over a harmonic-summation chroma).
+ * Estimates tempo and key from PCM only. Key detection uses interpolated
+ * spectral peaks, tuning-corrected chroma and published Shaath profiles,
+ * with complete-triad observations to corroborate relative-key decisions.
  *
  * Design constraints this file is written against:
  *  - Zero npm dependencies. The FFT below is our own radix-2 iterative
@@ -183,7 +184,7 @@ const TEMPO_MIN_CYCLES = 8
  * which is the right trade for chroma. Note that doubling to 16384 at 22050 Hz
  * would give 1.35 Hz/bin: better in principle, but it halves the number of
  * frames for a fixed window length and costs 2× the FFT work for a resolution
- * the harmonic summation below does not actually need, because partials are
+ * the peak interpolation below does not actually need, because partials are
  * resolved by peak-picking rather than by bin index.
  */
 const KEY_WINDOW_SEC = 8192 / 22050
@@ -194,9 +195,8 @@ const KEY_MAX_FFT = 32768
 const KEY_HOP_RATIO = 0.5
 
 /**
- * Fine pitch histogram resolution for tuning estimation: 100 bins per semitone
- * = 10 cents per bin. Fine enough that a 1-cent tuning shift moves the peak
- * histogram mass measurably, coarse enough that the whole fold is cheap.
+ * Fine pitch histogram resolution: 100 bins per semitone = 1 cent per bin.
+ * Sub-bin interpolation keeps tuning shifts visible without quantizing pitches.
  */
 const TUNING_BINS_PER_SEMITONE = 100
 const TUNING_FINE_BINS = 12 * TUNING_BINS_PER_SEMITONE
@@ -208,12 +208,13 @@ const TUNING_STEP_CENTS = 1
  *
  * The lower bound keeps DC and rumble out. The upper bound matters: above
  * roughly 3 kHz a mix is dense with high harmonics that carry little tonal
- * information, and including them dilutes the profile toward uniform. Combined
- * with the 1/f weighting in `accumulateChroma`, this keeps the profile
- * dominated by fundamentals and the first few strong partials.
+ * information, and including them dilutes the profile toward uniform.
  */
 const CHROMA_MIN_HZ = 55
 const CHROMA_MAX_HZ = 3000
+const KEY_PEAK_RELATIVE_FLOOR = 0.025
+const KEY_PEAK_MIN_CONTRAST = 2
+const KEY_PEAK_NEIGHBOUR_RADIUS = 6
 
 /** Key analysis only ever looks at the first 90 s (mtime/clock independent). */
 const KEY_MAX_SECONDS = 90
@@ -275,31 +276,19 @@ const TEMPO_MAX_ALTERNATIVES = 4
 const KEY_MAX_ALTERNATIVES = 3
 
 /**
- * Krumhansl–Kessler key profiles (index 0 = tonic).
- * Source: C. L. Krumhansl, *Cognitive Foundations of Musical Pitch* (Oxford
- * University Press, 1990), Appendix; the values are the canonical probe-tone
- * rating profiles reproduced in Krumhansl & Kessler (1982), "Tracing the dynamic
- * changes in perceived tonal organization in a spatial representation of
- * musical keys", Psychological Review 89(4).
- *
- * Documented tradeoff: these profile values are verified against the published
- * source and are what the brief specifies, but plain K–S with KK profiles is
- * known to be outperformed on MIREX-style key-detection benchmarks by learned
- * or reweighted profile sets — in particular Temperley's revised profiles
- * (Temperley 2001; used by his Melisma/`melisma_key` implementation) and the
- * Shaath et al. (2017) profiles, which raise the weight of the mediant and
- * submediant and suppress the leading tone. Those variants trade a little
- * interpretability and provenance for a few points of accuracy on Western
- * popular music. KK is used here as specified; swapping `KK_MAJOR`/`KK_MINOR`
- * for Temperley's or Shaath's tables is the single highest-leverage change if
- * benchmark accuracy later proves insufficient, and would require no other
- * algorithmic change.
+ * Shaath's published popular-music profiles (index 0 = tonic), a revision of
+ * Krumhansl–Kessler that gives the minor subtonic appropriate weight for natural
+ * minor loops. Values are fixed research data, not trained on our fixtures.
+ * Source: https://www.ibrahimshaath.co.uk/keyfinder/KeyFinder.pdf
+ * Reproduced under "Shaath" in Essentia's key.cpp profile tables:
+ * https://github.com/MTG/essentia/blob/master/src/algorithms/tonal/key.cpp
+ * No Essentia or KeyFinder implementation code is included or required.
  */
-const KK_MAJOR = [
-  6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88
+const KEY_MAJOR_PROFILE = [
+  6.6, 2.0, 3.5, 2.3, 4.6, 4.0, 2.5, 5.2, 2.4, 3.7, 2.3, 3.4
 ] as const
-const KK_MINOR = [
-  6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17
+const KEY_MINOR_PROFILE = [
+  6.5, 2.7, 3.5, 5.4, 2.6, 3.5, 2.5, 5.2, 4.0, 2.7, 4.3, 3.2
 ] as const
 
 /** Sharp spellings only — `shared/music` normalises the same way. */
@@ -1238,12 +1227,11 @@ interface KeyCandidate {
 /**
  * Estimates musical key from the audio signal.
  *
- * Pipeline: Hann-windowed STFT (long window, fine low-frequency resolution) →
- * spectral peak picking with local whitening → harmonic summation into a fine
- * 10-cent pitch histogram → global tuning offset from histogram alignment →
- * fold to a 12-bin chroma → median/mean blend across frames →
- * Krumhansl–Schmuckler Pearson correlation against all 24 major/minor
- * rotations.
+ * Pipeline: Hann-windowed STFT → narrow spectral peaks with log-magnitude
+ * interpolation → equally weighted frame pitch histograms → global tuning
+ * alignment → 12-bin chroma → Pearson correlation against 24 Shaath profiles.
+ * Complete-triad observations can corroborate a close relative-key result;
+ * weak, flat, single-pitch and unresolved relative-key evidence still abstains.
  */
 export function estimateKey(input: AnalysisInput): KeyAnalysis {
   try {
@@ -1294,6 +1282,7 @@ function estimateKeyInner(input: AnalysisInput): KeyAnalysis {
   // ---- fine pitch histogram ----------------------------------------------
   const fine = new Float64Array(TUNING_FINE_BINS)
   const frameFine = new Float64Array(TUNING_FINE_BINS)
+  const chordVotes = new Float64Array(24)
   const fft = new Fft(fftSize)
   const window = hannWindow(fftSize)
   const re = new Float64Array(fftSize)
@@ -1319,8 +1308,9 @@ function estimateKeyInner(input: AnalysisInput): KeyAnalysis {
       im[i] = 0
     }
     fft.forward(re, im)
-    for (let bin = 0; bin < bins; bin += 1) {
-      magnitudes[bin] = Math.hypot(re[bin], im[bin])
+    const magnitudeLimit = Math.min(bins - 1, maxPeakBin + KEY_PEAK_NEIGHBOUR_RADIUS)
+    for (let bin = 0; bin <= magnitudeLimit; bin += 1) {
+      magnitudes[bin] = Math.sqrt(re[bin] * re[bin] + im[bin] * im[bin])
     }
 
     frameFine.fill(0)
@@ -1328,6 +1318,7 @@ function estimateKeyInner(input: AnalysisInput): KeyAnalysis {
     let frameTotal = 0
     for (const value of frameFine) frameTotal += value
     if (!(frameTotal > 1e-9)) continue
+    accumulateChordVotes(frameFine, chordVotes)
     // Give each usable observation equal mass. Summing raw spectral energy
     // allowed lower-register / louder chords to dominate the entire excerpt.
     for (let bin = 0; bin < fine.length; bin += 1) fine[bin] += frameFine[bin] / frameTotal
@@ -1407,7 +1398,8 @@ function estimateKeyInner(input: AnalysisInput): KeyAnalysis {
   // most useful thing to show next to the winner.
   const alternatives = selectKeyAlternatives(candidates, winner)
   const relative = candidates.find((candidate) => candidate.key === relativeKeyOf(winner.key))
-  if (relative && winner.correlation - relative.correlation < 0.12) {
+  const sustainedTonic = relative != null && hasSustainedTonicEvidence(chordVotes, winner, relative, accumulated)
+  if (relative && winner.correlation - relative.correlation < 0.12 && !sustainedTonic) {
     // A histogram cannot distinguish relative modes reliably when their
     // evidence is this close. Preserve the ranked evidence for review, rather
     // than converting a small scoring margin into a definitive major key.
@@ -1426,8 +1418,56 @@ function estimateKeyInner(input: AnalysisInput): KeyAnalysis {
     alternatives,
     confidence: keyConfidence(candidates),
     tuningCents: roundToStep(tuningCents, 0.1),
-    warning: null
+    warning: sustainedTonic && relative && winner.correlation - relative.correlation < 0.12
+      ? 'The pitch profile also fits the relative key; sustained tonic-chord evidence supports this estimate.'
+      : null
   }
+}
+
+/**
+ * A pitch histogram loses chord ordering and can confuse an inverted minor
+ * tonic with its relative major. Count only clear, complete major/minor triads;
+ * no bass-note, first-chord or filename prior is used. Peaks are rounded only
+ * for this corroborating view; the primary chroma keeps full tuning correction.
+ */
+function accumulateChordVotes(fine: Float64Array, votes: Float64Array): void {
+  const chroma = new Float64Array(12)
+  let total = 0
+  for (let bin = 0; bin < fine.length; bin += 1) {
+    chroma[Math.round(bin / TUNING_BINS_PER_SEMITONE) % 12] += fine[bin]
+    total += fine[bin]
+  }
+  if (!(total > 0)) return
+  let best = 0
+  let second = 0
+  let bestIndex = -1
+  for (let mode = 0; mode < 2; mode += 1) {
+    for (let root = 0; root < 12; root += 1) {
+      const third = chroma[(root + (mode === 0 ? 4 : 3)) % 12] / total
+      const tonic = chroma[root] / total
+      const fifth = chroma[(root + 7) % 12] / total
+      if (Math.min(tonic, third, fifth) < 0.08) continue
+      // Square roots limit doubled-note loudness without adding missing tones.
+      const similarity = (Math.sqrt(tonic) + Math.sqrt(third) + Math.sqrt(fifth)) / Math.sqrt(3)
+      if (similarity > best) {
+        second = best
+        best = similarity
+        bestIndex = mode * 12 + root
+      } else if (similarity > second) second = similarity
+    }
+  }
+  if (bestIndex >= 0 && best >= 0.85 && best - second >= 0.08) votes[bestIndex] += 1
+}
+
+function hasSustainedTonicEvidence(votes: Float64Array, winner: KeyCandidate, relative: KeyCandidate, frames: number): boolean {
+  const index = winner.pitchClass + (winner.mode === 'minor' ? 12 : 0)
+  const relativeIndex = relative.pitchClass + (relative.mode === 'minor' ? 12 : 0)
+  let otherChord = 0
+  for (let i = 0; i < votes.length; i += 1) if (i !== index) otherChord = Math.max(otherChord, votes[i])
+  // At least 40% of all pitched frames must support this complete tonic, with
+  // a different chord observed for at least 10%. A drone or a single held chord
+  // cannot resolve mode, and evenly balanced relative-key loops still abstain.
+  return votes[index] >= frames * 0.4 && votes[index] - votes[relativeIndex] >= frames * 0.2 && otherChord >= frames * 0.1
 }
 
 /**
@@ -1493,53 +1533,15 @@ function chromaVarianceOf(chroma: Float64Array): number {
 }
 
 /**
- * Splits one frame's spectrum into partials and adds each partial, plus its
- * implied harmonic series, to the fine pitch histogram.
+ * Extract narrow local maxima, reject the noise floor and broad percussive
+ * humps, then refine each peak using a parabola in log magnitude. This follows
+ * the spectral-peak interpolation described at
+ * https://essentia.upf.edu/reference/std_SpectralPeaks.html.
  *
- * Approach (harmonic summation, not naive bin → nearest note): every spectral
- * peak is assumed to be the h-th harmonic of *some* fundamental. It therefore
- * contributes
- *
- *     magnitude / h          (the harmonic-rolloff weight)
- *
- * to the pitch class of `frequency / h`. The peak also contributes a smaller
- * share to its own pitch class, which keeps a strong fundamental honest when
- * its harmonic series is ambiguous. This is what makes a violin's or a piano's
- * upper partials reinforce the right note instead of voting for the wrong one:
- * a 3rd harmonic of C votes for C (as f/3), not for G.
- *
- * Local whitening (`magnitude / local mean`) keeps a loud low note from
- * out-voting the rest of the chord.
- *
- * Documented tradeoff: the literature standard for this step is a
- * non-negative least-squares fit of the spectrum to a harmonic dictionary
- * (Mauch & Dixon, "pYIN"/"Approximate note transcription", and their 2010
- * ISMIR chroma work), which resolves overlapping partials more accurately than
- * greedy harmonic summation. Plain harmonic summation is used here because it
- * is deterministic, allocation-light, and an order of magnitude cheaper; NNLS
- * would be the upgrade path if polyphonic chroma accuracy proves to be the
- * limiting factor on real material.
- */
-/**
- * Accumulates a pitch-class histogram from the magnitude spectrum.
- *
- * Each spectral bin votes for the pitch class of its **own** frequency
- * (a Fujishima-style pitch-class profile). This works because the harmonic
- * series of a note reinforces musically related pitch classes: the first five
- * harmonics of a major triad's root land on the root, the fifth and the third.
- *
- * Two details matter more than they look:
- *
- * 1. **Weight by 1/f.** The FFT is linear in frequency, so a semitone near
- *    2 kHz spans roughly twenty times as many bins as one near 100 Hz. Without
- *    the 1/f factor the dense high-frequency region dominates the histogram
- *    purely because it has more bins, and the chord tones disappear into it.
- *
- * 2. **Do not vote for every sub-harmonic.** An earlier version added each peak
- *    at `f/h` for h = 1…8. That makes every partial vote for a whole series of
- *    unrelated pitch classes, which flattens the histogram into near-uniform
- *    noise — destroying key detection and making the tuning objective
- *    meaningless. Reinforcing multiples is safe; dividing is not.
+ * Each resolved partial votes once for its own pitch class. Amplitude weighting
+ * reduces loud-note dominance compared with power; the old 1/f bin-density
+ * compensation is inappropriate for peaks and exaggerated bass/inversion bias.
+ * No unobserved subharmonic votes or learned model are introduced.
  */
 function accumulateChroma(
   magnitudes: Float64Array,
@@ -1549,18 +1551,32 @@ function accumulateChroma(
   fine: Float64Array
 ): void {
   if (maxPeakBin <= minPeakBin) return
+  let strongest = 0
+  for (let bin = minPeakBin; bin <= maxPeakBin; bin += 1) strongest = Math.max(strongest, magnitudes[bin])
 
   for (let bin = minPeakBin; bin <= maxPeakBin; bin += 1) {
     const magnitude = magnitudes[bin]
-    if (!(magnitude > 0)) continue
+    if (!(magnitude > strongest * KEY_PEAK_RELATIVE_FLOOR)) continue
+    if (!(magnitude > magnitudes[bin - 1] && magnitude >= magnitudes[bin + 1])) continue
+    let surrounding = 0
+    let neighbours = 0
+    for (let distance = 3; distance <= KEY_PEAK_NEIGHBOUR_RADIUS; distance += 1) {
+      if (bin - distance >= 0) { surrounding += magnitudes[bin - distance]; neighbours += 1 }
+      if (bin + distance < magnitudes.length) { surrounding += magnitudes[bin + distance]; neighbours += 1 }
+    }
+    if (!(magnitude > KEY_PEAK_MIN_CONTRAST * surrounding / Math.max(1, neighbours))) continue
 
-    const frequency = bin * binHz
+    // Parabolic interpolation in log magnitude locates the actual partial,
+    // rather than spreading the Hann main lobe across neighbouring notes.
+    const left = Math.log(Math.max(magnitudes[bin - 1], 1e-12))
+    const centre = Math.log(Math.max(magnitude, 1e-12))
+    const right = Math.log(Math.max(magnitudes[bin + 1], 1e-12))
+    const curvature = left - 2 * centre + right
+    const offset = Math.abs(curvature) > 1e-12 ? clamp(0.5 * (left - right) / curvature, -0.5, 0.5) : 0
+    const frequency = (bin + offset) * binHz
     if (frequency < CHROMA_MIN_HZ || frequency > CHROMA_MAX_HZ) continue
 
-    // Power per unit frequency: concentrates the histogram on fundamentals and
-    // the first few strong partials rather than the dense upper spectrum.
-    const weight = (magnitude * magnitude) / frequency
-    addToFineHistogram(fine, frequency, weight)
+    addToFineHistogram(fine, frequency, magnitude)
   }
 }
 
@@ -1569,7 +1585,7 @@ function accumulateChroma(
  *
  * `frequency` is mapped to the fractional semitone relative to A440 and then
  * modulo 12, i.e. a pitch class in semitones with 100 bins per semitone
- * (10 cents). Linear interpolation between the two neighbouring bins keeps a
+ * (1 cent). Linear interpolation between the two neighbouring bins keeps a
  * 1-cent tuning shift visible in the histogram, which is what makes the tuning
  * estimate below possible at all.
  */
@@ -1581,7 +1597,7 @@ function addToFineHistogram(fine: Float64Array, frequency: number, weight: numbe
   // Rotate so that index 0 is **C**, not A.
   //
   // `log2(f/440)` makes A the reference, but `SHARP_NAMES` and the
-  // Krumhansl–Kessler profiles are both C-referenced. Leaving the histogram
+  // key profiles are both C-referenced. Leaving the histogram
   // A-referenced shifts every pitch class by three semitones, which does not
   // look like a bug from the outside — it returns confident, plausible-looking
   // keys that are simply wrong (C major came back as D# major, F# minor as A
@@ -1677,14 +1693,14 @@ function estimateTuningCents(fine: Float64Array): number {
  */
 function foldFineToChroma(fine: Float64Array, shiftBins: number, out: Float64Array): void {
   const total = TUNING_FINE_BINS
-  const semitoneShift = shiftBins / TUNING_BINS_PER_SEMITONE
 
   for (let i = 0; i < total; i += 1) {
     const value = fine[i]
     if (!(value > 0)) continue
 
-    // Position in semitones, rotated by the tuning shift, wrapped to one octave.
-    let semitone = (i - semitoneShift) / TUNING_BINS_PER_SEMITONE
+    // Shift and index are both fine-bin units. Dividing the shift by 100 here
+    // before dividing the difference would apply only 1/100 of the correction.
+    let semitone = (i - shiftBins) / TUNING_BINS_PER_SEMITONE
     semitone = ((semitone % 12) + 12) % 12
 
     const lo = Math.floor(semitone)
@@ -1741,13 +1757,13 @@ function chromaEntropy(chroma: Float64Array): number {
 
 /**
  * Pearson-correlates the chroma against all 24 rotations of the
- * Krumhansl–Kessler major and minor profiles and returns them best-first.
+ * Shaath major and minor profiles and returns them best-first.
  */
 function correlateKeyProfiles(chroma: Float64Array): KeyCandidate[] {
   const candidates: KeyCandidate[] = []
   const profiles: { mode: 'major' | 'minor'; profile: readonly number[] }[] = [
-    { mode: 'major', profile: KK_MAJOR },
-    { mode: 'minor', profile: KK_MINOR }
+    { mode: 'major', profile: KEY_MAJOR_PROFILE },
+    { mode: 'minor', profile: KEY_MINOR_PROFILE }
   ]
 
   for (const { mode, profile } of profiles) {
