@@ -19,7 +19,7 @@ import type {
 } from './domain'
 import type { AudioAnalysis, AudioEvidence } from './analysis'
 import { camelotFor, camelotToKey, formatKey, hzToCents, normalizeMode, parseKeyString } from './music'
-import { verifyMetadata } from './verification'
+import { isHalfOrDoubleTempo, verifyMetadata } from './verification'
 import { formatBpm, formatCents } from './format'
 
 export const BPM_MIN = 40
@@ -92,9 +92,22 @@ function firstMatch(text: string, pattern: RegExp): RegExpExecArray | null {
   return pattern.exec(text)
 }
 
+/** First match the caller accepts, for patterns that need context beyond a regex. */
+function findMatch(text: string, pattern: RegExp, accept: (match: RegExpMatchArray) => boolean): RegExpMatchArray | null {
+  const global = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`)
+  for (const match of text.matchAll(global)) if (accept(match)) return match
+  return null
+}
+
 function inBpmRange(value: number): boolean {
   return Number.isFinite(value) && value >= BPM_MIN && value <= BPM_MAX
 }
+
+/** What may sit directly before a tempo, key or tuning token (titles, filenames, tags). */
+const LEAD = String.raw`(?:^|[\s[(\-–—|,_:=/#•·])`
+const NUMBER = String.raw`(\d{2,3}(?:\.\d+)?)`
+/** A number that is not the start of a longer number, decimal or percentage. */
+const NUMBER_END = String.raw`(?![\d%]|\.\d)`
 
 /**
  * Reads tempo declarations. A `72 / 144 BPM` pairing is recorded with the
@@ -106,11 +119,12 @@ function parseBpm(text: string, source: EvidenceSource, evidence: Evidence[]): {
   altBpm: number | null
 } {
   const patterns: { pattern: RegExp; confidence: number }[] = [
-    { pattern: /(?:^|[\s[(\-|,])(\d{2,3}(?:\.\d+)?)\s*\/\s*(\d{2,3}(?:\.\d+)?)\s*bpm/i, confidence: 0.98 },
-    { pattern: /\bbpm\s*[:=]?\s*(\d{2,3}(?:\.\d+)?)/i, confidence: 0.95 },
-    { pattern: /(?:^|[\s[(\-|,])(\d{2,3}(?:\.\d+)?)\s*bpm\b/i, confidence: 0.95 },
+    { pattern: new RegExp(`${LEAD}${NUMBER}\\s*\\/\\s*${NUMBER}\\s*bpm(?![a-z])`, 'i'), confidence: 0.98 },
+    // `140 BPM` before `BPM 140`, so `140 BPM 2024` never reads the year.
+    { pattern: new RegExp(`${LEAD}${NUMBER}\\s*bpm(?![a-z])`, 'i'), confidence: 0.95 },
+    { pattern: new RegExp(`(?<![a-z])bpm\\s*[:=\\-–]?\\s*${NUMBER}${NUMBER_END}`, 'i'), confidence: 0.95 },
     { pattern: /\b(\d{2,3}(?:\.\d+)?)\s*beats?\s*per\s*minute\b/i, confidence: 0.9 },
-    { pattern: /\btempo\s*[:=]?\s*(\d{2,3}(?:\.\d+)?)/i, confidence: 0.8 }
+    { pattern: new RegExp(`\\btempo\\s*[:=]?\\s*${NUMBER}${NUMBER_END}`, 'i'), confidence: 0.8 }
   ]
 
   for (const { pattern, confidence } of patterns) {
@@ -167,67 +181,55 @@ function parseKey(
   source: EvidenceSource,
   evidence: Evidence[]
 ): { key: string | null; camelot: string | null } {
+  const fromCamelot = (camelot: string, matched: string, confidence: number, keyConfidence: number | null) => {
+    const resolved = camelotToKey(camelot)
+    if (!resolved) return null
+    evidence.push({ field: 'camelot', value: camelot, source, matched: matched.trim(), confidence })
+    if (keyConfidence != null) evidence.push({ field: 'key', value: resolved.key, source, matched: matched.trim(), confidence: keyConfidence })
+    return { key: resolved.key, camelot }
+  }
+
   // 1. Camelot, explicitly labelled.
   const labelledCamelot = firstMatch(text, /\bcamelot\s*[:=#]?\s*(1[0-2]|[1-9])\s*([AB])\b/i)
   if (labelledCamelot) {
-    const camelot = `${labelledCamelot[1]}${labelledCamelot[2].toUpperCase()}`
-    const resolved = camelotToKey(camelot)
-    if (resolved) {
-      evidence.push({
-        field: 'camelot',
-        value: camelot,
-        source,
-        matched: labelledCamelot[0].trim(),
-        confidence: 0.98
-      })
-      evidence.push({
-        field: 'key',
-        value: resolved.key,
-        source,
-        matched: labelledCamelot[0].trim(),
-        confidence: 0.9
-      })
-      return { key: resolved.key, camelot }
-    }
+    const found = fromCamelot(`${labelledCamelot[1]}${labelledCamelot[2].toUpperCase()}`, labelledCamelot[0], 0.98, 0.9)
+    if (found) return found
   }
 
   // 2. Explicit `key:` label, which may carry either a note name or a Camelot code.
-  const labelledKey = firstMatch(text, /\bkey\s*[:=#]?\s*([A-G][#b♯♭]?)\s*(?:(maj|major|min|minor|m|M)\b)?/i)
+  const labelledKey = firstMatch(
+    text,
+    new RegExp(`(?<![a-z])key\\s*[:=#\\-–]?\\s*(?:(1[0-2]|[1-9])([AB])(?![a-z\\d])|([A-G][#b♯♭]?)\\s*[-–—]?\\s*(${MODE_WORDS}|m)?(?![a-z\\d#♯♭]))`, 'i')
+  )
   if (labelledKey) {
-    const note = labelledKey[1]
-    const modeRaw = labelledKey[2]
-    const mode = modeRaw ? normalizeMode(modeRaw) : null
-    if (mode && mode !== 'modal') {
-      const key = formatKey(note, mode)
+    if (labelledKey[1]) {
+      const found = fromCamelot(`${labelledKey[1]}${labelledKey[2].toUpperCase()}`, labelledKey[0], 0.96, 0.92)
+      if (found) return found
+    } else if (labelledKey[4]) {
+      const note = labelledKey[3]
+      const modeRaw = labelledKey[4]
+      // A lone `m` keeps its case even under the case-insensitive label: `m` is minor, `M` major.
+      const mode = modeRaw === 'm' ? 'minor' : modeRaw === 'M' ? 'major' : normalizeMode(modeRaw)
+      const key = mode ? formatKey(note, mode === 'modal' ? modeRaw : mode) : null
       if (key) {
-        evidence.push({
-          field: 'key',
-          value: key,
-          source,
-          matched: labelledKey[0].trim(),
-          confidence: 0.96
-        })
-        return { key, camelot: camelotFor(note, mode) }
+        evidence.push({ field: 'key', value: key, source, matched: labelledKey[0].trim(), confidence: 0.96 })
+        return { key, camelot: mode && mode !== 'modal' ? camelotFor(note, mode) : null }
       }
     }
   }
 
-  // 3. Bare note + mode, e.g. `F# minor` or `F#m`.
-  const noteMode = firstMatch(
+  // 3. Bare note + mode, e.g. `F# minor` or `Cmaj`. A lowercase `a` set apart by
+  //    a space is the English article (`a minor setback`), never a key.
+  const noteMode = findMatch(
     text,
-    new RegExp(`(?:^|[\\s\\[(\\-|,])([A-G])([#b♯♭]?)\\s*[-–—]?\\s*(${MODE_WORDS})\\b`, 'i')
+    new RegExp(`${LEAD}([A-G])([#b♯♭]?)(\\s*[-–—]?\\s*)(${MODE_WORDS})(?![a-z\\d])`, 'i'),
+    (match) => !(match[1] === 'a' && !match[2] && match[3].length > 0)
   )
   if (noteMode) {
-    const key = formatKey(`${noteMode[1]}${noteMode[2]}`, noteMode[3])
+    const key = formatKey(`${noteMode[1]}${noteMode[2]}`, noteMode[4])
     if (key) {
-      const mode = normalizeMode(noteMode[3])
-      evidence.push({
-        field: 'key',
-        value: key,
-        source,
-        matched: noteMode[0].trim(),
-        confidence: 0.9
-      })
+      const mode = normalizeMode(noteMode[4])
+      evidence.push({ field: 'key', value: key, source, matched: noteMode[0].trim(), confidence: 0.9 })
       return {
         key,
         camelot: mode && mode !== 'modal' ? camelotFor(`${noteMode[1]}${noteMode[2]}`, mode) : null
@@ -235,42 +237,54 @@ function parseKey(
     }
   }
 
-  // 4. Compact form: `F#m`, `Am`, `CMaj`.
-  const compact = firstMatch(text, /(?:^|[\s[(\-|,])([A-G])([#b♯♭]?)(m|M)\b/)
+  // 4. Compact form: `F#m`, `Am`, `[CM]`. Without an accidental these are also
+  //    words (`Am I`, `DM me`, `10 AM`), so context decides — see compactAccepted.
+  const compact = findMatch(
+    text,
+    /(?<=^|[\s[\](){}\-–—|,_:=/#•·;+~])([A-G])([#b♯♭]?)(m|M)(?![A-Za-z\d#♯♭'’])/,
+    (match) => compactAccepted(text, match.index ?? 0, (match.index ?? 0) + match[0].length, match[2], match[3])
+  )
   if (compact) {
     const mode = compact[3] === 'm' ? 'minor' : 'major'
     const key = formatKey(`${compact[1]}${compact[2]}`, mode)
     if (key) {
-      evidence.push({
-        field: 'key',
-        value: key,
-        source,
-        matched: compact[0].trim(),
-        confidence: 0.72
-      })
+      evidence.push({ field: 'key', value: key, source, matched: compact[0].trim(), confidence: 0.72 })
       return { key, camelot: camelotFor(`${compact[1]}${compact[2]}`, mode) }
     }
   }
 
   // 5. Bare Camelot position. Lowest confidence — could be anything, so it is
-  //    only accepted when the token stands alone in brackets or at an edge.
-  const bareCamelot = firstMatch(text, /(?:^|[\s[(\-|,])(1[0-2]|[1-9])\s*([AB])(?=$|[\s)\]|\-])/)
+  //    only accepted when the token stands alone between separators or at an edge.
+  const bareCamelot = firstMatch(text, new RegExp(`${LEAD}(1[0-2]|[1-9])([AB])(?=$|[\\s)\\]|\\-–—_,/;:•·])`))
   if (bareCamelot) {
-    const camelot = `${bareCamelot[1]}${bareCamelot[2].toUpperCase()}`
-    const resolved = camelotToKey(camelot)
-    if (resolved) {
-      evidence.push({
-        field: 'camelot',
-        value: camelot,
-        source,
-        matched: bareCamelot[0].trim(),
-        confidence: 0.6
-      })
-      return { key: resolved.key, camelot }
-    }
+    const found = fromCamelot(`${bareCamelot[1]}${bareCamelot[2]}`, bareCamelot[0], 0.6, null)
+    if (found) return found
   }
 
   return { key: null, camelot: null }
+}
+
+const TOKEN_SEPARATOR = String.raw`[\r\n[\](){}|\-–—_/,;:=•·~+]`
+const SEPARATED_BEFORE = new RegExp(`(?:^|${TOKEN_SEPARATOR})[ \\t]*$`)
+const SEPARATED_AFTER = new RegExp(`^[ \\t]*(?:$|${TOKEN_SEPARATOR})`)
+const BPM_BEFORE = /\d\s*bpm[\s\-–—_|,:/]*$/i
+const BPM_AFTER = /^[\s\-–—_|,:/]*\d{2,3}(?:\.\d+)?\s*bpm(?![a-z])/i
+
+/**
+ * Decides whether a compact key token is a key rather than a word.
+ *
+ * With an accidental (`F#m`, `Bbm`) it is unambiguous. Otherwise it must stand
+ * next to a tempo (`140 BPM Am`) or be set apart by separators on both sides
+ * (`- Am -`, `[Gm]`, a whole tag). A bare `M` for major (`AM`, `DM`, `FM`) is
+ * common English, so it additionally needs brackets, a tempo, or the whole text.
+ */
+function compactAccepted(text: string, start: number, end: number, accidental: string, mode: string): boolean {
+  if (accidental) return true
+  const before = text.slice(0, start)
+  const after = text.slice(end)
+  if (BPM_BEFORE.test(before) || BPM_AFTER.test(after)) return true
+  if (mode === 'M') return (/[[(]\s*$/.test(before) && /^\s*[\])]/.test(after)) || (!before.trim() && !after.trim())
+  return SEPARATED_BEFORE.test(before) && SEPARATED_AFTER.test(after)
 }
 
 /** Reads detune declarations in cents, semitones, or absolute tuning. */
@@ -310,13 +324,14 @@ function parseDetune(
       confidence: 0.94
     },
     {
-      pattern: /(?:^|[\s[(\-|,])([+-]?\d+(?:\.\d+)?)\s*cents?\b/i,
+      pattern: new RegExp(`${LEAD}([+-]?\\d+(?:\\.\\d+)?)\\s*cents?(?![a-z])`, 'i'),
       toCents: (raw) => Number(raw),
       confidence: 0.9
     },
     {
-      pattern: /(?:^|[\s[(\-|,])([+-]?\d+(?:\.\d+)?)\s*(?:st|semitones?|half[\s-]?steps?)\b/i,
-      toCents: (raw) => Number(raw) * 100,
+      // A bare `st` needs a sign: unsigned it is an ordinal (`1st`, `21st`).
+      pattern: new RegExp(`${LEAD}([+-]\\d+(?:\\.\\d+)?\\s*st|[+-]?\\d+(?:\\.\\d+)?\\s*(?:semitones?|half[\\s-]?steps?))(?![a-z])`, 'i'),
+      toCents: (raw) => Number.parseFloat(raw) * 100,
       confidence: 0.84
     }
   ]
@@ -423,11 +438,14 @@ function parseGenre(
   return null
 }
 
+/** A quoted beat name, with each opening quote closed by its own partner. */
+const QUOTED_TITLE = /“([^“”]{2,90})”|"([^"]{2,90})"|«([^«»]{2,90})»|‘([^‘’]{2,90})’|„([^„“”]{2,90})[“”]/
+
 /** Extracts a display title, preferring an explicitly quoted beat name. */
 export function extractTitle(rawTitle: string): string {
-  const quoted = firstMatch(rawTitle, /[""«"]([^""»"]{2,90})[""»"]/)
+  const quoted = firstMatch(rawTitle, QUOTED_TITLE)
   if (quoted) {
-    const inner = quoted[1].replace(/\s+/g, ' ').trim()
+    const inner = (quoted.slice(1).find((group) => group != null) ?? '').replace(/\s+/g, ' ').trim()
     if (inner.length >= 2) return stripTitleSuffix(inner)
   }
 
@@ -442,7 +460,7 @@ export function extractTitle(rawTitle: string): string {
     /\b(?:key|camelot)\s*[:=#]?\s*[A-Ga-g0-9#b]{1,6}(?:\s*(?:maj|min|major|minor))?\b/gi,
     ' '
   )
-  out = out.replace(/[+-]?\d+(?:\.\d+)?\s*(?:cents?|st|semitones?)\b/gi, ' ')
+  out = out.replace(/(?:[+-]?\d+(?:\.\d+)?\s*(?:cents?|semitones?)|[+-]\d+(?:\.\d+)?\s*st)\b/gi, ' ')
   out = out.replace(/\b\d{2,3}(?:\.\d+)?\s*\/\s*\d{2,3}(?:\.\d+)?\b/g, ' ')
   out = out.replace(/\b\d{2,3}(?:\.\d+)?\s*bpm\b/gi, ' ')
   out = out.replace(/\bbpm\s*[:=]?\s*\d{2,3}(?:\.\d+)?/gi, ' ')
@@ -629,8 +647,11 @@ export function decideMetadataField(field: MetadataField, input: {
     { origin: 'embedded', values: input.embedded },
     { origin: 'audio', values: input.analyzed }
   ]
-  const evidence = layers.find(layer => present(layer.values[field]))
-  const resetValue = evidence?.values[field] ?? null
+  // An alternate tempo is only meaningful beside the tempo it came with.
+  const anchor = layers.find(layer => present(layer.values[field === 'altBpm' ? 'bpm' : field]))
+  const anchorValue = anchor?.values[field] ?? null
+  const resetValue = field === 'altBpm' && !relatedAltBpm(anchor?.values.bpm, anchorValue) ? null : anchorValue
+  const evidence = present(resetValue) ? anchor : undefined
   const measuredValue = input.analyzed[field] ?? null
   const current = input.current[field] ?? null
   if (input.overrides.includes(field)) {
@@ -654,13 +675,18 @@ function chooseField(field: MetadataField, input: ReconcileInput): MetadataValue
     return present(manual) ? manual : undefined
   }
 
-  for (const layer of [input.declared, input.embedded, input.analyzed]) {
-    const candidate = layer?.[field]
-    if (present(candidate)) return candidate
-  }
+  // The alternate tempo comes from whichever layer supplied the tempo itself, so
+  // a declared 140 is never paired with an estimate's 191.2 alternate.
+  const anchor = field === 'altBpm' ? 'bpm' : field
+  const layers = field === 'altBpm' && input.overrides?.includes('bpm') ? [] : [input.declared, input.embedded, input.analyzed]
+  const layer = layers.find(candidate => present(candidate?.[anchor]))
+  const chosen = layer ? layer[field] : input.previousFinal?.[field]
+  return present(chosen) ? chosen : undefined
+}
 
-  const carried = input.previousFinal?.[field]
-  return present(carried) ? carried : undefined
+/** True when `alt` is a half- or double-time reading of `bpm`. */
+function relatedAltBpm(bpm: unknown, alt: unknown): boolean {
+  return typeof bpm === 'number' && typeof alt === 'number' && isHalfOrDoubleTempo(alt, bpm)
 }
 
 /**
@@ -710,15 +736,22 @@ function reconcileKeyPair(values: MetadataValues, overrides: MetadataField[]): v
   values.camelot = null
 }
 
-/** An alternate tempo with no primary tempo to alternate from is meaningless. */
-function reconcileTempoPair(values: MetadataValues): void {
+/**
+ * An alternate tempo with no primary tempo to alternate from is meaningless, and
+ * one that is not half or double the tempo is not an alternate. A hand-typed
+ * alternate is kept unless it merely repeats the tempo.
+ */
+function reconcileTempoPair(values: MetadataValues, overrides: MetadataField[]): void {
   if (!present(values.bpm)) {
     values.altBpm = null
     return
   }
-  if (present(values.altBpm) && Number(values.altBpm) === Number(values.bpm)) {
+  if (!present(values.altBpm)) return
+  if (Number(values.altBpm) === Number(values.bpm)) {
     values.altBpm = null
+    return
   }
+  if (!overrides.includes('altBpm') && !relatedAltBpm(Number(values.bpm), Number(values.altBpm))) values.altBpm = null
 }
 
 /** Single reconciliation entry point used by every metadata mutation path. */
@@ -734,7 +767,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutput {
   }
 
   reconcileKeyPair(suggested, input.overrides ?? [])
-  reconcileTempoPair(suggested)
+  reconcileTempoPair(suggested, input.overrides ?? [])
 
   const final: BeatMetadata = {
     ...emptyMetadata(),
@@ -910,7 +943,7 @@ export function applyFinalEdit(
   // Re-derive the key/Camelot pair so clearing or retyping one side can never
   // leave a Camelot code attached to a different or unknown key.
   reconcileKeyPair(final as unknown as MetadataValues, overrides)
-  reconcileTempoPair(final as unknown as MetadataValues)
+  reconcileTempoPair(final as unknown as MetadataValues, overrides)
 
   return attachVerification({ ...draft, final, overrides })
 }

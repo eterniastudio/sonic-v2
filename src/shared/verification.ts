@@ -30,6 +30,19 @@ export const BPM_MATCH_TOLERANCE = 2
 export const BPM_CLOSE_TOLERANCE = 5
 /** Tuning estimates are coarse, so detune gets a generous window. */
 export const DETUNE_TOLERANCE = 15
+/** Relative window for treating two tempos as half- or double-time of each other. */
+export const HALF_DOUBLE_TOLERANCE = 0.03
+
+/** True when `a` is half or double `b`, judged symmetrically on a log scale. */
+export function isHalfOrDoubleTempo(a: number, b: number, tolerance = HALF_DOUBLE_TOLERANCE): boolean {
+  if (!(a > 0) || !(b > 0)) return false
+  return Math.abs(Math.abs(Math.log(a / b)) - Math.LN2) <= Math.log(1 + tolerance)
+}
+
+/** Signed distance in cents after folding whole semitones, in [-50, 50). */
+function centsWithinSemitone(cents: number): number {
+  return ((((cents + 50) % 100) + 100) % 100) - 50
+}
 
 export const ORIGIN_LABEL: Record<CandidateOrigin, string> = {
   title: 'Video title',
@@ -95,8 +108,7 @@ function compareTempo(stated: number, measured: number): { verdict: AgreementVer
 
   // A half- or double-time reading is musically the same tempo, so it is a
   // related result rather than a contradiction — but it is named explicitly.
-  const ratio = stated / measured
-  if (Math.abs(ratio - 2) <= 0.04 || Math.abs(ratio - 0.5) <= 0.02) {
+  if (isHalfOrDoubleTempo(stated, measured)) {
     return {
       verdict: 'close',
       note: `The stated ${formatBpm(stated)} BPM matches the audio at half/double time (${formatBpm(measured)} BPM).`
@@ -158,7 +170,9 @@ function compareKey(
 }
 
 function compareDetune(stated: number, measured: number): { verdict: AgreementVerdict; note: string } {
-  const diff = Math.abs(stated - measured)
+  // Measured tuning is folded to ±50 cents, while a declared detune can span
+  // whole semitones; only the offset within a semitone is comparable.
+  const diff = Math.abs(centsWithinSemitone(stated - measured))
   if (diff <= DETUNE_TOLERANCE) {
     return {
       verdict: 'match',

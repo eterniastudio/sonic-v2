@@ -8,7 +8,7 @@ import { SAMPLE_METADATA } from '@shared/sample'
 import { renderTemplate } from '@shared/template'
 import { parseVideoUrl } from '@shared/url'
 import { broadcast } from './broadcast'
-import { fileExists } from './lib/fsx'
+import { directoryExists, fileExists } from './lib/fsx'
 import { libraryAnalysis } from './analysis/libraryAnalysis'
 import { engineService } from './services/engine'
 import { libraryService } from './services/library'
@@ -235,7 +235,7 @@ export function registerIpcHandlers(): void {
     const target = kind === 'userData' ? app.getPath('userData') :
       kind === 'engine' ? engineService.directory :
         settingsService.get().downloadDir || defaultDownloadDir()
-    if (!(await fileExists(target))) return false
+    if (!(await directoryExists(target))) return false
     const error = await shell.openPath(target)
     return error.length === 0
   })
