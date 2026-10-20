@@ -138,7 +138,7 @@ function templateChecks(): { name: string; ok: boolean; expected: string; actual
 /**
  * Headless self-check.
  *
- * Enabled by `--smoke` (or an explicit `SONIC_SMOKE_REPORT` path). It boots the
+ * Enabled by `--smoke` (or an explicit `SONIC_SMOKE_REPORT` path) in unpackaged builds only. It boots the
  * real application — window, preload bridge, IPC, services — probes the
  * rendered DOM, then quits, so a build can be verified without a human watching
  * the screen.
@@ -148,6 +148,9 @@ function templateChecks(): { name: string; ok: boolean; expected: string; actual
  * folder, which makes this a genuine end-to-end test rather than a boot check.
  */
 export function installSmokeTest(window: BrowserWindow): void {
+  // A development harness: it drives IPC, downloads and file writes on its own.
+  // A shipped build never honours `--smoke` or the report variable.
+  if (app.isPackaged) return
   const reportPath =
     process.env['SONIC_SMOKE_REPORT'] ??
     (process.argv.includes('--smoke') ? join(app.getPath('userData'), 'smoke-report.json') : null)

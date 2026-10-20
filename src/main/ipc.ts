@@ -108,7 +108,9 @@ function isSettingsPatch(value: unknown): boolean {
     if (SETTINGS_OPTIONS[key]) return typeof entry === 'string' && SETTINGS_OPTIONS[key].has(entry)
     if (['normalizeLufs', 'ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key) && entry === null) return true
     if (key === 'normalizeLufs') return typeof entry === 'number' && Number.isFinite(entry)
-    if (['ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key)) return typeof entry === 'string' && entry.length <= 4096
+    // Main executes these paths. Only the native engine:pickTool dialog may set
+    // one; the renderer can merely reset a tool to automatic discovery.
+    if (['ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key)) return false
     const original = current[key]
     if (typeof entry !== typeof original) return false
     if (typeof entry === 'string') return entry.length <= 4096
