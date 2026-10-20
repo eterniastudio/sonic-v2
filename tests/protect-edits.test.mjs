@@ -347,7 +347,7 @@ async function queueFixture(t, jobs, options = {}) {
     '../analysis/service': { analysisService: { on: () => undefined, cancelPrefix: () => undefined, cancel: () => undefined } },
     '../lib/jsonStore': storage, '../lib/id': { createId: prefix => `${prefix}_1` }, '../lib/fsx': { sha256File: async () => 'f'.repeat(64) },
     './acquire': { ...acquire, acquireAudio: async id => { calls.acquire++; const file = path.join(staging, `${id}.webm`); await fsp.writeFile(file, 'src'); return { filePath: file, extension: 'webm', reused: false } } },
-    './cover': { fetchCover: async () => null }, './engine': { engineService: { resolve: async () => ({ version: null }) } },
+    './cover': { fetchCover: async () => null, forgetCover: async () => undefined, pruneCovers: async () => 0 }, './engine': { engineService: { resolve: async () => ({ version: null }) } },
     './ffprobe': { probeMediaFile: async () => ({ tags: {}, durationSec: 60, sizeBytes: 6, container: 'mp3', bitrateKbps: 320, audio: null }),
       readEmbeddedMetadata: async () => ({}), tagsToMetadata: () => ({}) },
     './library': { libraryService: library }, './paths': { queueFile: () => queueFile, stagingDir: () => staging },

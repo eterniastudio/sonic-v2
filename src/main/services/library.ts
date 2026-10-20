@@ -38,6 +38,8 @@ const FIELD_KEYS = new Set<string>([
 const SCAN_CONCURRENCY = 8
 /** exFAT, FAT32 and many SMB shares cannot hard-link; those renames fall back to a reserved move. */
 const LINK_UNSUPPORTED = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV', 'EISDIR', 'ENOSYS'])
+/** `normalizeLibrary` resets these on load; they never need a durable commit. */
+const TRANSIENT_STATUSES = new Set<AnalysisStatus>(['queued', 'analyzing'])
 type FileObservation = { exists: boolean; isFile: boolean; size: number; error?: string }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -366,6 +368,22 @@ class LibraryService extends EventEmitter {
     return this.list()
   }
 
+  /** Adds a batch in one committed revision; the result matches sequential `add` calls. */
+  addMany(beats: LibraryBeat[]): LibraryBeat[] {
+    if (beats.length === 0) return this.list()
+    this.assertWritable()
+    const ids = new Set<string>()
+    const incoming: LibraryBeat[] = []
+    for (const beat of [...beats].reverse()) {
+      if (ids.has(beat.id)) continue
+      ids.add(beat.id)
+      incoming.push(beat.fileOwnership === 'external' ? { ...beat, sidecarPath: null, sidecarSync: undefined } : beat)
+    }
+    this.store.write([...incoming, ...this.store.read().filter(entry => !ids.has(entry.id))])
+    this.emitChanged()
+    return this.list()
+  }
+
   update(id: string, patch: Partial<LibraryBeat>): LibraryBeat | null {
     let updated: LibraryBeat | null = null
     const next = this.store.read().map((entry) => {
@@ -649,9 +667,16 @@ class LibraryService extends EventEmitter {
       return { ...entry, analysisStatus: status }
     })
     if (changed) {
-      this.store.write(next)
+      this.commitStatuses(next, status)
       this.emitChanged()
     }
+  }
+
+  /** In-progress markers are discarded on load, so they are kept in memory only
+   * and ride along with the next durable commit; settled statuses are saved. */
+  private commitStatuses(next: LibraryBeat[], status: AnalysisStatus): void {
+    if (TRANSIENT_STATUSES.has(status)) this.store.stage(next)
+    else this.store.write(next)
   }
 
   /**
@@ -679,7 +704,7 @@ class LibraryService extends EventEmitter {
       return { ...entry, analysisStatus: status }
     })
     if (changed) {
-      this.store.write(next)
+      this.commitStatuses(next, status)
       this.emitChanged()
     }
   }

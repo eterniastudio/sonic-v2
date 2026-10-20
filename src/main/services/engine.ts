@@ -19,8 +19,11 @@ const TOOL_BINARY: Record<ToolName, string> = {
 }
 
 const YTDLP_RELEASE_BASE = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download'
-const FFMPEG_ZIP_URL =
-  'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip'
+const FFMPEG_RELEASE_BASE = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest'
+const FFMPEG_ZIP_NAME = 'ffmpeg-master-latest-win64-gpl.zip'
+const FFMPEG_ZIP_URL = `${FFMPEG_RELEASE_BASE}/${FFMPEG_ZIP_NAME}`
+/** BtbN publishes one SHA-256 manifest per release, covering every archive. */
+const FFMPEG_CHECKSUMS_URL = `${FFMPEG_RELEASE_BASE}/checksums.sha256`
 
 export interface ResolvedTool {
   name: ToolName
@@ -71,8 +74,15 @@ async function probeVersion(binary: string, signal?: AbortSignal): Promise<strin
   }
 }
 
+/** A resolved tool is reused this long; `invalidate()` and setup clear it sooner. */
+const RESOLVE_TTL_MS = 5 * 60_000
+const STATUS_TTL_MS = 20_000
+
 class EngineService extends EventEmitter {
   private cached: { status: EngineStatus; at: number } | null = null
+  /** Keyed by the explicit setting it was resolved under, so a changed path is never served stale. */
+  private readonly resolved = new Map<ToolName, { tool: ResolvedTool; explicit: string | null; at: number }>()
+  private generation = 0
   private setupPromise: Promise<EngineStatus> | null = null
   private setupController: AbortController | null = null
   private setupError: string | null = null
@@ -90,14 +100,24 @@ class EngineService extends EventEmitter {
   }
 
   async resolve(name: ToolName, force = false, signal?: AbortSignal): Promise<ResolvedTool> {
+    const explicit = this.explicitPath(name)
     if (!force) {
-      const cached = this.cached?.status.components.find((component) => component.name === name)
-      if (cached && this.cached && Date.now() - this.cached.at < 20_000) {
-        return { name, path: cached.path, version: cached.version, origin: cached.origin }
+      // Jobs resolve tools several times each; spawning `--version` every time
+      // is wasted work. A cached path must still exist and match the setting.
+      const hit = this.resolved.get(name)
+      if (hit?.tool.path && hit.explicit === explicit && Date.now() - hit.at < RESOLVE_TTL_MS && existsSync(hit.tool.path)) {
+        return { ...hit.tool }
       }
     }
+    const generation = this.generation
+    const tool = await this.locate(name, explicit, signal)
+    // An invalidation during the probe means the answer may already be stale; a
+    // failed probe is retried next time rather than remembered.
+    if (generation === this.generation && tool.path && tool.version) this.resolved.set(name, { tool: { ...tool }, explicit, at: Date.now() })
+    return tool
+  }
 
-    const explicit = this.explicitPath(name)
+  private async locate(name: ToolName, explicit: string | null, signal?: AbortSignal): Promise<ResolvedTool> {
     if (explicit && existsSync(explicit)) {
       return { name, path: explicit, version: await probeVersion(explicit, signal), origin: 'system' }
     }
@@ -117,7 +137,7 @@ class EngineService extends EventEmitter {
 
   async status(force = false, signal?: AbortSignal): Promise<EngineStatus> {
     signal?.throwIfAborted()
-    if (!force && this.cached && Date.now() - this.cached.at < 20_000 && this.setupPromise == null) {
+    if (!force && this.cached && Date.now() - this.cached.at < STATUS_TTL_MS && this.setupPromise == null) {
       return this.cached.status
     }
 
@@ -150,6 +170,8 @@ class EngineService extends EventEmitter {
 
   invalidate(): void {
     this.cached = null
+    this.resolved.clear()
+    this.generation += 1
   }
 
   /** Installs whatever is missing. Concurrent calls share a single run. */
@@ -205,7 +227,7 @@ class EngineService extends EventEmitter {
     }
 
     signal.throwIfAborted()
-    this.cached = null
+    this.invalidate()
     const status = await this.status(true, signal)
     this.emitProgress({
       phase: status.ready ? 'done' : 'error',
@@ -277,12 +299,7 @@ class EngineService extends EventEmitter {
         percent: null,
         message: 'Verifying the yt-dlp download…'
       })
-      const actual = await sha256File(partial, signal)
-      if (actual.toLowerCase() !== expectedHash.toLowerCase()) {
-        throw new Error(
-          'The yt-dlp download did not match its published checksum and was discarded.'
-        )
-      }
+      verifyChecksum(await sha256File(partial, signal), expectedHash, 'yt-dlp')
 
       signal?.throwIfAborted()
       await moveFile(partial, target)
@@ -293,7 +310,7 @@ class EngineService extends EventEmitter {
           // Non-fatal: the archive bit may already be correct.
         }
       }
-      this.cached = null
+      this.invalidate()
     } finally {
       await removeFile(partial)
     }
@@ -314,6 +331,25 @@ class EngineService extends EventEmitter {
     const archive = path.join(stagingDir(), 'ffmpeg.zip')
     try {
       await ensureDir(workDir)
+
+      this.emitProgress({
+        phase: 'resolving',
+        component: 'ffmpeg',
+        receivedBytes: 0,
+        totalBytes: null,
+        percent: null,
+        message: 'Fetching the FFmpeg checksum manifest…'
+      })
+      // Fail closed before spending the download: nothing unverified is ever extracted or run.
+      let expectedHash: string | null
+      try {
+        expectedHash = parseChecksumManifest(await fetchText(FFMPEG_CHECKSUMS_URL, signal), FFMPEG_ZIP_NAME)
+      } catch (error) {
+        signal?.throwIfAborted()
+        throw new Error(`Could not verify the FFmpeg release checksums. Setup left the installed tools unchanged; please retry. ${error instanceof Error ? error.message : String(error)}`)
+      }
+      if (!expectedHash) throw new Error('The FFmpeg release has no valid checksum for its Windows archive. Setup left the installed tools unchanged; please retry later.')
+      signal?.throwIfAborted()
 
       this.emitProgress({
         phase: 'downloading',
@@ -337,6 +373,17 @@ class EngineService extends EventEmitter {
           })
         }
       })
+
+      this.emitProgress({
+        phase: 'verifying',
+        component: 'ffmpeg',
+        receivedBytes: 0,
+        totalBytes: null,
+        percent: null,
+        message: 'Verifying the FFmpeg download…'
+      })
+      verifyChecksum(await sha256File(archive, signal), expectedHash, 'FFmpeg')
+      signal?.throwIfAborted()
 
       this.emitProgress({
         phase: 'verifying',
@@ -382,7 +429,7 @@ class EngineService extends EventEmitter {
       signal?.throwIfAborted()
       await moveFile(ffprobeSource, path.join(engineDir(), 'ffprobe.exe'))
 
-      this.cached = null
+      this.invalidate()
     } finally {
       await removeDir(workDir)
       await removeFile(archive)
@@ -394,7 +441,15 @@ class EngineService extends EventEmitter {
   }
 }
 
-function parseChecksumManifest(manifest: string, fileName: string): string | null {
+/** Throws unless a download's SHA-256 equals the publisher's value. */
+export function verifyChecksum(actual: string, expected: string, label: string): void {
+  if (!/^[a-f0-9]{64}$/i.test(expected) || actual.toLowerCase() !== expected.toLowerCase()) {
+    throw new Error(`The ${label} download did not match its published checksum and was discarded.`)
+  }
+}
+
+/** The SHA-256 a `sha256sum`-style manifest lists for exactly `fileName`, or null. */
+export function parseChecksumManifest(manifest: string, fileName: string): string | null {
   for (const line of manifest.split(/\r?\n/)) {
     const trimmed = line.trim()
     if (trimmed.length === 0) continue

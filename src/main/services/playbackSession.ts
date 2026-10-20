@@ -43,8 +43,15 @@ function normalizeStored(raw: unknown): PlaybackSessionSnapshot {
     positions: (raw.positions as PlaybackPosition[]).map(entry => ({ ...entry })) }
 }
 
+const MAX_IDENTITIES = 256
+type FileStamp = { size: number; mtimeMs: number; ino: number; dev: number }
+const sameStamp = (a: FileStamp, b: FileStamp): boolean =>
+  a.size === b.size && a.mtimeMs === b.mtimeMs && a.ino === b.ino && a.dev === b.dev
+
 class PlaybackSessionService {
   private readonly store = new JsonStore<PlaybackSessionSnapshot>(playbackSessionFile(), DEFAULTS, normalizeStored)
+  /** Content digests by path, valid only while size, mtime and file identity are unchanged. */
+  private readonly digests = new Map<string, FileStamp & { digest: string }>()
 
   snapshot(): PlaybackSessionSnapshot { return structuredClone(this.store.read()) }
 
@@ -53,15 +60,30 @@ class PlaybackSessionService {
     if (!beat) throw new Error('This track is no longer in the library.')
     const before = await lstat(beat.filePath)
     if (!before.isFile() || before.isSymbolicLink()) throw new Error('Audio is unavailable or no longer a regular file.')
+    // Re-reading a large file on every play is the slow path; an unchanged
+    // (path, size, mtime, inode) reuses the digest measured last time.
+    const known = this.digests.get(beat.filePath)
+    if (known && sameStamp(known, before) && libraryService.get(beatId)?.filePath === beat.filePath) {
+      this.remember(beat.filePath, known)
+      return { beatId, fingerprint: known.digest, sizeBytes: before.size, modifiedAt: before.mtimeMs }
+    }
     // A bounded read avoids leaving shutdown waiting indefinitely on a stalled volume.
     const digest = await sha256File(beat.filePath, AbortSignal.timeout(15_000))
     const after = await lstat(beat.filePath)
-    if (!after.isFile() || after.isSymbolicLink() || before.size !== after.size ||
-      before.mtimeMs !== after.mtimeMs || before.ino !== after.ino || before.dev !== after.dev ||
+    if (!after.isFile() || after.isSymbolicLink() || !sameStamp(before, after) ||
       libraryService.get(beatId)?.filePath !== beat.filePath) {
+      this.digests.delete(beat.filePath)
       throw new Error('The audio file changed while Sonic checked it. Try playing it again.')
     }
+    this.remember(beat.filePath, { size: after.size, mtimeMs: after.mtimeMs, ino: after.ino, dev: after.dev, digest })
     return { beatId, fingerprint: digest, sizeBytes: after.size, modifiedAt: after.mtimeMs }
+  }
+
+  /** Most recently used last; the oldest entry is evicted beyond the bound. */
+  private remember(filePath: string, entry: FileStamp & { digest: string }): void {
+    this.digests.delete(filePath)
+    this.digests.set(filePath, entry)
+    if (this.digests.size > MAX_IDENTITIES) this.digests.delete(this.digests.keys().next().value as string)
   }
 
   checkpoint(command: PlaybackCheckpoint): PlaybackSessionSnapshot {

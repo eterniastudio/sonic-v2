@@ -152,7 +152,7 @@ function queueFixture(t, jobs = [job('a')], overrides = {}) {
         return overrides.acquire ? overrides.acquire(id, options.signal) : { filePath: '/isolated/input.wav', extension: 'wav' }
       }, cleanStaging: async () => {}, sweepStaging: async () => {}
     },
-    './cover': { fetchCover: async () => null },
+    './cover': { fetchCover: async () => null, forgetCover: async () => undefined, pruneCovers: async () => 0 },
     './engine': { engineService: { resolve: async () => ({ version: 'test' }) } },
     './ffprobe': {
       async readEmbeddedMetadata(filePath, signal) {

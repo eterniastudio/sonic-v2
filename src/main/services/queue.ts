@@ -11,7 +11,7 @@ import { JsonStore, storageEvents } from '../lib/jsonStore'
 import { createId } from '../lib/id'
 import { sha256File } from '../lib/fsx'
 import { acquireAudio, cleanStaging, sweepStaging } from './acquire'
-import { fetchCover } from './cover'
+import { fetchCover, forgetCover, pruneCovers } from './cover'
 import { engineService } from './engine'
 import { probeMediaFile, readEmbeddedMetadata, tagsToMetadata } from './ffprobe'
 import { libraryService } from './library'
@@ -163,6 +163,7 @@ class QueueService extends EventEmitter {
     libraryService.on('changed', () => this.reconcilePublished())
     this.reconcilePublished()
     void sweepStaging(id => this.getJob(id) !== null, id => this.controllers.has(id)).catch(() => undefined)
+    void pruneCovers(this.jobs.map(job => job.id)).catch(() => undefined)
     // Anything that was mid-flight when the app closed goes back in the queue.
     this.pumpProbes()
     this.pump()
@@ -269,6 +270,7 @@ class QueueService extends EventEmitter {
     if (target && target.stage !== 'complete') this.setStage(id, 'cancelled')
     await this.tasks.get(id)
     await cleanStaging(id, true)
+    await forgetCover(id).catch(() => undefined)
     this.jobs = this.jobs.filter((job) => job.id !== id)
     this.markChanged(true)
     this.markPersist()
@@ -369,6 +371,7 @@ class QueueService extends EventEmitter {
 
   clearFinished(): { jobs: Job[]; paused: boolean; concurrency: number } {
     this.jobs = this.jobs.filter((job) => job.stage !== 'complete' && job.stage !== 'cancelled')
+    void pruneCovers(this.jobs.map(job => job.id)).catch(() => undefined)
     this.markChanged(true)
     this.markPersist()
     return this.snapshot()
