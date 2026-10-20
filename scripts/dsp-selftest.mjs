@@ -326,6 +326,19 @@ function drumPattern(bpm, seconds, options = {}) {
   return { pcm: finalise(buffer), sampleRate }
 }
 
+/** Kick on every beat with a quieter hat on every off-beat. */
+function kickOffbeatHat(bpm, seconds, options = {}) {
+  const { sampleRate = SAMPLE_RATE, seed = 37 } = options
+  const buffer = makeBuffer(sampleRate, seconds)
+  const random = makeRandom(seed)
+  const beat = 60 / bpm
+  for (let index = 0; index * beat < seconds; index += 1) {
+    addHit(buffer, sampleRate, index * beat, { gain: 0.95, bodyHz: 58, burstSec: 0.04, thumpSec: 0.14, random })
+    addHat(buffer, sampleRate, index * beat + beat / 2, 0.3, random)
+  }
+  return { pcm: finalise(buffer), sampleRate }
+}
+
 /**
  * Double-time feel: a slow kick pattern with a fast hat layer on top, so the
  * signal genuinely contains two competing pulse rates.
@@ -885,6 +898,40 @@ async function main() {
         (a) => a.status === 'estimated' && ['exact', 'alt-exact'].includes(classifyTempoMatch(a.bpm, a.alternatives, bpm)), `rhythmic pulse ${bpm} BPM +/-2`)
       if (result.status === 'estimated') regressionTempoEstimates += 1
     }
+  }
+  // Period precision and metrical level on clean metronomic input. The old
+  // integer-lag, one-frame-wide envelope read these at 69.9 / 128.9 / 161.1 /
+  // 172.7 (clicks) and 60.1 / 169.6 / 112.6 (kick + off-beat hat).
+  for (const seconds of [14, 150]) {
+    for (const bpm of [128, 140, 160, 174]) {
+      checkRegression(nextId(), clickTrain(bpm, seconds, { seed: 811 }), 'tempo',
+        (a) => a.status === 'estimated' && Math.abs(a.bpmExact - bpm) <= 0.5, `clean click ${bpm} BPM, ${seconds} s, primary +/-0.5`)
+    }
+    for (const bpm of [85, 120, 170]) {
+      checkRegression(nextId(), kickOffbeatHat(bpm, seconds, { seed: 821 }), 'tempo',
+        (a) => a.status === 'estimated' && Math.abs(a.bpmExact - bpm) <= 0.5, `kick on beats + off-beat hat ${bpm} BPM, ${seconds} s, primary +/-0.5`)
+    }
+  }
+  // A metronomic primary should be corroborated by both periodicity views.
+  checkRegression(nextId(), clickTrain(128, 16, { seed: 13 }), 'tempo',
+    (a) => a.status === 'estimated' && !/disagree/.test(a.warning ?? ''), 'clean click 128 BPM: views agree')
+  // One non-finite sample must not turn a whole track into silence.
+  const poisonedTempo = clickTrain(120, 16, { seed: 829 })
+  poisonedTempo.pcm[5000] = Number.NaN
+  poisonedTempo.pcm[9000] = Number.POSITIVE_INFINITY
+  checkRegression(nextId(), poisonedTempo, 'tempo',
+    (a) => a.status === 'estimated' && Math.abs(a.bpm - 120) <= 2 && /non-finite/.test(a.warning ?? ''), 'NaN/Inf samples: tempo still 120 BPM with a note')
+  const poisonedKey = chordProgression([TRIADS.C, TRIADS.F, TRIADS.G, TRIADS.C], 20, { seed: 337 })
+  poisonedKey.pcm[12345] = Number.NaN
+  checkRegression(nextId(), poisonedKey, 'key',
+    (a) => a.key === 'C major' && /non-finite/.test(a.warning ?? ''), 'NaN sample: key still C major with a note')
+  // Am–F–C–G and Gm–Eb–Bb–F are the I–V–vi–IV loops of C and Bb major started
+  // on vi: the same chords in the same cyclic order. A rule that resolves the
+  // two required minor cases must not do so by turning the pop loop, the same
+  // signal up to where it starts, into the minor key.
+  for (const [chords, relativeMinor] of [[[TRIADS.C, TRIADS.G, TRIADS.Am, TRIADS.F], 'A minor'], [[TRIADS.Bb, TRIADS.F, TRIADS.Gm, TRIADS.Eb], 'G minor']]) {
+    checkRegression(nextId(), chordProgression(chords, 20, { bpm: 96, seed: 103 }), 'key',
+      (a) => a.key !== relativeMinor, `rotated I-V-vi-IV loop is not reported as ${relativeMinor}`)
   }
   const names = Object.keys(SEMITONE)
   for (let transpose = 0; transpose < 12; transpose += 1) {

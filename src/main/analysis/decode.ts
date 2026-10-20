@@ -143,6 +143,11 @@ export interface WindowPlan {
   description: string
 }
 
+/**
+ * Changing which windows are planned changes stored results without any DSP
+ * change: bump `ANALYSIS_PIPELINE` (shared/analysis) with it, so cached and
+ * library analyses from the old plan are not served as current.
+ */
 export function planWindows(durationSec: number): WindowPlan {
   // An unknown duration is planned *generously* rather than minimally. Decoding
   // past the end of a file simply yields less audio, whereas planning for a

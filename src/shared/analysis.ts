@@ -10,8 +10,21 @@
  * Version of the analysis engine. Bump this whenever the DSP changes in a way
  * that would produce different numbers for the same input; it participates in
  * the analysis cache key.
+ *
+ * sonic-dsp/4: smoothed onset envelope, fractional multi-period tempo
+ * refinement, 3:2 grouping and octave-accent checks, band-limited method
+ * cross-check, non-finite samples treated as silence.
  */
-export const ANALYSIS_ENGINE = 'sonic-dsp/3'
+export const ANALYSIS_ENGINE = 'sonic-dsp/4'
+
+/**
+ * Version of the pipeline around the DSP: which windows are decoded
+ * (`planWindows` in main/analysis/decode.ts) and how per-window results are
+ * combined (main/analysis/merge.ts). Either can change a stored result without
+ * any DSP change, so bump this when either changes. It participates in the
+ * analysis cache key and is recorded on each analysis.
+ */
+export const ANALYSIS_PIPELINE = 'windows/1+merge/1'
 
 /** Coarse status shown for a whole track. */
 export type AnalysisStatus =
@@ -97,6 +110,8 @@ export interface KeyAnalysis {
 export interface AudioAnalysis {
   /** Analyzer id + version, e.g. `sonic-dsp/1`. */
   engine: string
+  /** Window-plan and merge-rule version (`ANALYSIS_PIPELINE`); absent in older records. */
+  pipeline?: string
   /**
    * Identity of the analysed bytes (sha256 + byte length). Distinct from the
    * export integrity `fingerprint` on a library record: that one gates
@@ -118,15 +133,21 @@ export interface AudioAnalysis {
   warnings: string[]
 }
 
-/** User-requested batch refresh includes records measured by older engines. */
+/**
+ * User-requested batch refresh includes records measured by older engines or
+ * by an older window plan / merge pipeline. Records written before pipeline
+ * versions were recorded all carry an older engine, so a missing pipeline is
+ * only stale through its engine.
+ */
 export function needsAnalysisRefresh(beat: {
   missing: boolean
   fileAccessError?: string | null
   analysisStatus: AnalysisStatus
-  analysis: Pick<AudioAnalysis, 'engine'> | null
+  analysis: Pick<AudioAnalysis, 'engine' | 'pipeline'> | null
 }): boolean {
   if (beat.missing || beat.fileAccessError || beat.analysisStatus === 'queued' || beat.analysisStatus === 'analyzing') return false
   return !beat.analysis || beat.analysis.engine !== ANALYSIS_ENGINE ||
+    (beat.analysis.pipeline != null && beat.analysis.pipeline !== ANALYSIS_PIPELINE) ||
     beat.analysisStatus === 'not-analyzed' || beat.analysisStatus === 'failed' || beat.analysisStatus === 'cancelled'
 }
 
