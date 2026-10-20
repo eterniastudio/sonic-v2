@@ -16,6 +16,15 @@ export async function fileExists(target: string): Promise<boolean> {
   }
 }
 
+export async function directoryExists(target: string): Promise<boolean> {
+  try {
+    const info = await stat(target)
+    return info.isDirectory()
+  } catch {
+    return false
+  }
+}
+
 export async function pathExists(target: string): Promise<boolean> {
   try {
     await stat(target)

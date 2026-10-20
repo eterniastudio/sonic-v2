@@ -22,9 +22,15 @@ import { engineService } from './services/engine'
 let readyToQuit = false
 let closing: Promise<void> | null = null
 let shutdownWork: Promise<void> | null = null
+/** Renderers that crashed or stopped answering: their playback state cannot be flushed. */
+const unavailableRenderers = new WeakSet<BrowserWindow>()
+function rendererAvailable(window: BrowserWindow | null): window is BrowserWindow {
+  return !!window && !window.isDestroyed() && !window.webContents.isDestroyed() &&
+    !window.webContents.isCrashed() && !unavailableRenderers.has(window)
+}
 async function flushRendererPlayback(): Promise<void> {
   const window = getMainWindow()
-  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return
+  if (!rendererAvailable(window)) return
   let timer: NodeJS.Timeout | undefined
   try {
     await Promise.race([
@@ -39,15 +45,30 @@ async function flushRendererPlayback(): Promise<void> {
     ])
   } finally { if (timer) clearTimeout(timer) }
 }
+/** False only when the producer chose to keep Sonic open after a failed playback save. */
+async function flushPlaybackBeforeClose(): Promise<boolean> {
+  try {
+    await flushRendererPlayback()
+    return true
+  } catch (error) {
+    storageDiagnostic(queueFile(), { operation: 'playback-flush-failed', error: String(error) })
+    // A renderer that died or hung mid-flush can never answer; never wedge close on it.
+    if (!rendererAvailable(getMainWindow())) return true
+    const { response } = await dialog.showMessageBox({ type: 'warning', title: 'Playback position not saved', message: 'Sonic could not save the current playback position.', detail: `${String(error)}\nEverything else is still saved when Sonic closes.`, buttons: ['Keep open', 'Close anyway'], defaultId: 0, cancelId: 0 })
+    return response === 1
+  }
+}
 function requestShutdown(): void {
   if (readyToQuit || closing) return
-  beginShutdown()
-  stopPlaylists()
-  libraryService.scheduleRescan(0)
   // Defer work out of the close/Inspector callback. Never nest a flush inside another synchronous write.
   closing = new Promise<void>(resolve => setImmediate(resolve)).then(async () => {
     storageDiagnostic(queueFile(), { operation: 'shutdown-start' })
-    await flushRendererPlayback()
+    // Admission closes only once the renderer's playback state is saved or abandoned,
+    // so keeping Sonic open after a failed flush leaves it fully usable, not half-stopped.
+    if (!(await flushPlaybackBeforeClose())) return
+    beginShutdown()
+    stopPlaylists()
+    libraryService.scheduleRescan(0)
     shutdownWork ??= (async () => {
       await Promise.all([queueService.stopAll(), libraryAnalysis.shutdown(), analysisService.shutdown(), stopReexports(), localImportService.shutdown(), batchOperations.shutdown(), recoveryService.shutdown(), engineService.shutdown()])
       await settleOperations()
@@ -131,6 +152,10 @@ if (!hasSingleInstanceLock) {
   app.quit()
 } else {
   app.on('browser-window-created', (_event, window) => {
+    window.webContents.on('render-process-gone', () => unavailableRenderers.add(window))
+    window.webContents.on('did-finish-load', () => unavailableRenderers.delete(window))
+    window.on('unresponsive', () => unavailableRenderers.add(window))
+    window.on('responsive', () => unavailableRenderers.delete(window))
     window.on('close', event => { if (!readyToQuit) { event.preventDefault(); requestShutdown() } })
     window.on('query-session-end', event => { event.preventDefault(); requestShutdown() })
     window.on('session-end', () => {
