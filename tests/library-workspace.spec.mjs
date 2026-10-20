@@ -115,20 +115,20 @@ test('membership changes and deletion while away prune stale selection and inspe
   await expect.poll(checkedIds).toEqual([])
 })
 
-test('returning restores the inspector but discards unsaved metadata and annotation drafts', async () => {
+test('leaving the inspector saves valid metadata and annotation drafts exactly once', async () => {
   await card(beats[0].id).click()
   await page.getByText('Correct BPM / key', { exact: true }).click()
   await page.getByLabel('Manual BPM', { exact: true }).fill('133')
-  await page.getByLabel('Notes', { exact: true }).fill('Do not save this draft')
+  await page.getByLabel('Notes', { exact: true }).fill('Saved when leaving')
   await navigate('Download')
   await expect(scroll()).toHaveCount(0)
+  await expect.poll(async () => (await invoke('organization:snapshot')).annotations[beats[0].id]?.notes).toBe('Saved when leaving')
+  await expect.poll(async () => (await invoke('library:list')).find(beat => beat.id === beats[0].id).bpm).toBe(133)
   await navigate('Library')
   await expect(page.locator('[data-preview-state]')).toContainText(beats[0].title)
-  await expect(page.getByLabel('Notes', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('Notes', { exact: true })).toHaveValue('Saved when leaving')
   await page.getByText('Correct BPM / key', { exact: true }).click()
-  await expect(page.getByLabel('Manual BPM', { exact: true })).toHaveValue('140')
-  expect((await invoke('library:list')).find(beat => beat.id === beats[0].id).bpm).toBe(140)
-  expect((await invoke('organization:snapshot')).annotations[beats[0].id]?.notes ?? '').toBe('')
+  await expect(page.getByLabel('Manual BPM', { exact: true })).toHaveValue('133')
 })
 
 test('command palette reveals a beat excluded by retained filters and a collection', async () => {

@@ -163,6 +163,22 @@ downloadTest('incoming metadata preserves the draft and updates untouched fields
   await expect(key).toHaveValue('F# minor')
 })
 
+downloadTest('metadata is read-only once conversion starts and an interrupted edit is reported', async page => {
+  const bpm = page.getByLabel('BPM', { exact: true })
+  await bpm.fill('133')
+  await page.evaluate(() => window.download.setStage('converting'))
+  await expect(page.getByRole('note')).toContainText('Library inspector')
+  await expect(bpm).toHaveAttribute('readonly', '')
+  await expect(bpm).toHaveValue('120')
+  await expect(page.getByRole('alert')).toContainText('Not saved')
+  await page.getByLabel('Title', { exact: true }).click()
+  await page.keyboard.type('changed')
+  await page.getByRole('button', { name: 'Outside field', exact: true }).click()
+  expect(await page.evaluate(() => window.download.edits)).toEqual([])
+  await page.evaluate(() => window.download.setStage('complete'))
+  await expect(page.getByRole('note')).toContainText('in your library')
+})
+
 downloadTest('metadata failures retain the draft and a pending edit submits once', async page => {
   const bpm = page.getByLabel('BPM', { exact: true })
   await page.evaluate(() => { window.download.editMode = 'failure' })
