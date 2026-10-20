@@ -74,6 +74,22 @@ editorTest('failed and partial persistence retain the draft for a bounded retry'
   expect(await page.evaluate(() => window.editor.calls.map(call => call.patch))).toEqual([{ bpm: 133 }, { bpm: 133 }, { bpm: 133 }])
 })
 
+editorTest('leaving the editor saves a valid draft once', async page => {
+  await page.getByLabel('Manual BPM', { exact: true }).fill('133')
+  await page.getByLabel('Manual key', { exact: true }).fill('F# minor')
+  await page.getByLabel('Current record').click()
+  await expect(page.getByRole('button', { name: 'Save corrections', exact: true })).toBeDisabled()
+  expect(await page.evaluate(() => window.editor.calls)).toEqual([{ patch: { bpm: 133, key: 'F# minor' }, reset: undefined }])
+})
+
+editorTest('closing the editor saves an unsaved draft once', async page => {
+  await page.getByLabel('Manual BPM', { exact: true }).fill('137')
+  await page.evaluate(() => window.editor.hide())
+  await expect(page.getByLabel('Manual BPM', { exact: true })).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => window.editor.calls)).toEqual([{ patch: { bpm: 137 }, reset: undefined }])
+  expect(JSON.parse(await page.getByLabel('Current record').textContent()).bpm).toBe(137)
+})
+
 editorTest('validation and intentional clearing use canonical shared rules', async page => {
   await page.getByLabel('Manual key', { exact: true }).fill('not a key')
   await page.getByRole('button', { name: 'Save corrections', exact: true }).click()

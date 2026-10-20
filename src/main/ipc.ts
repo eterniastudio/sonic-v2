@@ -351,14 +351,20 @@ export function registerIpcHandlers(): void {
   handle('queue:reorder', (ids) => queueService.reorder(ids))
   handle('queue:updateJob', (id, patch) => queueService.updateJob(id, patch))
   handle('queue:clearFinished', () => queueService.clearFinished())
+  // A library rename or removal outdates the job's recorded path; the record is authoritative.
+  const jobOutput = (id: string): string | null => {
+    const job = queueService.getJob(id)
+    if (!job) return null
+    return (job.libraryId ? libraryService.get(job.libraryId)?.filePath : null) ?? job.outputPath
+  }
   handle('queue:revealOutput', async (id) => {
-    const target = queueService.getJob(id)?.outputPath
+    const target = jobOutput(id)
     if (!target || !(await fileExists(target))) return false
     shell.showItemInFolder(target)
     return true
   })
   handle('queue:openOutput', async (id) => {
-    const target = queueService.getJob(id)?.outputPath
+    const target = jobOutput(id)
     return target && await fileExists(target) ? (await shell.openPath(target)).length === 0 : false
   })
 

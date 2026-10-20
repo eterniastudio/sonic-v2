@@ -7,17 +7,17 @@ import { applyFinalEdit, adoptAnalyzed, buildAudioEvidence, clearOverride, creat
 import { analyzedValuesFrom, type AudioAnalysis } from '@shared/analysis'
 import { analysisService, type AnalysisProgress } from '../analysis/service'
 import { extractVideoUrls, parseVideoUrl } from '@shared/url'
-import { JsonStore } from '../lib/jsonStore'
+import { JsonStore, storageEvents } from '../lib/jsonStore'
 import { createId } from '../lib/id'
 import { sha256File } from '../lib/fsx'
-import { acquireAudio, cleanStaging } from './acquire'
+import { acquireAudio, cleanStaging, sweepStaging } from './acquire'
 import { fetchCover } from './cover'
 import { engineService } from './engine'
 import { probeMediaFile, readEmbeddedMetadata, tagsToMetadata } from './ffprobe'
 import { libraryService } from './library'
 import { queueFile, stagingDir } from './paths'
 import { probeUrl } from './probe'
-import { buildTagContext, publishExport } from './publish'
+import { buildTagContext, PendingPublicationError, publishExport } from './publish'
 import { settingsService } from './settings'
 import { sourceExtensionFor, transcode } from './transcode'
 
@@ -30,6 +30,9 @@ interface PersistedQueue {
 
 const TERMINAL: JobStage[] = ['complete', 'failed', 'cancelled']
 const NON_RESUMABLE: JobStage[] = ['downloading', 'analyzing', 'converting', 'tagging', 'publishing']
+/** From conversion on, the reviewed metadata is already in the output being written. */
+const METADATA_LOCKED: JobStage[] = ['converting', 'tagging', 'publishing', 'complete']
+const PENDING_PUBLICATION = 'Export saved; its library record is waiting for Retry saving.'
 
 /** Fields a metadata draft could carry before per-field overrides existed. */
 const KNOWN_OVERRIDABLE = new Set<string>([
@@ -155,6 +158,11 @@ class QueueService extends EventEmitter {
     this.concurrency = persisted.concurrency
     this.jobs = structuredClone(persisted.jobs)
     libraryService.scheduleRescan(settingsService.get().rescanIntervalMs)
+    // A pending library record that is retried later completes its job in place.
+    storageEvents.on('changed', () => this.reconcilePublished())
+    libraryService.on('changed', () => this.reconcilePublished())
+    this.reconcilePublished()
+    void sweepStaging(id => this.getJob(id) !== null, id => this.controllers.has(id)).catch(() => undefined)
     // Anything that was mid-flight when the app closed goes back in the queue.
     this.pumpProbes()
     this.pump()
@@ -276,6 +284,7 @@ class QueueService extends EventEmitter {
 
     for (const job of targets) {
       if (!['ready', 'queued', 'failed'].includes(job.stage) || this.controllers.has(job.id) || this.probing.has(job.id)) continue
+      if (this.settlePublished(job)) continue
       this.setStage(job.id, 'queued', { progress: 0, error: null, message: 'Waiting for a worker…' })
     }
 
@@ -292,6 +301,7 @@ class QueueService extends EventEmitter {
   retry(id: string): { jobs: Job[]; paused: boolean; concurrency: number } {
     const job = this.getJob(id)
     if (!job || this.controllers.has(id) || this.probing.has(id)) return this.snapshot()
+    if (this.settlePublished(job)) return this.snapshot()
 
     const needsProbe = !job.sourceTitle
     this.setStage(id, needsProbe ? 'probing' : 'queued', {
@@ -375,6 +385,11 @@ class QueueService extends EventEmitter {
       next.presetId = patch.presetId
     }
 
+    if ((patch.metadataEdit || patch.clearOverrides?.length || patch.adoptAnalyzed?.length) &&
+      (METADATA_LOCKED.includes(job.stage) || job.libraryId)) {
+      throw new Error('Metadata is locked once conversion starts. Edit the finished track from the Library inspector.')
+    }
+
     if (patch.metadataEdit) {
       next.metadata = applyFinalEdit(job.metadata, patch.metadataEdit.field, patch.metadataEdit.value)
       next.revision = job.revision + 1
@@ -396,6 +411,28 @@ class QueueService extends EventEmitter {
     this.markChanged(true)
     this.markPersist()
     return job
+  }
+
+  /** Settle a failed job whose export already reached disk. True when it must not run again. */
+  private settlePublished(job: Job): boolean {
+    if (job.stage !== 'failed' || !job.libraryId || !job.outputPath) return false
+    if (libraryService.get(job.libraryId)) {
+      this.setStage(job.id, 'complete', { progress: 1, error: null, message: path.basename(job.outputPath) })
+      return true
+    }
+    if (libraryService.pendingRevision() !== null) {
+      this.setStage(job.id, 'failed', { message: PENDING_PUBLICATION, error: 'Retry saving the library first; the exported file is kept and will not be downloaded again.' })
+      return true
+    }
+    // The pending record was discarded; only then is a fresh export the way forward.
+    Object.assign(job, { outputPath: null, libraryId: null })
+    return false
+  }
+
+  private reconcilePublished(): void {
+    for (const job of this.jobs) {
+      if (job.stage === 'failed' && job.libraryId && job.outputPath && libraryService.get(job.libraryId)) this.settlePublished(job)
+    }
   }
 
   // ------------------------------------------------------------------- worker
@@ -464,10 +501,15 @@ class QueueService extends EventEmitter {
       await this.process(id, signal)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (signal.aborted) {
+      if (error instanceof PendingPublicationError) {
+        // The files exist; a retry must finish this record, not export a copy.
+        this.setStage(id, 'failed', { error: message, message: PENDING_PUBLICATION, speed: null, eta: null,
+          outputPath: error.outputPath, libraryId: error.beatId })
+        this.reconcilePublished()
+      } else if (signal.aborted) {
         this.setStage(id, 'cancelled', { message: 'Cancelled', speed: null, eta: null })
       } else {
-        this.setStage(id, 'failed', { error: message, message, speed: null, eta: null })
+        this.setStage(id, 'failed', { error: message, message, speed: null, eta: null, outputPath: null, libraryId: null })
       }
       await cleanStaging(id)
     } finally {
@@ -499,6 +541,9 @@ class QueueService extends EventEmitter {
         return
       }
     }
+
+    // Fail before downloading when the export could not be recorded.
+    libraryService.assertWritable()
 
     // 1 ─ Download the best audio stream into private staging.
     const acquired = await acquireAudio(id, startJob.url, {

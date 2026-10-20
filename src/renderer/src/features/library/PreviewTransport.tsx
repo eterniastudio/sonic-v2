@@ -262,6 +262,27 @@ function AnalyzeButton({ beat }: { beat: LibraryBeat }): ReactNode {
   )
 }
 
+type CorrectionDraft = { bpm: string | null; key: string | null }
+
+/** Validates a typed draft into the patch the library accepts. */
+function correctionPatch(draft: CorrectionDraft): { patch: { bpm?: number | null; key?: string | null } } | { field: 'bpm' | 'key'; error: string } {
+  const patch: { bpm?: number | null; key?: string | null } = {}
+  if (draft.bpm !== null) {
+    const value = draft.bpm.trim()
+    if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < MIN_BPM || Number(value) > MAX_BPM)) {
+      return { field: 'bpm', error: `Tempo must be ${MIN_BPM}–${MAX_BPM} BPM.` }
+    }
+    patch.bpm = value === '' ? null : Number(value)
+  }
+  if (draft.key !== null) {
+    const value = draft.key.trim()
+    const parsed = parseKeyString(value)
+    if (value !== '' && !parsed) return { field: 'key', error: 'Enter a key with its mode (for example F# minor) or a Camelot code (11A).' }
+    patch.key = parsed?.key ?? null
+  }
+  return { patch }
+}
+
 export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
   const update = useApp(state => state.updateBeatMetadata)
   const editorId = useId()
@@ -274,7 +295,7 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
   // null means untouched; an empty string is an intentional manual clearing.
   // Read untouched values directly from the latest record so an analysis update
   // cannot freeze the other field or accidentally turn it into an override.
-  const [draft, setDraft] = useState<{ bpm: string | null; key: string | null }>({ bpm: null, key: null })
+  const [draft, setDraft] = useState<CorrectionDraft>({ bpm: null, key: null })
   const bpm = draft.bpm ?? (beat.bpm == null ? '' : String(beat.bpm))
   const key = draft.key ?? beat.key ?? ''
   const dirty = draft.bpm !== null || draft.key !== null
@@ -286,28 +307,36 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
   const analysis = beat.analysis?.key
   const candidates = [...new Set([analysis?.key, ...(analysis?.alternatives.map(candidate => candidate.key) ?? [])]
     .filter((candidate): candidate is string => Boolean(candidate)))].slice(0, 4)
-  const save = async (action?: { kind: 'reset' | 'measured'; field: 'bpm' | 'key' }): Promise<void> => {
+  const mounted = useRef(true)
+  const latest = useRef({ draft, update })
+  useEffect(() => { latest.current = { draft, update } })
+  useEffect(() => {
+    mounted.current = true
+    const beatId = beat.id
+    // Selecting another track or closing the inspector saves a valid draft; an
+    // in-flight save already carries it, and an invalid one is reported.
+    return () => {
+      mounted.current = false
+      const { draft: unsaved, update: commit } = latest.current
+      if (pendingRef.current || (unsaved.bpm === null && unsaved.key === null)) return
+      latest.current = { ...latest.current, draft: { bpm: null, key: null } }
+      const result = correctionPatch(unsaved)
+      if ('error' in result) { toast({ kind: 'error', title: 'BPM / key correction was not saved', description: result.error }); return }
+      void commit(beatId, result.patch).catch(failure => toast({ kind: 'error', title: 'BPM / key correction was not saved', description: String(failure) }))
+    }
+  }, [beat.id])
+  const save = async (action?: { kind: 'reset' | 'measured'; field: 'bpm' | 'key' }, quiet = false): Promise<void> => {
     if (pendingRef.current) return
     setInvalidField(null); setFeedback('')
-    const patch: { bpm?: number | null; key?: string | null } = {}
-    if (!action && draft.bpm !== null) {
-      const value = draft.bpm.trim()
-      if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < MIN_BPM || Number(value) > MAX_BPM)) {
-        setError(`Tempo must be ${MIN_BPM}–${MAX_BPM} BPM.`)
-        setInvalidField('bpm'); bpmRef.current?.focus()
+    let patch: { bpm?: number | null; key?: string | null } = {}
+    if (!action) {
+      const result = correctionPatch(draft)
+      if ('error' in result) {
+        setError(result.error); setInvalidField(result.field)
+        if (!quiet) (result.field === 'bpm' ? bpmRef : keyRef).current?.focus()
         return
       }
-      patch.bpm = value === '' ? null : Number(value)
-    }
-    if (!action && draft.key !== null) {
-      const value = draft.key.trim()
-      const parsed = parseKeyString(value)
-      if (value !== '' && !parsed) {
-        setError('Enter a key with its mode (for example F# minor) or a Camelot code (11A).')
-        setInvalidField('key'); keyRef.current?.focus()
-        return
-      }
-      patch.key = parsed?.key ?? null
+      patch = result.patch
     }
     if (action?.kind === 'measured') {
       const measured = action.field === 'bpm' ? bpmDecision.measuredValue : keyDecision.measuredValue
@@ -325,16 +354,19 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
       // A rejected operation can still have committed the library before an
       // optional output failed. Keep the submitted draft and explain the error;
       // do not infer success from a coincidentally matching incoming value.
-      setError(String(failure))
+      if (mounted.current) setError(String(failure))
+      else toast({ kind: 'error', title: 'BPM / key correction was not saved', description: String(failure) })
     } finally { pendingRef.current = false; setPending(false) }
   }
   return <details className="mt-3 border-t border-line pt-3 text-[11px] text-fg-muted"><summary className="cursor-pointer font-medium marker:text-fg-subtle">Correct BPM / key</summary>
-    <fieldset disabled={pending} aria-busy={pending || undefined} onKeyDown={event => {
+    <fieldset disabled={pending} aria-busy={pending || undefined} onBlur={event => {
+      if (dirty && !event.currentTarget.contains(event.relatedTarget as Node | null)) void save(undefined, true)
+    }} onKeyDown={event => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && dirty) { event.preventDefault(); void save() }
     }} className="mt-3 grid grid-cols-2 gap-2 [&_button]:rounded-[6px] [&_button]:px-2 [&_button]:py-1.5 [&_button]:text-[10px] [&_button]:transition-colors [&_button:disabled]:opacity-40">
       <label className="text-[10px] text-fg-subtle">BPM<input ref={bpmRef} inputMode="decimal" aria-label="Manual BPM" aria-invalid={invalidField === 'bpm' || undefined} aria-describedby={invalidField === 'bpm' ? `${editorId}-error` : undefined} className="mt-1 h-8 w-full rounded-[6px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={bpm} onChange={event => { setDraft(current => ({ ...current, bpm: event.target.value })); setFeedback(''); setInvalidField(null); setError('') }} /></label>
       <label className="text-[10px] text-fg-subtle">Key<input ref={keyRef} aria-label="Manual key" aria-invalid={invalidField === 'key' || undefined} aria-describedby={`${editorId}-key-help${invalidField === 'key' ? ` ${editorId}-error` : ''}`} className="mt-1 h-8 w-full rounded-[6px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={key} onChange={event => { setDraft(current => ({ ...current, key: event.target.value })); setFeedback(''); setInvalidField(null); setError('') }} /></label>
-      <p id={`${editorId}-key-help`} className="col-span-2 text-[10px] leading-relaxed text-fg-subtle">Enter a key and mode (F# minor), or a Camelot code (11A). Ctrl+Enter saves your corrections.</p>
+      <p id={`${editorId}-key-help`} className="col-span-2 text-[10px] leading-relaxed text-fg-subtle">Enter a key and mode (F# minor), or a Camelot code (11A). Ctrl+Enter saves; leaving this editor or the track also saves.</p>
       {candidates.length ? <section aria-label="Detected key candidates" className="col-span-2 space-y-2 rounded-[6px] border border-line p-2">
         <p className="text-[11px] text-fg">{analysis?.status === 'estimated' ? `Audio suggests ${analysis.key}` : 'Key needs a listening check'}</p>
         <p className="text-[10px] leading-relaxed text-fg-subtle">Choose a candidate to try, then save. Related keys can share notes; these are suggestions, not certainty.</p>

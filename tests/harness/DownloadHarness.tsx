@@ -27,7 +27,8 @@ export function DownloadHarness() {
       editMode: 'success',
       releaseQueue: () => {},
       releaseEdit: () => {},
-      revise: (values: { bpm?: number; key?: string }) => setJob(current => ({ ...current, metadata: { ...current.metadata, final: { ...current.metadata.final, ...values } } }))
+      revise: (values: { bpm?: number; key?: string }) => setJob(current => ({ ...current, metadata: { ...current.metadata, final: { ...current.metadata.final, ...values } } })),
+      setStage: (stage: Job['stage']) => setJob(current => ({ ...current, stage }))
     }
     ;(window as unknown as { download: typeof controls }).download = controls
     useApp.setState({
