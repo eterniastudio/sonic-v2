@@ -29,11 +29,11 @@ test.beforeEach(async ({}, info) => {
       metadata: { declared: { title: `Bulk job ${index}` } } }))
     await writeFile(path.join(root, 'queue.json'), JSON.stringify(queue))
   }
-  // With a long persisted queue the inspector transport's first main-process
-  // evaluate is collected before it settles (unchanged code reproduces it), so
-  // that launch goes through the CDP transport the lifecycle helper provides.
+  // With a large persisted library or queue the inspector transport's first
+  // main-process evaluate can be collected before it settles (unchanged code
+  // reproduces it), so these launches use the lifecycle helper's CDP transport.
   const transport = process.env.SONIC_TEST_TRANSPORT
-  if (longQueue) process.env.SONIC_TEST_TRANSPORT = 'cdp'
+  process.env.SONIC_TEST_TRANSPORT = 'cdp'
   try { app = await launchOwnedApp(root, info) } finally {
     if (transport === undefined) delete process.env.SONIC_TEST_TRANSPORT
     else process.env.SONIC_TEST_TRANSPORT = transport

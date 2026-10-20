@@ -138,5 +138,7 @@ On the Linux review machine, with a virtual display and the Electron sandbox dis
 - `npm run test:key` passes.
 - `npm run build` passes.
 
-The harness Playwright specs pass. The full-app specs need Windows binaries and were
-run with Linux stand-ins, so Windows CI is the authoritative check.
+All 16 Playwright specs ran with Linux stand-ins for the Windows FFmpeg and PowerShell
+binaries: 96 of 98 tests pass. The two failures are the Windows-only native window-control
+and OS pointer tests, which also fail on the previous version under Linux. Windows CI is
+the authoritative check.

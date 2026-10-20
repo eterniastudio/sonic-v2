@@ -287,7 +287,9 @@ export function LibraryView(): ReactNode {
     if (ids.length) playQueue(ids, ids[0], `${auditionLabel} shortlist`)
   }
 
-  const selectionScope = `${activeScope}\u0000${activeCollection?.type === 'smart' ? JSON.stringify(activeCollection.rules) : ''}\u0000${searchQuery}\u0000${[...bands].sort()}\u0000${[...formats].sort()}\u0000${fileFilter}\u0000${reviewFilter}\u0000${bpmFilter}\u0000${bpmTolerance}\u0000${includeHalfDouble}\u0000${keyFilter}`
+  // Keyed by the typed query, not the deferred one, so a search change clears the
+  // selection in the same commit as the keystroke rather than a render later.
+  const selectionScope = `${activeScope}\u0000${activeCollection?.type === 'smart' ? JSON.stringify(activeCollection.rules) : ''}\u0000${query}\u0000${[...bands].sort()}\u0000${[...formats].sort()}\u0000${fileFilter}\u0000${reviewFilter}\u0000${bpmFilter}\u0000${bpmTolerance}\u0000${includeHalfDouble}\u0000${keyFilter}`
   const scrollRef = useRef<HTMLDivElement>(null)
   const restoredScroll = useRef(false)
   useLayoutEffect(() => {
