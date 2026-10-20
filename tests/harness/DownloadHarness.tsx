@@ -36,6 +36,8 @@ export function DownloadHarness() {
         controls.queued.push(urls)
         if (controls.queueMode === 'barrier') await new Promise<void>(resolve => { controls.releaseQueue = resolve })
         if (controls.queueMode === 'failure') throw new Error('Queue write failed')
+        useApp.setState(state => ({ queue: { ...state.queue, jobs: [...state.queue.jobs,
+          ...urls.map(url => ({ ...fixture(), id: `queued-${state.queue.jobs.length}-${url}`, url }))] } }))
       },
       updateJob: async (_id, patch) => {
         controls.edits.push(patch)

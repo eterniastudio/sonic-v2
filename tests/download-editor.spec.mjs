@@ -50,7 +50,8 @@ downloadTest('SoundCloud and YouTube links can be queued together', async page =
   await expect(page.getByText('2 ready', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
   await expect(input).toHaveValue('')
-  expect(await page.evaluate(() => window.download.queued)).toEqual([[links]])
+  // The parsed links are queued, never the raw paste (main caps each entry at 4,096 characters).
+  expect(await page.evaluate(() => window.download.queued)).toEqual([['https://soundcloud.com/producer/beat', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ']])
   await input.fill('https://soundcloud.com/producer/sets/beats')
   await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeDisabled()
 })
