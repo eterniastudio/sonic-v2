@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 
 const badge = cva(
-  'inline-flex items-center gap-1 rounded-[5px] border font-medium whitespace-nowrap nums',
+  'inline-flex items-center gap-1 rounded-[2px] border font-medium whitespace-nowrap nums',
   {
     variants: {
       tone: {
@@ -15,8 +15,8 @@ const badge = cva(
         outline: 'border-line-strong bg-transparent text-fg-muted'
       },
       size: {
-        sm: 'h-5 px-1.5 text-[10.5px]',
-        md: 'h-6 px-2 text-[11.5px]'
+        sm: 'h-5 px-1.5 text-[12px]',
+        md: 'h-6 px-2 text-[12px]'
       }
     },
     defaultVariants: { tone: 'neutral', size: 'md' }

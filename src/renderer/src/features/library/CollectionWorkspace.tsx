@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { ProvenanceLegend } from '@/components/audio/Provenance'
 import type { LibraryBeat, PresetId } from '@shared/domain'
 import { FAVORITES_COLLECTION_ID, type LibraryCollection, type OrganizationCommand, type OrganizationSnapshot, type SmartCollectionRule } from '@shared/organization'
 import type { BatchSession } from '@shared/batch'
@@ -114,8 +115,8 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
       </div>
     </nav>
 
-    {selectedCount ? <div role="toolbar" aria-label="Selected beats" className="flex flex-wrap items-center gap-1.5 rounded-[6px] bg-surface-2 px-2 py-1">
-      <strong className="mr-1 shrink-0 text-[11px] font-medium text-fg nums">{selectedCount} selected</strong>
+    {selectedCount ? <div role="toolbar" aria-label="Selected beats" className="flex flex-wrap items-center gap-1.5 rounded-[2px] bg-surface-2 px-2 py-1">
+      <strong className="mr-1 shrink-0 text-[12px] font-medium text-fg nums">{selectedCount} selected</strong>
       <Button size="sm" aria-label="Play selected tracks" variant="primary" leading={<Play className="fill-current" />} onClick={onPlaySelected}>Play selected</Button>
       <IconButton label="Play displayed results" title="Play displayed results" size="icon-sm" disabled={!matchingIds.length} onClick={onPlayDisplayed}><Library /></IconButton>
       <span className="mx-1 h-4 w-px bg-line-strong" />
@@ -130,14 +131,15 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
       <span className="flex-1" />
       {selectedCount !== matchingIds.length ? <IconButton label={`Select all ${matchingIds.length} matching`} title={`Select all ${matchingIds.length} matching`} size="icon-sm" onClick={selectAll}><CheckSquare2 /></IconButton> : null}
       <IconButton label="Clear selection" title="Clear selection" size="icon-sm" onClick={clearSelection}><X /></IconButton>
-      {selectedCount > 1000 ? <span className="w-full text-[10px] text-fg-muted">Analyze/export: 1,000 max{selectedCount > 5000 ? '; annotations: 5,000 max' : ''}. Narrow the selection.</span> : null}
-    </div> : <div className="flex items-center gap-2 text-[11px] text-fg-subtle">
+      {selectedCount > 1000 ? <span className="w-full text-[12px] text-fg-muted">Analyze/export: 1,000 max{selectedCount > 5000 ? '; annotations: 5,000 max' : ''}. Narrow the selection.</span> : null}
+    </div> : <div className="flex flex-wrap items-center gap-2 text-[12px] text-fg-subtle">
       <span className="mr-1 text-fg-muted nums">{matchingIds.length} track{matchingIds.length === 1 ? '' : 's'}</span>
       <Button size="sm" variant="ghost" aria-label="Play displayed results" leading={<Play />} disabled={!matchingIds.length} onClick={onPlayDisplayed}>Play all</Button>
       <span className="flex-1" />
+      <ProvenanceLegend className="order-last w-full pb-1 pl-1 xl:order-none xl:mr-2 xl:w-auto xl:pb-0" />
       {matchingIds.length ? <Button size="sm" variant="ghost" aria-label={`Select all ${matchingIds.length} matching`} onClick={selectAll}>Select all</Button> : null}
     </div>}
-    {active?.type === 'manual' && manualSort && active.beatIds.length > 1 ? <div className="flex flex-wrap items-center gap-2 px-1 text-[11px] text-fg-subtle">
+    {active?.type === 'manual' && manualSort && active.beatIds.length > 1 ? <div className="flex flex-wrap items-center gap-2 px-1 text-[12px] text-fg-subtle">
       <span>Collection order</span>
       <Button size="sm" variant="ghost" disabled={selectedCount !== 1 || active.beatIds.indexOf(selected[0]) <= 0}
         onClick={() => void run(() => moveMember(active, selected[0], -1, command), false)}>Move selected up</Button>
@@ -145,7 +147,7 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
         onClick={() => void run(() => moveMember(active, selected[0], 1, command), false)}>Move selected down</Button>
     </div> : null}
 
-    {batch ? <div role="status" className="rounded-[12px] border border-line bg-surface p-3 text-[12px] text-fg-muted">
+    {batch ? <div role="status" className="rounded-[2px] border border-line bg-surface p-3 text-[12px] text-fg-muted">
       <strong className="text-fg">Batch {batch.request.action}: {batch.status}</strong>{' · '}
       {counts?.completed} completed · {counts?.pendingSave} pending save · {counts?.failed} failed · {counts?.skipped} skipped · {counts?.cancelled} cancelled
       <div className="mt-2 flex flex-wrap gap-2">
@@ -210,7 +212,7 @@ function modeTitle(mode: Mode): string {
 
 function SmartRuleEditor({ rules, update }: { rules: SmartCollectionRule; update: (patch: Partial<SmartCollectionRule>) => void }): ReactNode {
   const number = (text: string): number | undefined => text.trim() ? Number(text) : undefined
-  return <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-fg-muted">
+  return <div className="mt-3 grid grid-cols-2 gap-2 text-[12px] text-fg-muted">
     <label className="col-span-2">Search text<Input aria-label="Smart search text" value={rules.query ?? ''} onChange={event => update({ query: event.target.value })} /></label>
     <label>Minimum BPM<Input aria-label="Smart minimum BPM" type="number" value={rules.bpmMin ?? ''} onChange={event => update({ bpmMin: number(event.target.value) })} /></label>
     <label>Maximum BPM<Input aria-label="Smart maximum BPM" type="number" value={rules.bpmMax ?? ''} onChange={event => update({ bpmMax: number(event.target.value) })} /></label>

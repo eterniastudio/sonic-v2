@@ -96,13 +96,13 @@ export function Segmented<T extends string>({
           onClick={() => onChange(option.value)}
           className={cn(
             't-tab inline-flex items-center justify-center gap-1.5 font-medium',
-            size === 'sm' ? 'text-[12px]' : 'text-[12.5px]',
+            size === 'sm' ? 'text-[12px]' : 'text-[13.5px]',
             fluid && 'flex-1'
           )}
         >
           {option.icon ? <span className="[&>svg]:size-3.5">{option.icon}</span> : null}
           <span>{option.label}</span>
-          {option.suffix ? <span className="text-[11px] opacity-70 nums">{option.suffix}</span> : null}
+          {option.suffix ? <span className="text-[12px] opacity-70 nums">{option.suffix}</span> : null}
         </button>
       ))}
     </div>

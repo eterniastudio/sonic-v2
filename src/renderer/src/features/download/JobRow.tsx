@@ -1,5 +1,5 @@
 import { memo, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, CircleAlert, FolderOpen, Music2, Pause, Play, RefreshCw, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, CircleAlert, FolderOpen, Pause, Play, RefreshCw, Trash2, X } from 'lucide-react'
 import type { Job, JobStage, PresetId } from '@shared/domain'
 import { formatBpm, formatDuration } from '@shared/format'
 import { PRESETS } from '@shared/presets'
@@ -89,22 +89,22 @@ export const JobRow = memo(function JobRow({ job, selected, onSelect }: { job: J
 
   return (
     <>
-      <div data-job-id={job.id} className={cn('group relative transition-colors duration-[var(--duration-quick)]', selected ? 'bg-surface-3/65' : 'hover:bg-surface-2')}>
+      <div data-job-id={job.id} className={cn('group relative transition-colors duration-[var(--duration-quick)]', selected ? 'bg-surface-2 shadow-[inset_1px_0_0_var(--sonic-accent)]' : 'hover:bg-surface-2')}>
         <div className="flex min-h-[68px] items-center gap-3.5 px-2 py-2" onClick={() => onSelect(job.id)}>
-          <div className="relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-[3px] bg-surface-2 text-fg-subtle">
-            <Music2 className="size-3.5" />
+          <div className="relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-vinyl">
+            <span aria-hidden="true" className="grid size-[42%] place-items-center rounded-full bg-label"><span className="size-[3px] rounded-full bg-vinyl" /></span>
             {cover ? <img src={cover} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : null}
           </div>
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
+              <h3 className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-fg">
                 <button type="button" className="block w-full truncate text-left focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-fg-muted" onClick={(event) => { event.stopPropagation(); onSelect(job.id) }} aria-pressed={selected} title="Inspect metadata">
                   {metadata.title || job.sourceTitle || 'Untitled'}
                 </button>
               </h3>
               <Tooltip label={statusDetail}>
-                <span className={cn('flex max-w-[120px] shrink-0 items-center gap-1 text-[11.5px]', job.stage === 'failed' ? 'text-danger' : 'text-fg-subtle')}>
+                <span className={cn('flex max-w-[120px] shrink-0 items-center gap-1 text-[12px]', job.stage === 'failed' ? 'text-danger' : 'text-fg-subtle')}>
                   {job.stage === 'failed' ? <CircleAlert className="size-3 shrink-0" /> : job.stage === 'complete' ? <Check className="size-3 shrink-0" /> : null}
                   <span className="truncate">{STAGE_LABEL[job.stage]}</span>
                   {showPercent ? <span className="shrink-0 nums">{Math.round(job.progress * 100)}%</span> : null}
@@ -112,7 +112,7 @@ export const JobRow = memo(function JobRow({ job, selected, onSelect }: { job: J
                 </span>
               </Tooltip>
             </div>
-            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11.5px] text-fg-subtle">
+            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[12px] text-fg-subtle">
               <span className="min-w-0 flex-1 truncate" title={detail}>{detail}</span>
               {mismatches > 0 ? <Tooltip label="Source disagrees with audio"><CircleAlert className="size-3 shrink-0 text-warning" aria-label="Source disagrees with audio" /></Tooltip> : null}
               <Dropdown
@@ -123,7 +123,7 @@ export const JobRow = memo(function JobRow({ job, selected, onSelect }: { job: J
                   <button
                     type="button"
                     onClick={(event) => { event.stopPropagation(); toggle() }}
-                    className="flex h-5 shrink-0 items-center gap-0.5 rounded-[3px] px-1 text-[11px] text-fg-muted transition-colors hover:bg-surface-3 hover:text-fg"
+                    className="flex h-5 shrink-0 items-center gap-0.5 rounded-[2px] px-1 text-[12px] text-fg-muted transition-colors hover:bg-surface-3 hover:text-fg"
                   >
                     {preset.short}<ChevronDown className="size-2.5" />
                   </button>
@@ -192,8 +192,8 @@ export const JobRow = memo(function JobRow({ job, selected, onSelect }: { job: J
 export function QueueEmptyState({ children }: { children: ReactNode }): ReactNode {
   return (
     <div className="px-2 py-8 text-center">
-      <p className="text-[13px] text-fg-muted">Nothing queued</p>
-      <p className="mt-1 text-[11.5px] text-fg-subtle">{children}</p>
+      <p className="text-[13.5px] text-fg-muted">Nothing queued</p>
+      <p className="mt-1 text-[12px] text-fg-subtle">{children}</p>
     </div>
   )
 }

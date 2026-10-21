@@ -43,7 +43,7 @@ export function Wordmark({ className }: { className?: string }): ReactNode {
   return (
     <span className={cn('flex items-center gap-1.5', className)}>
       <Logo size={23} />
-      <span className="text-[14px] font-semibold tracking-[-0.035em] text-fg">
+      <span className="label-type text-[17px] leading-none text-fg">
         Sonic
       </span>
     </span>

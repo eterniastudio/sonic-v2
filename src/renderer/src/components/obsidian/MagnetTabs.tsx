@@ -107,7 +107,7 @@ export function MagnetTabs({
       className={cn(
         variant === 'segmented'
           ? 't-tabs'
-          : 'relative inline-flex items-center gap-1 rounded-[12px] border border-line bg-surface-2 p-1',
+          : 'relative inline-flex items-center gap-1 rounded-[2px] border border-line bg-surface-2 p-1',
         className
       )}
     >
@@ -115,7 +115,7 @@ export function MagnetTabs({
         aria-hidden
         className={variant === 'segmented'
           ? 't-tabs-pill !transition-none'
-          : 'pointer-events-none absolute top-1 bottom-1 rounded-[9px] bg-surface shadow-panel'}
+          : 'pointer-events-none absolute top-1 bottom-1 rounded-[2px] bg-surface shadow-panel'}
         animate={{ left: indicator.left, width: indicator.width }}
         transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 520, damping: 38, mass: 0.7 }}
       />
@@ -149,8 +149,8 @@ export function MagnetTabs({
             onBlur={() => setHovered(null)}
             className={cn(
               variant === 'segmented'
-                ? 't-tab inline-flex items-center justify-center gap-1.5 text-[12.5px] font-medium'
-                : 'relative z-10 inline-flex items-center gap-1.5 rounded-[9px] px-3 py-1.5 text-[12.5px] font-medium',
+                ? 't-tab inline-flex items-center justify-center gap-1.5 text-[13.5px] font-medium'
+                : 'relative z-10 inline-flex items-center gap-1.5 rounded-[2px] px-3 py-1.5 text-[13.5px] font-medium',
               variant === 'standard' && 'transition-colors duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
               variant === 'standard' && (selected ? 'text-fg' : 'text-fg-muted hover:text-fg')
             )}

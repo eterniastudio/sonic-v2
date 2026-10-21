@@ -232,27 +232,27 @@ export function ImportAudio(): ReactNode {
             <Button leading={<FileAudio2 />} onClick={() => { void begin('files') }} disabled={busy}>Choose files</Button>
             <Button variant="secondary" leading={<FolderOpen />} onClick={() => { void begin('folder') }} disabled={busy}>Choose folder</Button>
           </div>
-          <div className="flex items-center gap-2 text-[12.5px] text-fg-muted">
+          <div className="flex items-center gap-2 text-[13.5px] text-fg-muted">
             <Switch checked={recursive} onChange={setRecursive} label="Include subfolders" />
             Include subfolders when importing a folder
           </div>
-          <p className="text-[11.5px] leading-relaxed text-fg-subtle">
+          <p className="text-[12px] leading-relaxed text-fg-subtle">
             Sonic references these files in place. Metadata edits stay in Sonic; use Export prepared copy to create a new audio file with the corrected name and tags.
           </p>
         </> : <>
-          <div aria-live="polite" className="text-[12.5px] text-fg-muted">
+          <div aria-live="polite" className="text-[13.5px] text-fg-muted">
             {phase === 'scanning' ? `Scanning ${review.scanned} file${review.scanned === 1 ? '' : 's'}…` :
               phase === 'importing' ? `Adding selected audio… ${totals.imported} completed` :
               phase === 'ready' ? `${totals.ready} ready · ${totals.indexed} already indexed · ${totals.failed} unavailable` :
               `${totals.imported} imported · ${totals.skipped + totals.indexed} skipped · ${totals.failed} unavailable`}
           </div>
           {totals.duplicate > 0 && phase === 'ready' ?
-            <p className="flex items-center gap-1.5 text-[11.5px] text-warning"><TriangleAlert className="size-3.5" />
+            <p className="flex items-center gap-1.5 text-[12px] text-warning"><TriangleAlert className="size-3.5" />
               {totals.duplicate} possible content duplicate{totals.duplicate === 1 ? '' : 's'} left unselected. You can choose to keep separate records.
             </p> : null}
-          <div className="max-h-[330px] space-y-1 overflow-y-auto rounded-[10px] border border-line bg-surface-2 p-2">
+          <div className="max-h-[330px] space-y-1 overflow-y-auto rounded-[2px] border border-line bg-surface-2 p-2">
             {review.items.length === 0 ? <p className="px-2 py-3 text-[12px] text-fg-subtle">No audio candidates found yet.</p> :
-              visibleItems.map(item => <label key={item.id} className="flex items-start gap-2.5 rounded-[8px] px-2 py-2 hover:bg-surface-3">
+              visibleItems.map(item => <label key={item.id} className="flex items-start gap-2.5 rounded-[2px] px-2 py-2 hover:bg-surface-3">
                 {phase === 'ready' && item.status === 'ready' ?
                   <input type="checkbox" className="mt-0.5 accent-[var(--sonic-accent)]"
                     checked={selectedIds.has(item.id)} onChange={() => setSelectedIds(previous => {
@@ -263,16 +263,16 @@ export function ImportAudio(): ReactNode {
                     })} /> :
                   <span className="mt-0.5 size-4 shrink-0" />}
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12.5px] text-fg" title={item.filePath}>{item.fileName}</span>
-                  <span className="block text-[11px] text-fg-subtle">
+                  <span className="block truncate text-[13.5px] text-fg" title={item.filePath}>{item.fileName}</span>
+                  <span className="block text-[12px] text-fg-subtle">
                     {item.bpm != null ? `${item.bpm} BPM` : 'BPM unknown'} · {item.key ?? 'key unknown'}
                     {item.error ? ` · ${item.error}` : ''}
                   </span>
                 </span>
-                <span className="shrink-0 text-[11px] text-fg-muted">{statusLabel(item)}</span>
+                <span className="shrink-0 text-[12px] text-fg-muted">{statusLabel(item)}</span>
               </label>)}
           </div>
-          {review.items.length > pageSize ? <div className="flex items-center justify-between gap-2 text-[11.5px] text-fg-subtle">
+          {review.items.length > pageSize ? <div className="flex items-center justify-between gap-2 text-[12px] text-fg-subtle">
             <span>Showing {page * pageSize + 1}–{Math.min(review.items.length, (page + 1) * pageSize)} of {review.items.length}</span>
             <div className="flex gap-1.5">
               <Button variant="secondary" size="sm" disabled={page === 0} onClick={() => setPage(value => Math.max(0, value - 1))}>Previous</Button>
@@ -281,7 +281,7 @@ export function ImportAudio(): ReactNode {
           </div> : null}
           {phase === 'done' || phase === 'cancelled' || phase === 'error' ?
             <>
-              {totals.imported > 0 ? <p className="text-[11.5px] text-fg-subtle">
+              {totals.imported > 0 ? <p className="text-[12px] text-fg-subtle">
                 Imported records are ready to preview. BPM/key analysis may continue in the background; use the library controls to cancel or retry it.
               </p> : null}
               {phase === 'error' && review.error?.startsWith('Library save is pending:') ?

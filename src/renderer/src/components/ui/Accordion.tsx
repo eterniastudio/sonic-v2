@@ -36,7 +36,7 @@ export function Accordion({
     <div
       className={cn(
         't-acc',
-        !bare && 'overflow-hidden rounded-[12px] border border-line bg-surface',
+        !bare && 'overflow-hidden rounded-[2px] border border-line bg-surface',
         className
       )}
       data-open={open ? 'true' : 'false'}
@@ -52,8 +52,8 @@ export function Accordion({
         )}
       >
         {icon ? <span className="shrink-0 text-fg-subtle [&>svg]:size-4">{icon}</span> : null}
-        <span className="flex-1 truncate text-[13px] font-medium text-fg">{title}</span>
-        {summary ? <span className="shrink-0 text-[11.5px] text-fg-subtle nums">{summary}</span> : null}
+        <span className="flex-1 truncate text-[13.5px] font-medium text-fg">{title}</span>
+        {summary ? <span className="shrink-0 text-[12px] text-fg-subtle nums">{summary}</span> : null}
         <span className="t-acc-chevron shrink-0 text-fg-subtle">
           <ChevronDown className="size-4" strokeWidth={2} />
         </span>

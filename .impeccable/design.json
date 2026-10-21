@@ -1,0 +1,856 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-21T13:11:00.702Z",
+  "title": "Design System: Sonic",
+  "extensions": {
+    "colorMeta": {
+      "stamp-blue": {
+        "role": "primary",
+        "displayName": "Stamp Blue",
+        "canonical": "#2f3bbf",
+        "oklch": "oklch(43.8% 0.203 270.8)",
+        "tonalRamp": [
+          "oklch(15% 0.067 270.8)",
+          "oklch(26.4% 0.117 270.8)",
+          "oklch(37.9% 0.168 270.8)",
+          "oklch(49.3% 0.203 270.8)",
+          "oklch(60.7% 0.174 270.8)",
+          "oklch(72.1% 0.124 270.8)",
+          "oklch(83.6% 0.073 270.8)",
+          "oklch(95% 0.022 270.8)"
+        ]
+      },
+      "stamp-blue-lifted": {
+        "role": "primary",
+        "displayName": "Stamp Blue, lifted for vinyl",
+        "canonical": "#8a92ff",
+        "oklch": "oklch(70.2% 0.158 278.3)",
+        "tonalRamp": [
+          "oklch(15% 0.067 278.3)",
+          "oklch(26.4% 0.117 278.3)",
+          "oklch(37.9% 0.158 278.3)",
+          "oklch(49.3% 0.158 278.3)",
+          "oklch(60.7% 0.158 278.3)",
+          "oklch(72.1% 0.124 278.3)",
+          "oklch(83.6% 0.073 278.3)",
+          "oklch(95% 0.022 278.3)"
+        ]
+      },
+      "stamp-ink-on-lifted": {
+        "role": "primary",
+        "displayName": "Deep Stamp Ink",
+        "canonical": "#0b0d33",
+        "oklch": "oklch(18.7% 0.074 274.5)",
+        "tonalRamp": [
+          "oklch(15% 0.067 274.5)",
+          "oklch(26.4% 0.074 274.5)",
+          "oklch(37.9% 0.074 274.5)",
+          "oklch(49.3% 0.074 274.5)",
+          "oklch(60.7% 0.074 274.5)",
+          "oklch(72.1% 0.074 274.5)",
+          "oklch(83.6% 0.073 274.5)",
+          "oklch(95% 0.022 274.5)"
+        ]
+      },
+      "promo-red": {
+        "role": "secondary",
+        "displayName": "Promo Red",
+        "canonical": "#c4232f",
+        "oklch": "oklch(53.2% 0.194 23.8)",
+        "tonalRamp": [
+          "oklch(15% 0.067 23.8)",
+          "oklch(26.4% 0.117 23.8)",
+          "oklch(37.9% 0.168 23.8)",
+          "oklch(49.3% 0.194 23.8)",
+          "oklch(60.7% 0.174 23.8)",
+          "oklch(72.1% 0.124 23.8)",
+          "oklch(83.6% 0.073 23.8)",
+          "oklch(95% 0.022 23.8)"
+        ]
+      },
+      "promo-red-lifted": {
+        "role": "secondary",
+        "displayName": "Promo Red, lifted for vinyl",
+        "canonical": "#ff7b80",
+        "oklch": "oklch(73.7% 0.161 19.5)",
+        "tonalRamp": [
+          "oklch(15% 0.067 19.5)",
+          "oklch(26.4% 0.117 19.5)",
+          "oklch(37.9% 0.161 19.5)",
+          "oklch(49.3% 0.161 19.5)",
+          "oklch(60.7% 0.161 19.5)",
+          "oklch(72.1% 0.124 19.5)",
+          "oklch(83.6% 0.073 19.5)",
+          "oklch(95% 0.022 19.5)"
+        ]
+      },
+      "label-stock": {
+        "role": "neutral",
+        "displayName": "Label Stock",
+        "canonical": "#f4f4f1",
+        "oklch": "oklch(96.6% 0.004 106.5)",
+        "tonalRamp": [
+          "oklch(15% 0.004 106.5)",
+          "oklch(26.4% 0.004 106.5)",
+          "oklch(37.9% 0.004 106.5)",
+          "oklch(49.3% 0.004 106.5)",
+          "oklch(60.7% 0.004 106.5)",
+          "oklch(72.1% 0.004 106.5)",
+          "oklch(83.6% 0.004 106.5)",
+          "oklch(95% 0.004 106.5)"
+        ]
+      },
+      "label-stock-deep": {
+        "role": "neutral",
+        "displayName": "Label Stock Deep",
+        "canonical": "#e9e9e4",
+        "oklch": "oklch(93.3% 0.007 106.5)",
+        "tonalRamp": [
+          "oklch(15% 0.007 106.5)",
+          "oklch(26.4% 0.007 106.5)",
+          "oklch(37.9% 0.007 106.5)",
+          "oklch(49.3% 0.007 106.5)",
+          "oklch(60.7% 0.007 106.5)",
+          "oklch(72.1% 0.007 106.5)",
+          "oklch(83.6% 0.007 106.5)",
+          "oklch(95% 0.007 106.5)"
+        ]
+      },
+      "transport-stock": {
+        "role": "neutral",
+        "displayName": "Transport Stock",
+        "canonical": "#ebebe6",
+        "oklch": "oklch(93.9% 0.007 106.5)",
+        "tonalRamp": [
+          "oklch(15% 0.007 106.5)",
+          "oklch(26.4% 0.007 106.5)",
+          "oklch(37.9% 0.007 106.5)",
+          "oklch(49.3% 0.007 106.5)",
+          "oklch(60.7% 0.007 106.5)",
+          "oklch(72.1% 0.007 106.5)",
+          "oklch(83.6% 0.007 106.5)",
+          "oklch(95% 0.007 106.5)"
+        ]
+      },
+      "transport-vinyl": {
+        "role": "neutral",
+        "displayName": "Transport Vinyl",
+        "canonical": "#171717",
+        "oklch": "oklch(20.5% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(26.4% 0 89.9)",
+          "oklch(37.9% 0 89.9)",
+          "oklch(49.3% 0 89.9)",
+          "oklch(60.7% 0 89.9)",
+          "oklch(72.1% 0 89.9)",
+          "oklch(83.6% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "label-sheet": {
+        "role": "neutral",
+        "displayName": "Label Sheet",
+        "canonical": "#fbfbf9",
+        "oklch": "oklch(98.8% 0.003 106.4)",
+        "tonalRamp": [
+          "oklch(15% 0.003 106.4)",
+          "oklch(26.4% 0.003 106.4)",
+          "oklch(37.9% 0.003 106.4)",
+          "oklch(49.3% 0.003 106.4)",
+          "oklch(60.7% 0.003 106.4)",
+          "oklch(72.1% 0.003 106.4)",
+          "oklch(83.6% 0.003 106.4)",
+          "oklch(95% 0.003 106.4)"
+        ]
+      },
+      "label-stock-2": {
+        "role": "neutral",
+        "displayName": "Label Stock 2",
+        "canonical": "#e8e8e3",
+        "oklch": "oklch(93% 0.007 106.5)",
+        "tonalRamp": [
+          "oklch(15% 0.007 106.5)",
+          "oklch(26.4% 0.007 106.5)",
+          "oklch(37.9% 0.007 106.5)",
+          "oklch(49.3% 0.007 106.5)",
+          "oklch(60.7% 0.007 106.5)",
+          "oklch(72.1% 0.007 106.5)",
+          "oklch(83.6% 0.007 106.5)",
+          "oklch(95% 0.007 106.5)"
+        ]
+      },
+      "label-stock-3": {
+        "role": "neutral",
+        "displayName": "Label Stock 3",
+        "canonical": "#dcdcd5",
+        "oklch": "oklch(89.3% 0.009 106.6)",
+        "tonalRamp": [
+          "oklch(15% 0.009 106.6)",
+          "oklch(26.4% 0.009 106.6)",
+          "oklch(37.9% 0.009 106.6)",
+          "oklch(49.3% 0.009 106.6)",
+          "oklch(60.7% 0.009 106.6)",
+          "oklch(72.1% 0.009 106.6)",
+          "oklch(83.6% 0.009 106.6)",
+          "oklch(95% 0.009 106.6)"
+        ]
+      },
+      "stock-rule": {
+        "role": "neutral",
+        "displayName": "Stock Rule",
+        "canonical": "#d6d6cf",
+        "oklch": "oklch(87.4% 0.009 106.6)",
+        "tonalRamp": [
+          "oklch(15% 0.009 106.6)",
+          "oklch(26.4% 0.009 106.6)",
+          "oklch(37.9% 0.009 106.6)",
+          "oklch(49.3% 0.009 106.6)",
+          "oklch(60.7% 0.009 106.6)",
+          "oklch(72.1% 0.009 106.6)",
+          "oklch(83.6% 0.009 106.6)",
+          "oklch(95% 0.009 106.6)"
+        ]
+      },
+      "stock-rule-strong": {
+        "role": "neutral",
+        "displayName": "Stock Rule Strong",
+        "canonical": "#a9a9a0",
+        "oklch": "oklch(73.2% 0.013 106.7)",
+        "tonalRamp": [
+          "oklch(15% 0.013 106.7)",
+          "oklch(26.4% 0.013 106.7)",
+          "oklch(37.9% 0.013 106.7)",
+          "oklch(49.3% 0.013 106.7)",
+          "oklch(60.7% 0.013 106.7)",
+          "oklch(72.1% 0.013 106.7)",
+          "oklch(83.6% 0.013 106.7)",
+          "oklch(95% 0.013 106.7)"
+        ]
+      },
+      "ink-black": {
+        "role": "neutral",
+        "displayName": "Ink Black",
+        "canonical": "#151515",
+        "oklch": "oklch(19.6% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(26.4% 0 89.9)",
+          "oklch(37.9% 0 89.9)",
+          "oklch(49.3% 0 89.9)",
+          "oklch(60.7% 0 89.9)",
+          "oklch(72.1% 0 89.9)",
+          "oklch(83.6% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Ink Muted",
+        "canonical": "#45453f",
+        "oklch": "oklch(38.8% 0.01 106.9)",
+        "tonalRamp": [
+          "oklch(15% 0.01 106.9)",
+          "oklch(26.4% 0.01 106.9)",
+          "oklch(37.9% 0.01 106.9)",
+          "oklch(49.3% 0.01 106.9)",
+          "oklch(60.7% 0.01 106.9)",
+          "oklch(72.1% 0.01 106.9)",
+          "oklch(83.6% 0.01 106.9)",
+          "oklch(95% 0.01 106.9)"
+        ]
+      },
+      "ink-subtle": {
+        "role": "neutral",
+        "displayName": "Ink Subtle",
+        "canonical": "#64645d",
+        "oklch": "oklch(50.1% 0.011 106.8)",
+        "tonalRamp": [
+          "oklch(15% 0.011 106.8)",
+          "oklch(26.4% 0.011 106.8)",
+          "oklch(37.9% 0.011 106.8)",
+          "oklch(49.3% 0.011 106.8)",
+          "oklch(60.7% 0.011 106.8)",
+          "oklch(72.1% 0.011 106.8)",
+          "oklch(83.6% 0.011 106.8)",
+          "oklch(95% 0.011 106.8)"
+        ]
+      },
+      "vinyl-black": {
+        "role": "neutral",
+        "displayName": "Vinyl Black",
+        "canonical": "#131313",
+        "oklch": "oklch(18.7% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(26.4% 0 89.9)",
+          "oklch(37.9% 0 89.9)",
+          "oklch(49.3% 0 89.9)",
+          "oklch(60.7% 0 89.9)",
+          "oklch(72.1% 0 89.9)",
+          "oklch(83.6% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "vinyl-deep": {
+        "role": "neutral",
+        "displayName": "Vinyl Deep",
+        "canonical": "#0c0c0c",
+        "oklch": "oklch(15.4% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(26.4% 0 89.9)",
+          "oklch(37.9% 0 89.9)",
+          "oklch(49.3% 0 89.9)",
+          "oklch(60.7% 0 89.9)",
+          "oklch(72.1% 0 89.9)",
+          "oklch(83.6% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "vinyl-sheet": {
+        "role": "neutral",
+        "displayName": "Vinyl Sheet",
+        "canonical": "#1a1a19",
+        "oklch": "oklch(21.7% 0.002 106.6)",
+        "tonalRamp": [
+          "oklch(15% 0.002 106.6)",
+          "oklch(26.4% 0.002 106.6)",
+          "oklch(37.9% 0.002 106.6)",
+          "oklch(49.3% 0.002 106.6)",
+          "oklch(60.7% 0.002 106.6)",
+          "oklch(72.1% 0.002 106.6)",
+          "oklch(83.6% 0.002 106.6)",
+          "oklch(95% 0.002 106.6)"
+        ]
+      },
+      "vinyl-2": {
+        "role": "neutral",
+        "displayName": "Vinyl 2",
+        "canonical": "#232322",
+        "oklch": "oklch(25.6% 0.002 106.5)",
+        "tonalRamp": [
+          "oklch(15% 0.002 106.5)",
+          "oklch(26.4% 0.002 106.5)",
+          "oklch(37.9% 0.002 106.5)",
+          "oklch(49.3% 0.002 106.5)",
+          "oklch(60.7% 0.002 106.5)",
+          "oklch(72.1% 0.002 106.5)",
+          "oklch(83.6% 0.002 106.5)",
+          "oklch(95% 0.002 106.5)"
+        ]
+      },
+      "vinyl-3": {
+        "role": "neutral",
+        "displayName": "Vinyl 3",
+        "canonical": "#2e2e2c",
+        "oklch": "oklch(30% 0.004 106.6)",
+        "tonalRamp": [
+          "oklch(15% 0.004 106.6)",
+          "oklch(26.4% 0.004 106.6)",
+          "oklch(37.9% 0.004 106.6)",
+          "oklch(49.3% 0.004 106.6)",
+          "oklch(60.7% 0.004 106.6)",
+          "oklch(72.1% 0.004 106.6)",
+          "oklch(83.6% 0.004 106.6)",
+          "oklch(95% 0.004 106.6)"
+        ]
+      },
+      "vinyl-rule": {
+        "role": "neutral",
+        "displayName": "Vinyl Rule",
+        "canonical": "#2b2b29",
+        "oklch": "oklch(28.8% 0.004 106.6)",
+        "tonalRamp": [
+          "oklch(15% 0.004 106.6)",
+          "oklch(26.4% 0.004 106.6)",
+          "oklch(37.9% 0.004 106.6)",
+          "oklch(49.3% 0.004 106.6)",
+          "oklch(60.7% 0.004 106.6)",
+          "oklch(72.1% 0.004 106.6)",
+          "oklch(83.6% 0.004 106.6)",
+          "oklch(95% 0.004 106.6)"
+        ]
+      },
+      "vinyl-rule-strong": {
+        "role": "neutral",
+        "displayName": "Vinyl Rule Strong",
+        "canonical": "#4a4a45",
+        "oklch": "oklch(40.7% 0.008 106.8)",
+        "tonalRamp": [
+          "oklch(15% 0.008 106.8)",
+          "oklch(26.4% 0.008 106.8)",
+          "oklch(37.9% 0.008 106.8)",
+          "oklch(49.3% 0.008 106.8)",
+          "oklch(60.7% 0.008 106.8)",
+          "oklch(72.1% 0.008 106.8)",
+          "oklch(83.6% 0.008 106.8)",
+          "oklch(95% 0.008 106.8)"
+        ]
+      },
+      "label-white": {
+        "role": "neutral",
+        "displayName": "Label White",
+        "canonical": "#efefe9",
+        "oklch": "oklch(95% 0.008 106.6)",
+        "tonalRamp": [
+          "oklch(15% 0.008 106.6)",
+          "oklch(26.4% 0.008 106.6)",
+          "oklch(37.9% 0.008 106.6)",
+          "oklch(49.3% 0.008 106.6)",
+          "oklch(60.7% 0.008 106.6)",
+          "oklch(72.1% 0.008 106.6)",
+          "oklch(83.6% 0.008 106.6)",
+          "oklch(95% 0.008 106.6)"
+        ]
+      },
+      "label-white-muted": {
+        "role": "neutral",
+        "displayName": "Label White Muted",
+        "canonical": "#b9b9b1",
+        "oklch": "oklch(78.3% 0.011 106.7)",
+        "tonalRamp": [
+          "oklch(15% 0.011 106.7)",
+          "oklch(26.4% 0.011 106.7)",
+          "oklch(37.9% 0.011 106.7)",
+          "oklch(49.3% 0.011 106.7)",
+          "oklch(60.7% 0.011 106.7)",
+          "oklch(72.1% 0.011 106.7)",
+          "oklch(83.6% 0.011 106.7)",
+          "oklch(95% 0.011 106.7)"
+        ]
+      },
+      "label-white-subtle": {
+        "role": "neutral",
+        "displayName": "Label White Subtle",
+        "canonical": "#918f88",
+        "oklch": "oklch(65% 0.01 93.6)",
+        "tonalRamp": [
+          "oklch(15% 0.01 93.6)",
+          "oklch(26.4% 0.01 93.6)",
+          "oklch(37.9% 0.01 93.6)",
+          "oklch(49.3% 0.01 93.6)",
+          "oklch(60.7% 0.01 93.6)",
+          "oklch(72.1% 0.01 93.6)",
+          "oklch(83.6% 0.01 93.6)",
+          "oklch(95% 0.01 93.6)"
+        ]
+      },
+      "pressing-black": {
+        "role": "neutral",
+        "displayName": "Pressing Black",
+        "canonical": "#0a0a0a",
+        "oklch": "oklch(14.5% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(26.4% 0 89.9)",
+          "oklch(37.9% 0 89.9)",
+          "oklch(49.3% 0 89.9)",
+          "oklch(60.7% 0 89.9)",
+          "oklch(72.1% 0 89.9)",
+          "oklch(83.6% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "pressed-green": {
+        "role": "tertiary",
+        "displayName": "Pressed Green",
+        "canonical": "#1b6e44",
+        "oklch": "oklch(47.9% 0.103 156.3)",
+        "tonalRamp": [
+          "oklch(15% 0.067 156.3)",
+          "oklch(26.4% 0.103 156.3)",
+          "oklch(37.9% 0.103 156.3)",
+          "oklch(49.3% 0.103 156.3)",
+          "oklch(60.7% 0.103 156.3)",
+          "oklch(72.1% 0.103 156.3)",
+          "oklch(83.6% 0.073 156.3)",
+          "oklch(95% 0.022 156.3)"
+        ]
+      },
+      "pressed-green-lifted": {
+        "role": "tertiary",
+        "displayName": "Pressed Green, lifted for vinyl",
+        "canonical": "#6fd39f",
+        "oklch": "oklch(79.2% 0.121 159.2)",
+        "tonalRamp": [
+          "oklch(15% 0.067 159.2)",
+          "oklch(26.4% 0.117 159.2)",
+          "oklch(37.9% 0.121 159.2)",
+          "oklch(49.3% 0.121 159.2)",
+          "oklch(60.7% 0.121 159.2)",
+          "oklch(72.1% 0.121 159.2)",
+          "oklch(83.6% 0.073 159.2)",
+          "oklch(95% 0.022 159.2)"
+        ]
+      },
+      "test-press-amber": {
+        "role": "tertiary",
+        "displayName": "Test-Press Amber",
+        "canonical": "#9a5a00",
+        "oklch": "oklch(52.9% 0.119 64.3)",
+        "tonalRamp": [
+          "oklch(15% 0.067 64.3)",
+          "oklch(26.4% 0.117 64.3)",
+          "oklch(37.9% 0.119 64.3)",
+          "oklch(49.3% 0.119 64.3)",
+          "oklch(60.7% 0.119 64.3)",
+          "oklch(72.1% 0.119 64.3)",
+          "oklch(83.6% 0.073 64.3)",
+          "oklch(95% 0.022 64.3)"
+        ]
+      },
+      "test-press-amber-lifted": {
+        "role": "tertiary",
+        "displayName": "Test-Press Amber, lifted for vinyl",
+        "canonical": "#f0b45a",
+        "oklch": "oklch(80.8% 0.127 75.3)",
+        "tonalRamp": [
+          "oklch(15% 0.067 75.3)",
+          "oklch(26.4% 0.117 75.3)",
+          "oklch(37.9% 0.127 75.3)",
+          "oklch(49.3% 0.127 75.3)",
+          "oklch(60.7% 0.127 75.3)",
+          "oklch(72.1% 0.124 75.3)",
+          "oklch(83.6% 0.073 75.3)",
+          "oklch(95% 0.022 75.3)"
+        ]
+      }
+    },
+    "themes": {
+      "note": "Both themes are first-class. Each CSS role token has a stock (light) and vinyl (dark) value; the frontmatter lists both as named colours.",
+      "roles": {
+        "--sonic-bg": [
+          "label-stock",
+          "vinyl-black"
+        ],
+        "--sonic-bg-deep": [
+          "label-stock-deep",
+          "vinyl-deep"
+        ],
+        "--sonic-surface": [
+          "label-sheet",
+          "vinyl-sheet"
+        ],
+        "--sonic-surface-2": [
+          "label-stock-2",
+          "vinyl-2"
+        ],
+        "--sonic-surface-3": [
+          "label-stock-3",
+          "vinyl-3"
+        ],
+        "--sonic-border": [
+          "stock-rule",
+          "vinyl-rule"
+        ],
+        "--sonic-border-strong": [
+          "stock-rule-strong",
+          "vinyl-rule-strong"
+        ],
+        "--sonic-fg": [
+          "ink-black",
+          "label-white"
+        ],
+        "--sonic-fg-muted": [
+          "ink-muted",
+          "label-white-muted"
+        ],
+        "--sonic-fg-subtle": [
+          "ink-subtle",
+          "label-white-subtle"
+        ],
+        "--sonic-vinyl": [
+          "ink-black",
+          "pressing-black"
+        ],
+        "--sonic-label": [
+          "label-sheet",
+          "label-white"
+        ],
+        "--sonic-accent": [
+          "stamp-blue",
+          "stamp-blue-lifted"
+        ],
+        "--sonic-accent-fg": [
+          "#ffffff",
+          "stamp-ink-on-lifted"
+        ],
+        "--sonic-danger": [
+          "promo-red",
+          "promo-red-lifted"
+        ],
+        "--sonic-success": [
+          "pressed-green",
+          "pressed-green-lifted"
+        ],
+        "--sonic-warning": [
+          "test-press-amber",
+          "test-press-amber-lifted"
+        ],
+        "--sonic-transport": [
+          "transport-stock",
+          "transport-vinyl"
+        ]
+      },
+      "accentMixes": {
+        "--sonic-accent-soft": "color-mix(in oklab, var(--sonic-accent) 14%, transparent)",
+        "--sonic-accent-softer": "color-mix(in oklab, var(--sonic-accent) 7%, transparent)",
+        "--sonic-accent-line": "color-mix(in oklab, var(--sonic-accent) 40%, transparent)",
+        "--sonic-accent-ring": "color-mix(in oklab, var(--sonic-accent) 45%, transparent)",
+        "--sonic-accent-hover (stock)": "color-mix(in oklab, var(--sonic-accent) 86%, black)",
+        "--sonic-accent-hover (vinyl)": "color-mix(in oklab, var(--sonic-accent) 84%, white)"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display (pressing-plant caps)",
+        "purpose": "Page titles and the library heading with count; uppercase, 72% width."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Inspector track title only; 16px and three-line clamp below 760px tall."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Row and dock titles, buttons, nav labels, descriptions; tabular figures."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Section labels, metadata, badges, inputs, chips, timestamps; sentence case."
+      },
+      "marker": {
+        "displayName": "Marker",
+        "purpose": "The manual-correction provenance mark, nowhere else."
+      }
+    },
+    "shadows": [
+      {
+        "name": "pop-stock",
+        "value": "0 10px 28px -10px rgba(21, 21, 21, 0.32)",
+        "purpose": "Dialogs, dropdown menus, tooltips in the light theme."
+      },
+      {
+        "name": "pop-vinyl",
+        "value": "0 14px 36px -12px rgba(0, 0, 0, 0.7)",
+        "purpose": "Dialogs, dropdown menus, tooltips in the dark theme."
+      },
+      {
+        "name": "record-edge",
+        "value": "inset 0 0 0 1px var(--sonic-border-strong)",
+        "purpose": "The platter rim in the playback dock."
+      },
+      {
+        "name": "nav-selection-rule",
+        "value": "inset 1px 0 0 var(--sonic-accent)",
+        "purpose": "1px stamp-blue rule on the active nav item."
+      },
+      {
+        "name": "focus-halo",
+        "value": "0 0 0 3px var(--sonic-accent-softer)",
+        "purpose": "Focused text inputs, alongside the stamp-blue outline."
+      },
+      {
+        "name": "panel",
+        "value": "none",
+        "purpose": "Panels are flat; depth is tonal."
+      }
+    ],
+    "motion": [
+      {
+        "name": "platter-spin",
+        "value": "sonic-spin 1.8s linear infinite",
+        "purpose": "33 1/3 rpm while audio plays; paused in place when it stops. The only unprompted motion."
+      },
+      {
+        "name": "ease-smooth-out",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Default for state, overlay open/close, panel and position changes."
+      },
+      {
+        "name": "ease-linear",
+        "value": "linear",
+        "purpose": "Spinners, shimmer, the platter."
+      },
+      {
+        "name": "duration-quick",
+        "value": "150ms",
+        "purpose": "Nav and small control hover, overlay close."
+      },
+      {
+        "name": "duration-fast",
+        "value": "250ms",
+        "purpose": "Buttons, dropdown and modal open, tabs, theme change."
+      },
+      {
+        "name": "duration-medium",
+        "value": "350ms",
+        "purpose": "Panel and toast close."
+      },
+      {
+        "name": "duration-slow",
+        "value": "400ms",
+        "purpose": "Panel open, content reveal."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation and transition durations collapse to ~0",
+        "purpose": "Honoured from the OS setting and the in-app override (data-reduce-motion)."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "max-width: 1199px or max-height: 760px",
+        "purpose": "Page padding 16px 18px; inspector disc shrinks to 76px inline; headline drops to 16px."
+      }
+    ],
+    "layout": {
+      "titleBar": "48px",
+      "navRail": "196px",
+      "libraryRow": "52px",
+      "inspectorDisc": "176px",
+      "dockPlatter": "56px",
+      "pagePadding": "20px 28px"
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one primary action on a surface: stamp-blue fill, 2px pressed corner.",
+      "html": "<button class=\"ds-btn-primary\">Download</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 12px; border:1px solid transparent; border-radius:2px; background:var(--sonic-accent, #2f3bbf); color:var(--sonic-accent-fg, #ffffff); font:600 13.5px/1 'Archivo Variable', 'Archivo', system-ui, sans-serif; cursor:pointer; transition:background-color 250ms cubic-bezier(0.22,1,0.36,1), transform 250ms cubic-bezier(0.22,1,0.36,1); } .ds-btn-primary:hover { background:color-mix(in oklab, var(--sonic-accent, #2f3bbf) 86%, black); } .ds-btn-primary:active { transform:translateY(1px); } .ds-btn-primary:focus-visible { outline:2px solid var(--sonic-accent, #2f3bbf); outline-offset:2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Default button: transparent with a strong one-pixel rule.",
+      "html": "<button class=\"ds-btn-secondary\">Export</button>",
+      "css": ".ds-btn-secondary { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 12px; border:1px solid var(--sonic-border-strong, #a9a9a0); border-radius:2px; background:transparent; color:var(--sonic-fg, #151515); font:600 13.5px/1 'Archivo Variable', 'Archivo', system-ui, sans-serif; cursor:pointer; transition:background-color 250ms cubic-bezier(0.22,1,0.36,1), border-color 250ms cubic-bezier(0.22,1,0.36,1); } .ds-btn-secondary:hover { background:var(--sonic-surface-2, #e8e8e3); border-color:var(--sonic-fg-subtle, #64645d); } .ds-btn-secondary:active { transform:translateY(1px); } .ds-btn-secondary:focus-visible { outline:2px solid var(--sonic-accent, #2f3bbf); outline-offset:2px; }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructive action: promo-red rule and text, never filled.",
+      "html": "<button class=\"ds-btn-danger\">Remove from library</button>",
+      "css": ".ds-btn-danger { display:inline-flex; align-items:center; height:32px; padding:0 12px; border:1px solid var(--sonic-danger, #c4232f); border-radius:2px; background:transparent; color:var(--sonic-danger, #c4232f); font:600 13.5px/1 'Archivo Variable', 'Archivo', system-ui, sans-serif; cursor:pointer; transition:background-color 250ms cubic-bezier(0.22,1,0.36,1); } .ds-btn-danger:hover { background:color-mix(in oklab, var(--sonic-danger, #c4232f) 12%, transparent); } .ds-btn-danger:focus-visible { outline:2px solid var(--sonic-accent, #2f3bbf); outline-offset:2px; }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Transparent field with a softened rule; focus turns the rule stamp blue and lifts the ground.",
+      "html": "<label class=\"ds-input-wrap\"><svg class=\"ds-input-icon\" viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/></svg><input class=\"ds-input\" placeholder=\"Search title, producer, key\" /></label>",
+      "css": ".ds-input-wrap { position:relative; display:flex; align-items:center; width:280px; } .ds-input-icon { position:absolute; left:12px; color:var(--sonic-fg-subtle, #64645d); pointer-events:none; } .ds-input { width:100%; height:32px; padding:0 10px 0 38px; border:1px solid color-mix(in oklab, var(--sonic-border-strong, #a9a9a0) 60%, transparent); border-radius:2px; background:transparent; color:var(--sonic-fg, #151515); caret-color:var(--sonic-accent, #2f3bbf); font:400 12px/1.5 'Archivo Variable', 'Archivo', system-ui, sans-serif; outline:none; transition:border-color 150ms cubic-bezier(0.22,1,0.36,1), background-color 150ms cubic-bezier(0.22,1,0.36,1), box-shadow 150ms cubic-bezier(0.22,1,0.36,1); } .ds-input::placeholder { color:var(--sonic-fg-subtle, #64645d); } .ds-input:hover { border-color:var(--sonic-border-strong, #a9a9a0); } .ds-input:focus { border-color:var(--sonic-accent, #2f3bbf); background:var(--sonic-surface, #fbfbf9); box-shadow:0 0 0 3px color-mix(in oklab, var(--sonic-accent, #2f3bbf) 7%, transparent); }"
+    },
+    {
+      "name": "Nav Rail",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "196px rail; the active item sits on stock with a 1px stamp-blue rule and a stamp-blue icon.",
+      "html": "<nav class=\"ds-nav\"><button class=\"ds-nav-item\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 15V3\"/><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><path d=\"m7 10 5 5 5-5\"/></svg><span>Download</span></button><button class=\"ds-nav-item is-active\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m16 6 4 14\"/><path d=\"M12 6v14\"/><path d=\"M8 8v12\"/><path d=\"M4 4v16\"/></svg><span>Library</span></button></nav>",
+      "css": ".ds-nav { display:flex; flex-direction:column; gap:4px; width:196px; padding:16px 12px; border-right:1px solid var(--sonic-border, #d6d6cf); background:var(--sonic-bg, #f4f4f1); } .ds-nav-item { display:flex; align-items:center; gap:10px; height:36px; padding:0 12px; border:0; border-radius:2px; background:transparent; color:var(--sonic-fg-muted, #45453f); font:600 13.5px/1 'Archivo Variable', 'Archivo', system-ui, sans-serif; text-align:left; cursor:pointer; transition:background-color 150ms cubic-bezier(0.22,1,0.36,1), color 150ms cubic-bezier(0.22,1,0.36,1); } .ds-nav-item svg { color:var(--sonic-fg-subtle, #64645d); flex-shrink:0; } .ds-nav-item:hover { background:color-mix(in oklab, var(--sonic-surface-2, #e8e8e3) 60%, transparent); color:var(--sonic-fg, #151515); } .ds-nav-item.is-active { background:var(--sonic-surface-2, #e8e8e3); color:var(--sonic-fg, #151515); box-shadow:inset 1px 0 0 var(--sonic-accent, #2f3bbf); } .ds-nav-item.is-active svg { color:var(--sonic-accent, #2f3bbf); } .ds-nav-item:focus-visible { outline:2px solid var(--sonic-accent, #2f3bbf); outline-offset:2px; }"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "filter-chip-active",
+      "description": "Library toolbar filters; active takes the stamp-blue line, wash and text.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip\">All files</button><button class=\"ds-chip is-active\">Needs review</button></div>",
+      "css": ".ds-chips { display:flex; gap:6px; } .ds-chip { height:28px; padding:0 10px; border:1px solid var(--sonic-border, #d6d6cf); border-radius:2px; background:transparent; color:var(--sonic-fg-muted, #45453f); font:500 12px/1 'Archivo Variable', 'Archivo', system-ui, sans-serif; cursor:pointer; transition:border-color 150ms cubic-bezier(0.22,1,0.36,1), color 150ms cubic-bezier(0.22,1,0.36,1); } .ds-chip:hover { border-color:var(--sonic-border-strong, #a9a9a0); color:var(--sonic-fg, #151515); } .ds-chip.is-active { border-color:color-mix(in oklab, var(--sonic-accent, #2f3bbf) 40%, transparent); background:color-mix(in oklab, var(--sonic-accent, #2f3bbf) 14%, transparent); color:var(--sonic-accent, #2f3bbf); } .ds-chip:focus-visible { outline:2px solid var(--sonic-accent, #2f3bbf); outline-offset:2px; }"
+    },
+    {
+      "name": "Badge",
+      "kind": "chip",
+      "refersTo": "badge-neutral",
+      "description": "Small status label: neutral on stock, status tones as an 8% wash with a 20% rule.",
+      "html": "<span class=\"ds-badge\">WAV 48/24</span> <span class=\"ds-badge ds-badge-success\">Tagged</span> <span class=\"ds-badge ds-badge-danger\">Missing file</span>",
+      "css": ".ds-badge { display:inline-flex; align-items:center; height:24px; padding:0 8px; border:1px solid var(--sonic-border, #d6d6cf); border-radius:2px; background:var(--sonic-surface-2, #e8e8e3); color:var(--sonic-fg-muted, #45453f); font:500 12px/1 'Archivo Variable', 'Archivo', system-ui, sans-serif; font-variant-numeric:tabular-nums; white-space:nowrap; } .ds-badge-success { border-color:color-mix(in oklab, var(--sonic-success, #1b6e44) 20%, transparent); background:color-mix(in oklab, var(--sonic-success, #1b6e44) 8%, transparent); color:var(--sonic-success, #1b6e44); } .ds-badge-danger { border-color:color-mix(in oklab, var(--sonic-danger, #c4232f) 20%, transparent); background:color-mix(in oklab, var(--sonic-danger, #c4232f) 8%, transparent); color:var(--sonic-danger, #c4232f); }"
+    },
+    {
+      "name": "Provenance Marks",
+      "kind": "custom",
+      "refersTo": "typography.marker",
+      "description": "Signature: tempo and key drawn in the mark of where they came from (printed, stamped, measured with confidence dots, marker).",
+      "html": "<div class=\"ds-prov\"><span><b class=\"ds-mark-printed\">128</b> from source</span><span><b class=\"ds-mark-stamped\">128</b> file tag</span><span><b class=\"ds-mark-measured\">128</b><span class=\"ds-dots\" aria-hidden=\"true\"><i class=\"on\"></i><i class=\"on\"></i><i></i></span> measured</span><span><b class=\"ds-mark-marker\">128</b> your correction</span></div>",
+      "css": ".ds-prov { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; color:var(--sonic-fg-subtle, #64645d); font:400 12px/1.5 'Archivo Variable', 'Archivo', system-ui, sans-serif; } .ds-prov b { font-size:13.5px; font-stretch:80%; } .ds-mark-printed { font-weight:700; color:var(--sonic-fg, #151515); } .ds-mark-stamped { display:inline-block; padding:0 4px; border:1.5px solid var(--sonic-accent, #2f3bbf); color:var(--sonic-accent, #2f3bbf); font-weight:750; line-height:1.25; transform:rotate(-1.5deg); } .ds-mark-measured { font-weight:600; color:var(--sonic-fg-muted, #45453f); text-decoration:underline dotted var(--sonic-fg-subtle, #64645d); text-decoration-thickness:1.5px; text-underline-offset:3px; } .ds-dots { display:inline-flex; gap:2px; margin-left:3px; vertical-align:0.45em; } .ds-dots i { width:3px; height:3px; border-radius:50%; border:1px solid var(--sonic-fg-subtle, #64645d); } .ds-dots i.on { background:var(--sonic-fg-muted, #45453f); border-color:var(--sonic-fg-muted, #45453f); } .ds-mark-marker { font-family:'Shantell Sans Variable', 'Segoe Print', cursive; font-weight:750; font-variation-settings:'INFM' 100; font-stretch:100%; color:var(--sonic-fg, #151515); }"
+    },
+    {
+      "name": "Label Disc",
+      "kind": "custom",
+      "refersTo": "label-disc",
+      "description": "Signature: the inspected track as a record; without artwork the blank label carries BPM/key in their marks and a promo-red PROMO stamp.",
+      "html": "<div class=\"ds-disc\"><span class=\"ds-groove g1\"></span><span class=\"ds-groove g2\"></span><span class=\"ds-groove g3\"></span><span class=\"ds-label\"><span class=\"ds-promo\">PROMO</span><span class=\"ds-label-bpm\">128</span><span class=\"ds-label-key\">8A</span><span class=\"ds-hole\"></span></span></div>",
+      "css": ".ds-disc { position:relative; display:grid; place-items:center; width:176px; aspect-ratio:1; border-radius:9999px; background:var(--sonic-vinyl, #151515); } .ds-groove { position:absolute; border-radius:9999px; border:1px solid rgba(255,255,255,0.06); } .ds-groove.g1 { inset:4%; } .ds-groove.g2 { inset:11%; border-color:rgba(255,255,255,0.05); } .ds-groove.g3 { inset:18%; } .ds-label { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; width:58%; aspect-ratio:1; border-radius:9999px; background:var(--sonic-label, #fbfbf9); color:#151515; font-family:'Archivo Variable', 'Archivo', system-ui, sans-serif; overflow:hidden; } .ds-label-bpm { font-size:17px; font-weight:700; font-stretch:80%; line-height:1; } .ds-label-key { font-size:10px; font-weight:700; font-stretch:80%; line-height:1; } .ds-promo { position:absolute; top:17%; left:9%; transform:rotate(-14deg); padding:0 2px; border:1.5px solid #c4232f; color:#c4232f; font-size:7px; font-weight:800; font-stretch:72%; letter-spacing:0.04em; line-height:1.25; } .ds-hole { position:absolute; top:50%; left:50%; width:7%; min-width:4px; aspect-ratio:1; transform:translate(-50%,-50%); border-radius:9999px; background:var(--sonic-vinyl, #151515); }"
+    },
+    {
+      "name": "Platter",
+      "kind": "custom",
+      "refersTo": "playback-dock",
+      "description": "Signature: the dock's 56px record; the centre label turns at 33 1/3 rpm while audio plays.",
+      "html": "<div class=\"ds-dock\"><span class=\"ds-platter\"><span class=\"ds-platter-label\"></span></span><span class=\"ds-dock-text\"><b>Late Shift</b><small>SoundCloud channel</small></span></div>",
+      "css": ".ds-dock { display:flex; align-items:center; gap:12px; padding:12px 20px; border-top:1px solid var(--sonic-border, #d6d6cf); background:var(--sonic-transport, #ebebe6); font-family:'Archivo Variable', 'Archivo', system-ui, sans-serif; } .ds-platter { position:relative; display:grid; place-items:center; width:56px; height:56px; border-radius:9999px; background:var(--sonic-vinyl, #151515); box-shadow:inset 0 0 0 1px var(--sonic-border-strong, #a9a9a0); } .ds-platter::before { content:''; position:absolute; inset:8px; border-radius:9999px; border:1px solid rgba(255,255,255,0.05); } .ds-platter-label { position:relative; width:26px; height:26px; border-radius:9999px; background:var(--sonic-label, #fbfbf9); animation:ds-spin 1.8s linear infinite; } .ds-platter-label::after { content:''; position:absolute; top:50%; left:50%; width:4px; height:4px; transform:translate(-50%,-50%); border-radius:9999px; background:var(--sonic-vinyl, #151515); } .ds-platter:hover .ds-platter-label { animation-play-state:paused; } .ds-dock-text { display:flex; flex-direction:column; } .ds-dock-text b { font-size:13.5px; font-weight:700; color:var(--sonic-fg, #151515); } .ds-dock-text small { font-size:12px; color:var(--sonic-fg-muted, #45453f); } @keyframes ds-spin { to { transform:rotate(360deg); } } @media (prefers-reduced-motion: reduce) { .ds-platter-label { animation:none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Promo White Label",
+    "overview": "Every track in Sonic arrives the way an unreleased promo does: black vinyl, a blank white label, and whatever facts somebody printed, stamped or scrawled on it. The interface is that label. Facts are ink on stock; colour is spent only where it carries meaning. A tempo or key value is never just a number: it is drawn in the mark of where it came from, so the producer can read provenance at a glance in a dense table at 2 a.m.\n\nThe world has two first-class pressings. Dark is vinyl black under label-white type; light is the label stock itself under ink black. Both use one-pixel rules, square-cut surfaces with a 2px pressed corner on controls, and no glows or gradient fills. Circles belong to records and their labels. Type is Archivo throughout, with condensed caps for pressing-plant headings and figures; Shantell Sans at full informality appears only where the producer's own hand corrected a value.\n\nThe system explicitly refuses the category default for audio tools: graphite panels, rounded cards and a violet or blue accent glowing everywhere. Motion is equally restrained: the record on the platter turns at 33⅓ rpm while audio plays and settles when it stops; everything else moves only in response to the user.",
+    "keyCharacteristics": [
+      "One accent (stamp blue) for selection, the primary action and focus; promo red only for loss and error.",
+      "Provenance marks: printed, stamped, measured (with three confidence dots), marker.",
+      "One-pixel rules, square surfaces, 2px corners on controls, circles only for records.",
+      "Three-size type ramp (12 / 13.5 / 28, plus the 20px inspector title); rank by weight, width and case.",
+      "Dense, fixed row furniture; tabular figures everywhere.",
+      "The record is the signature object: label disc in the inspector, spinning platter in the dock, blank label as the artwork placeholder."
+    ],
+    "rules": [
+      {
+        "name": "The One Ink Rule",
+        "body": "Stamp blue is the only accent. The retired five-accent picker resolves every stored id to stamp blue; no second hue, no per-feature colour.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink Means Something Rule",
+        "body": "Colour appears only for selection, primary action, focus, status or loss. If a surface is coloured and none of those is true, it is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three Sizes Rule",
+        "body": "12, 13.5 and 28 carry the whole interface (20 for the inspector title). Rank by weight, width and case, never by adding a size.",
+        "section": "typography"
+      },
+      {
+        "name": "The Marker Means Manual Rule",
+        "body": "The handwritten face appears only on values the producer corrected. Using it for decoration erases its meaning.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Stock Rule",
+        "body": "Surfaces at rest are flat paper. A shadow means the sheet has physically lifted off the page (a dialog, menu or tooltip); nothing else casts one, and nothing glows.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do draw every tempo and key value with its provenance mark, and show the legend wherever those values are read.",
+      "Do keep stamp blue (stamp-blue / stamp-blue-lifted) for selection, the primary action and focus only.",
+      "Do separate surfaces with one-pixel rules and tonal steps between stock, deep stock and sheet.",
+      "Do keep controls square with a 2px corner, and reserve circles for records and labels.",
+      "Do set headings and stamped lettering in condensed Archivo caps (72% width, 800) and keep figures tabular.",
+      "Do let only the platter animate unprompted; every other transition answers user input and honours reduced motion.",
+      "Do keep both themes first-class: every token has a stock and a vinyl value."
+    ],
+    "donts": [
+      "Don't introduce a second accent hue, a per-feature colour, or an accent picker.",
+      "Don't use glows, gradient fills, frosted glass or ambient blurred backgrounds.",
+      "Don't use graphite panels with rounded cards; surfaces are cut square.",
+      "Don't add type sizes beyond 12 / 13.5 / 28 (and 20 for the inspector title).",
+      "Don't use the marker face for anything except a producer's manual correction.",
+      "Don't show measured confidence as a percentage or a solid value; it stays dotted with three ink dots.",
+      "Don't mark selection with a 2px coloured edge; the selection rule is 1px."
+    ]
+  }
+}

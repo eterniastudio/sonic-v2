@@ -70,7 +70,7 @@ export function SkeletonBar({ className }: { className?: string }): ReactNode {
   return (
     <div
       className={cn(
-        'h-full w-full rounded-[14px] bg-gradient-to-br from-surface-3 via-surface-2 to-surface-3',
+        'h-full w-full rounded-[2px] bg-surface-2',
         className
       )}
     />
