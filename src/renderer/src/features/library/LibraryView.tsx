@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ArrowDownUp,
@@ -12,7 +12,7 @@ import {
   TriangleAlert,
   X
 } from 'lucide-react'
-import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { FocusEvent as ReactFocusEvent, MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { LibraryBeat, PresetId } from '@shared/domain'
 import { needsAnalysisRefresh } from '@shared/analysis'
 import { FAVORITES_COLLECTION_ID, type OrganizationCommand, type OrganizationSnapshot } from '@shared/organization'
@@ -40,6 +40,7 @@ import { createLibraryIndex, searchLibrary, searchSmartCollection, type LibraryI
 import { CollectionWorkspace } from './CollectionWorkspace'
 import { AnnotationEditor } from './AnnotationEditor'
 import { usePlaybackActions, usePlaybackIdentity } from '@/features/playback/playbackSession'
+import { useVirtualRows, withPinned } from '@/lib/virtualRows'
 
 const SORTS: { key: LibrarySort; label: string }[] = [
   { key: 'manual', label: 'Collection order' },
@@ -52,6 +53,15 @@ const SORTS: { key: LibrarySort; label: string }[] = [
   { key: 'producer', label: 'Producer A → Z' }
 ]
 
+/** Below this many results every row is mounted; above it only the visible window is. */
+const VIRTUALIZE_AFTER = 150
+const LIST_ROW_PX = 52
+const GRID_CARD_PX = 112
+const GRID_GAP_PX = 8
+const GRID_MIN_COLUMN_PX = 260
+/** Remembered across remounts so a restored grid scroll position has its real height. */
+let lastResultsWidth = 0
+
 const TEMPO_BANDS: { id: string; label: string }[] = [
   { id: 'slow', label: '< 90' },
   { id: 'mid', label: '90–120' },
@@ -63,7 +73,6 @@ const TEMPO_BANDS: { id: string; label: string }[] = [
 export function LibraryView(): ReactNode {
   const reducedMotion = useReducedMotion()
   const { playOne, playQueue } = usePlaybackActions()
-  const { beatId: playbackBeatId, status: playbackStatus } = usePlaybackIdentity()
   const library = useApp((state) => state.library)
   const rescanLibrary = useApp((state) => state.rescanLibrary)
   const removeBeat = useApp((state) => state.removeBeat)
@@ -85,6 +94,13 @@ export function LibraryView(): ReactNode {
   const [bpmTolerance, setBpmTolerance] = useWorkspaceField('bpmTolerance')
   const [includeHalfDouble, setIncludeHalfDouble] = useWorkspaceField('includeHalfDouble')
   const [keyFilter, setKeyFilter] = useWorkspaceField('keyFilter')
+  // Search runs against a deferred query so typing never waits on a full re-filter.
+  const searchQuery = useDeferredValue(query)
+  // Relevance applies only while a query exists and is never saved, so the
+  // collection's saved order returns once the search is cleared.
+  const [querySort, setQuerySort] = useState<LibrarySort>('relevance')
+  const hasQuery = query.trim().length > 0
+  const effectiveSort: LibrarySort = hasQuery && querySort === 'relevance' ? 'relevance' : sort
   const [selectedId, setSelectedId] = useWorkspaceField('selectedId')
   const [selectedIds, setSelectedIds] = useWorkspaceField('selectedIds')
   const [, setSelectionAnchor] = useWorkspaceField('selectionAnchor')
@@ -158,27 +174,45 @@ export function LibraryView(): ReactNode {
 
   const activeCollection = organization?.collections.find(item => item.id === organization.view.activeCollectionId) ?? null
   const activeScope = organization?.view.activeCollectionId ?? 'all'
+  // A view change saves layout and sort together. Read the other setting from
+  // the latest request or the store, never from this render's closure, so two
+  // quick changes cannot save a stale value over each other.
+  const requestedView = useRef<{ layout: 'grid' | 'list'; sort: LibrarySort } | null>(null)
+  const currentView = (): { layout: 'grid' | 'list'; sort: LibrarySort } => {
+    const workspace = useLibraryWorkspace.getState()
+    return requestedView.current ?? { layout: workspace.layout, sort: workspace.sort }
+  }
+  const saveView = (activeCollectionId: string | null, view: { layout: 'grid' | 'list'; sort: LibrarySort }): Promise<OrganizationSnapshot> => {
+    requestedView.current = view
+    return executeOrganization({ type: 'set-view', activeCollectionId, ...view }).then(snapshot => {
+      setLayout(view.layout)
+      setSort(view.sort)
+      return snapshot
+    }).finally(() => { if (requestedView.current === view) requestedView.current = null })
+  }
+
   const changeScope = async (id: string | null): Promise<void> => {
     if (!organization || organization.view.activeCollectionId === id) return
+    const view = currentView()
     const nextSort = organization.collections.some(item => item.id === id && item.type === 'manual')
-      ? 'manual' : sort === 'manual' ? 'newest' : sort
-    await executeOrganization({ type: 'set-view', activeCollectionId: id, layout, sort: nextSort })
-    setSort(nextSort)
+      ? 'manual' : view.sort === 'manual' ? 'newest' : view.sort
+    await saveView(id, { layout: view.layout, sort: nextSort })
     setSelectedIds(new Set())
     setSelectionAnchor(null)
   }
 
   const changeLayout = (next: 'grid' | 'list'): void => {
     if (!organization) return
-    void executeOrganization({ type: 'set-view', activeCollectionId: organization.view.activeCollectionId, layout: next, sort })
-      .then(() => setLayout(next))
+    void saveView(organization.view.activeCollectionId, { ...currentView(), layout: next })
       .catch(error => toast({ kind: 'error', title: 'Layout was not saved', description: String(error) }))
   }
 
   const changeSort = (next: LibrarySort): void => {
     if (!organization) return
-    void executeOrganization({ type: 'set-view', activeCollectionId: organization.view.activeCollectionId, layout, sort: next })
-      .then(() => setSort(next))
+    // Relevance belongs to the current search, never to the saved view.
+    if (hasQuery) setQuerySort(next)
+    if (next === 'relevance') return
+    void saveView(organization.view.activeCollectionId, { ...currentView(), sort: next })
       .catch(error => toast({ kind: 'error', title: 'Sort was not saved', description: String(error) }))
   }
 
@@ -228,18 +262,18 @@ export function LibraryView(): ReactNode {
       const byId = new Map(library.map(beat => [beat.id, beat]))
       scope = activeCollection.beatIds.flatMap(id => byId.get(id) ? [byId.get(id)!] : [])
     } else if (activeCollection?.type === 'smart' && organization) {
-      scope = searchSmartCollection(library, index, activeCollection.rules, organization.annotations, sort)
+      scope = searchSmartCollection(library, index, activeCollection.rules, organization.annotations, effectiveSort)
     } else if (activeScope === FAVORITES_COLLECTION_ID) {
       scope = library.filter(beat => organization && Object.prototype.hasOwnProperty.call(organization.annotations, beat.id) && organization.annotations[beat.id].favorite)
     }
     const rows = searchLibrary(scope, index, {
-      query, sort, bands, formats, fileFilter, reviewFilter, bpm: bpmFilter,
+      query: searchQuery, sort: effectiveSort, bands, formats, fileFilter, reviewFilter, bpm: bpmFilter,
       bpmTolerance, includeHalfDouble, key: keyFilter
     })
-    if (activeCollection?.type !== 'manual' || sort !== 'manual') return rows
+    if (activeCollection?.type !== 'manual' || effectiveSort !== 'manual') return rows
     const positions = new Map(activeCollection.beatIds.map((id, position) => [id, position]))
     return rows.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity))
-  }, [library, index, organization, activeScope, activeCollection, query, sort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter])
+  }, [library, index, organization, activeScope, activeCollection, searchQuery, effectiveSort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter])
 
   const auditionLabel = activeCollection?.name ?? (activeScope === FAVORITES_COLLECTION_ID ? 'Favorites' : 'All audio')
   const visibleRef = useRef(visible)
@@ -253,6 +287,8 @@ export function LibraryView(): ReactNode {
     if (ids.length) playQueue(ids, ids[0], `${auditionLabel} shortlist`)
   }
 
+  // Keyed by the typed query, not the deferred one, so a search change clears the
+  // selection in the same commit as the keystroke rather than a render later.
   const selectionScope = `${activeScope}\u0000${activeCollection?.type === 'smart' ? JSON.stringify(activeCollection.rules) : ''}\u0000${query}\u0000${[...bands].sort()}\u0000${[...formats].sort()}\u0000${fileFilter}\u0000${reviewFilter}\u0000${bpmFilter}\u0000${bpmTolerance}\u0000${includeHalfDouble}\u0000${keyFilter}`
   const scrollRef = useRef<HTMLDivElement>(null)
   const restoredScroll = useRef(false)
@@ -303,6 +339,8 @@ export function LibraryView(): ReactNode {
   )
 
   const revealingScope = useRef(false)
+  // A displayed row outside the rendered window is mounted on request, by index.
+  const [revealId, setRevealId] = useState<string | null>(null)
   // A global search result must become visible even when a retained collection
   // or filter excludes it. Consume the request only after its row is mounted.
   useEffect(() => {
@@ -314,6 +352,12 @@ export function LibraryView(): ReactNode {
       node.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'instant' : 'smooth' })
       node.querySelector<HTMLButtonElement>('button[aria-label^="Preview "]')?.focus({ preventScroll: true })
       setLibraryFocus(null)
+      setRevealId(null)
+      return
+    }
+    if (visible.some(beat => beat.id === focusId)) {
+      // Displayed but outside the rendered window: mount it, then this effect reruns.
+      if (revealId !== focusId) setRevealId(focusId)
       return
     }
     const workspace = useLibraryWorkspace.getState()
@@ -328,7 +372,7 @@ export function LibraryView(): ReactNode {
         toast({ kind: 'error', title: 'Could not reveal this beat', description: String(error) })
       }).finally(() => { revealingScope.current = false })
     }
-  }, [focusId, setLibraryFocus, setSelectedId, organization, reducedMotion, visible, library])
+  }, [focusId, setLibraryFocus, setSelectedId, organization, reducedMotion, visible, library, revealId])
 
   const totals = useMemo(
     () => ({
@@ -379,7 +423,8 @@ export function LibraryView(): ReactNode {
             <Input
               value={query}
               onChange={(event) => {
-                if (!query.trim() && event.target.value.trim()) changeSort('relevance')
+                // A new search starts in relevance order; nothing is saved.
+                if (!query.trim() && event.target.value.trim()) setQuerySort('relevance')
                 setQuery(event.target.value)
               }}
               placeholder="Search title, producer, BPM, key…"
@@ -407,17 +452,18 @@ export function LibraryView(): ReactNode {
             align="end"
             trigger={({ toggle: open }) => (
               <Button variant="ghost" size="md" leading={<ArrowDownUp />} onClick={open}>
-                {SORTS.find((entry) => entry.key === sort)?.label ?? 'Sort'}
+                {SORTS.find((entry) => entry.key === effectiveSort)?.label ?? 'Sort'}
               </Button>
             )}
           >
             {(close) => (
               <>
                 <DropdownLabel>Sort by</DropdownLabel>
-                {SORTS.filter(entry => entry.key !== 'manual' || activeCollection?.type === 'manual').map((entry) => (
+                {SORTS.filter(entry => (entry.key !== 'manual' || activeCollection?.type === 'manual') &&
+                  (entry.key !== 'relevance' || hasQuery || sort === 'relevance')).map((entry) => (
                   <DropdownItem
                     key={entry.key}
-                    selected={entry.key === sort}
+                    selected={entry.key === effectiveSort}
                     onSelect={() => {
                       changeSort(entry.key)
                       close()
@@ -576,7 +622,7 @@ export function LibraryView(): ReactNode {
         onPlayDisplayed={playDisplayed}
         onPlaySelected={playSelected}
         onScope={changeScope} command={executeOrganization} batch={batch} setBatch={setBatch}
-        defaultPresetId={defaultPresetId} manualSort={sort === 'manual'} /> : null}
+        defaultPresetId={defaultPresetId} manualSort={effectiveSort === 'manual'} /> : null}
 
       <div className="flex min-h-0 flex-1 gap-4">
       <div ref={scrollRef} data-library-scroll className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-0.5"
@@ -609,50 +655,10 @@ export function LibraryView(): ReactNode {
                   ? 'No beats currently match this smart collection’s rules.'
                   : 'No beats match those filters.'}
           </div>
-        ) : layout === 'grid' ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2 pb-1">
-            {visible.map((beat) => (
-                <LibraryBeatRow
-                  key={beat.id}
-                  beat={beat}
-                  layout="grid"
-                  playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
-                  selected={selectedId === beat.id}
-                  batchSelected={selectedIds.has(beat.id)}
-                  onToggleSelection={toggleSelectedId}
-                  onSelect={selectCard}
-                  onPlay={playOne}
-                  onContextMenu={openMenu}
-                  registerCard={registerCard}
-                />
-            ))}
-          </div>
         ) : (
-          <div className="@container overflow-hidden">
-            <div aria-hidden="true" className="mb-1 flex h-8 items-center gap-3 border-b border-line px-2 text-[11px] text-fg-subtle">
-              <span className="w-[64px] shrink-0" />
-              <span className="min-w-0 flex-1">Track</span>
-              <span className="hidden w-14 shrink-0 text-right @min-[440px]:block">BPM</span>
-              <span className="hidden w-14 shrink-0 text-right @min-[480px]:block">Key</span>
-              <span className="w-11 shrink-0 text-right">Time</span>
-              <span className="hidden w-12 shrink-0 text-right @min-[620px]:block">Format</span>
-            </div>
-            {visible.map((beat) => (
-                <LibraryBeatRow
-                  key={beat.id}
-                  beat={beat}
-                  layout="list"
-                  playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
-                  selected={selectedId === beat.id}
-                  batchSelected={selectedIds.has(beat.id)}
-                  onToggleSelection={toggleSelectedId}
-                  onSelect={selectCard}
-                  onPlay={playOne}
-                  onContextMenu={openMenu}
-                  registerCard={registerCard}
-                />
-            ))}
-          </div>
+          <LibraryResults visible={visible} layout={layout} selectedId={selectedId} selectedIds={selectedIds}
+            revealId={revealId} scrollRef={scrollRef} onToggleSelection={toggleSelectedId} onSelect={selectCard}
+            onPlay={playOne} onContextMenu={openMenu} registerCard={registerCard} />
         )}
       </div>
 
@@ -803,3 +809,106 @@ export function LibraryView(): ReactNode {
     </div>
   )
 }
+
+interface LibraryResultsProps {
+  visible: LibraryBeat[]
+  layout: 'grid' | 'list'
+  selectedId: string | null
+  selectedIds: Set<string>
+  /** A displayed row to keep mounted even outside the rendered window. */
+  revealId: string | null
+  scrollRef: RefObject<HTMLDivElement | null>
+  onToggleSelection: (id: string) => void
+  onSelect: (event: ReactMouseEvent | ReactKeyboardEvent, beat: LibraryBeat) => void
+  onPlay: (id: string) => void
+  onContextMenu: (event: ReactMouseEvent, beat: LibraryBeat) => void
+  registerCard: (id: string, node: HTMLDivElement | null) => void
+}
+
+/**
+ * The result rows. Only this subtree follows playback status, so a status change
+ * renders the rows instead of the whole Library page. Large result sets are
+ * windowed: only rows in view, plus the row holding keyboard focus or a requested
+ * reveal, are mounted, each positioned by its index.
+ */
+const LibraryResults = memo(function LibraryResults({ visible, layout, selectedId, selectedIds, revealId, scrollRef,
+  onToggleSelection, onSelect, onPlay, onContextMenu, registerCard }: LibraryResultsProps): ReactNode {
+  const { beatId: playbackBeatId, status: playbackStatus } = usePlaybackIdentity()
+  const virtual = visible.length > VIRTUALIZE_AFTER
+  const grid = layout === 'grid'
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  // The CSS row height is the default; a mounted row's real height wins (zoom, fonts).
+  const [measured, setMeasured] = useState<{ layout: string; height: number } | null>(null)
+  const rowHeight = measured?.layout === layout ? measured.height : grid ? GRID_CARD_PX : LIST_ROW_PX
+  const pitch = rowHeight + (grid ? GRID_GAP_PX : 0)
+  useLayoutEffect(() => {
+    if (!virtual) return
+    const height = contentRef.current?.firstElementChild?.getBoundingClientRect().height ?? 0
+    if (height > 0 && Math.abs(height - rowHeight) > 0.5) setMeasured({ layout, height })
+  })
+  const windowed = useVirtualRows({ scrollRef, contentRef, items: visible.length, rowHeight: pitch,
+    minColumnWidth: grid ? GRID_MIN_COLUMN_PX : 0, gap: grid ? GRID_GAP_PX : 0, initialWidth: lastResultsWidth, enabled: virtual })
+  useEffect(() => { if (virtual && windowed.width > 0) lastResultsWidth = windowed.width }, [virtual, windowed.width])
+
+  const row = (beat: LibraryBeat): ReactNode => (
+    <LibraryBeatRow
+      key={beat.id}
+      beat={beat}
+      layout={layout}
+      playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
+      selected={selectedId === beat.id}
+      batchSelected={selectedIds.has(beat.id)}
+      onToggleSelection={onToggleSelection}
+      onSelect={onSelect}
+      onPlay={onPlay}
+      onContextMenu={onContextMenu}
+      registerCard={registerCard}
+    />
+  )
+  const header = (
+    <div aria-hidden="true" className="mb-1 flex h-8 items-center gap-3 border-b border-line px-2 text-[11px] text-fg-subtle">
+      <span className="w-[64px] shrink-0" />
+      <span className="min-w-0 flex-1">Track</span>
+      <span className="hidden w-14 shrink-0 text-right @min-[440px]:block">BPM</span>
+      <span className="hidden w-14 shrink-0 text-right @min-[480px]:block">Key</span>
+      <span className="w-11 shrink-0 text-right">Time</span>
+      <span className="hidden w-12 shrink-0 text-right @min-[620px]:block">Format</span>
+    </div>
+  )
+
+  if (!virtual) {
+    return grid ? (
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2 pb-1">{visible.map(row)}</div>
+    ) : (
+      <div className="@container overflow-hidden">{header}{visible.map(row)}</div>
+    )
+  }
+
+  const { columns } = windowed
+  const pinned = [focusedId, revealId].flatMap(id => {
+    const index = id ? visible.findIndex(beat => beat.id === id) : -1
+    return index >= 0 ? [Math.floor(index / columns)] : []
+  })
+  const trackFocus = (event: ReactFocusEvent<HTMLDivElement>): void => {
+    const id = (event.target as HTMLElement).closest<HTMLElement>('[data-beat-id]')?.dataset.beatId ?? null
+    if (id !== focusedId) setFocusedId(id)
+  }
+  const releaseFocus = (event: ReactFocusEvent<HTMLDivElement>): void => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusedId(null)
+  }
+  const body = (
+    <div ref={contentRef} data-virtual-rows={visible.length} onFocus={trackFocus} onBlur={releaseFocus}
+      className="relative" style={{ height: Math.max(0, windowed.rows * pitch - (grid ? GRID_GAP_PX : 0)) }}>
+      {withPinned(windowed, pinned, windowed.rows).map(index => grid ? (
+        <div key={`row-${index}`} className="absolute inset-x-0 grid gap-2"
+          style={{ top: index * pitch, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+          {visible.slice(index * columns, index * columns + columns).map(row)}
+        </div>
+      ) : (
+        <div key={visible[index].id} className="absolute inset-x-0" style={{ top: index * pitch }}>{row(visible[index])}</div>
+      ))}
+    </div>
+  )
+  return grid ? <div className="pb-1">{body}</div> : <div className="@container overflow-hidden">{header}{body}</div>
+})

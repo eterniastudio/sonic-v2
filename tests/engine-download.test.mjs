@@ -167,7 +167,7 @@ function engineFixture(overrides = {}) {
       readdirSync: () => ['ffmpeg.exe', 'ffprobe.exe'], statSync: () => ({ isFile: () => true, isDirectory: () => false }) },
     'node:path': path,
     '../lib/net': {
-      fetchText: overrides.fetchText ?? (async () => `${checksum}  yt-dlp.exe`),
+      fetchText: overrides.fetchText ?? (async () => `${checksum}  yt-dlp.exe\n${checksum}  ffmpeg-master-latest-win64-gpl.zip`),
       downloadToFile: async (...args) => { downloads.push(args) }
     },
     '../lib/child': { run: async (...args) => { runs.push(args); return overrides.run ? overrides.run(...args) : result } },

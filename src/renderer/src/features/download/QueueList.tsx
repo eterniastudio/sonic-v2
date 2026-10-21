@@ -1,11 +1,17 @@
-import { useCallback, type ReactNode } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Download, ListChecks, Pause, Play } from 'lucide-react'
+import type { Job } from '@shared/domain'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/Button'
 import { Segmented } from '@/components/ui/Segmented'
+import { useVirtualRows, withPinned } from '@/lib/virtualRows'
 import { JobRow, QueueEmptyState } from './JobRow'
 
 const TERMINAL = new Set(['complete', 'failed', 'cancelled'])
+/** Below this many jobs every row is mounted; above it only the visible window is. */
+const VIRTUALIZE_AFTER = 150
+/** `min-h-[68px]` plus the 1px divider. A mounted row's real height wins. */
+const JOB_ROW_PX = 69
 
 /** A dedicated queue with task controls separated from its transport settings. */
 export function QueueList(): ReactNode {
@@ -21,6 +27,7 @@ export function QueueList(): ReactNode {
   const selectJob = useCallback((id: string): void => {
     setSelectedJob(useApp.getState().selectedJobId === id ? null : id)
   }, [setSelectedJob])
+  const scrollRef = useRef<HTMLDivElement>(null)
   const readyCount = jobs.filter((job) => job.stage === 'ready').length
   const activeCount = jobs.filter((job) => !TERMINAL.has(job.stage)).length
   const finishedCount = jobs.filter((job) => job.stage === 'complete' || job.stage === 'cancelled').length
@@ -51,9 +58,11 @@ export function QueueList(): ReactNode {
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         {jobs.length === 0 ? (
           <QueueEmptyState>Paste a link above to prepare your first download.</QueueEmptyState>
+        ) : jobs.length > VIRTUALIZE_AFTER ? (
+          <VirtualJobs jobs={jobs} selectedJobId={selectedJobId} onSelect={selectJob} scrollRef={scrollRef} />
         ) : (
           <div className="divide-y divide-line">
             {jobs.map((job) => (
@@ -63,5 +72,39 @@ export function QueueList(): ReactNode {
         )}
       </div>
     </section>
+  )
+}
+
+/**
+ * Only the jobs in view are mounted, so a long queue holds a bounded number of
+ * rows, menus and dialogs. The row that last received focus (including focus in
+ * its menu or confirmation, which React routes through the row) stays mounted.
+ */
+function VirtualJobs({ jobs, selectedJobId, onSelect, scrollRef }: {
+  jobs: Job[]
+  selectedJobId: string | null
+  onSelect: (id: string) => void
+  scrollRef: RefObject<HTMLDivElement | null>
+}): ReactNode {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  const [pitch, setPitch] = useState(JOB_ROW_PX)
+  useLayoutEffect(() => {
+    // Rows after the first carry the 1px divider; measure one of those.
+    const height = contentRef.current?.children[1]?.getBoundingClientRect().height ?? 0
+    if (height > 0 && Math.abs(height - pitch) > 0.5) setPitch(height)
+  })
+  const windowed = useVirtualRows({ scrollRef, contentRef, items: jobs.length, rowHeight: pitch })
+  const focused = focusedId ? jobs.findIndex(job => job.id === focusedId) : -1
+  return (
+    // Row 0 has no divider, so every later row starts 1px earlier than index * pitch.
+    <div ref={contentRef} className="relative" style={{ height: jobs.length * pitch - 1 }}>
+      {withPinned(windowed, focused >= 0 ? [focused] : [], jobs.length).map(index => (
+        <div key={jobs[index].id} className={index > 0 ? 'absolute inset-x-0 border-t border-line' : 'absolute inset-x-0'}
+          style={{ top: index > 0 ? index * pitch - 1 : 0 }} onFocus={() => setFocusedId(jobs[index].id)}>
+          <JobRow job={jobs[index]} selected={selectedJobId === jobs[index].id} onSelect={onSelect} />
+        </div>
+      ))}
+    </div>
   )
 }

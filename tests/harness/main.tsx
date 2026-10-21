@@ -28,12 +28,14 @@ function EditorHarness() {
     overrides: ['bpm', 'key'], sources: { title: {}, description: {}, filename: {} },
     embedded: {}, verification: null
   })
+  const [shown, setShown] = useState(true)
   useEffect(() => {
     const controls = {
       calls: [] as unknown[],
       mode: 'success',
       release: () => {},
-      revise: (patch: Partial<LibraryBeat>) => setBeat(current => ({ ...current, ...patch }))
+      revise: (patch: Partial<LibraryBeat>) => setBeat(current => ({ ...current, ...patch })),
+      hide: () => setShown(false)
     }
     ;(window as unknown as { editor: typeof controls }).editor = controls
     useApp.setState({ updateBeatMetadata: async (_id, patch, reset) => {
@@ -50,6 +52,6 @@ function EditorHarness() {
       if (controls.mode === 'partial') throw new Error('Library correction saved, but sidecar synchronization failed')
     } })
   }, [])
-  return <main className="bg-bg text-fg h-screen p-4"><MetadataCorrection beat={beat} /><output aria-label="Current record">{JSON.stringify(beat)}</output></main>
+  return <main className="bg-bg text-fg h-screen p-4">{shown ? <MetadataCorrection beat={beat} /> : null}<output aria-label="Current record">{JSON.stringify(beat)}</output></main>
 }
 createRoot(document.getElementById('root')!).render(location.hash === '#editor' ? <EditorHarness /> : location.hash === '#download' ? <DownloadHarness /> : location.hash === '#queue' ? <QueueHarness /> : location.hash === '#palette' ? <PaletteHarness /> : <Harness />)

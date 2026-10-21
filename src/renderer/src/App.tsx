@@ -8,6 +8,8 @@ import { Sidebar } from '@/components/shell/Sidebar'
 import { TitleBar } from '@/components/shell/TitleBar'
 import { StorageFeedback } from '@/components/shell/StorageFeedback'
 import { Toaster, toast } from '@/components/ui/Toaster'
+import { Button } from '@/components/ui/Button'
+import { ipc } from '@/lib/ipc'
 import { Logo } from '@/components/shell/Logo'
 import { DownloadView } from '@/features/download/DownloadView'
 import { LibraryView } from '@/features/library/LibraryView'
@@ -16,15 +18,22 @@ import { PlaybackProvider } from '@/features/playback/playbackSession'
 import { SettingsView } from '@/features/settings/SettingsView'
 
 /** First-paint splash while the main process answers the bootstrap calls. */
-function BootSplash(): ReactNode {
+function BootSplash({ error, onRetry }: { error: string | null; onRetry: () => void }): ReactNode {
   return (
     <div className="grid h-full place-items-center bg-bg">
-      <div role="status" className="flex flex-col items-center gap-3">
+      <div role={error ? 'alert' : 'status'} className="flex max-w-[420px] flex-col items-center gap-3 px-6">
         <Logo size={36} />
         <div className="text-center">
           <div className="text-[16px] font-semibold tracking-[-0.035em] text-fg">Sonic</div>
-          <p className="mt-1.5 text-[12px] text-fg-muted">Opening your workspace…</p>
+          {error ? <>
+            <p className="mt-1.5 text-[12px] text-fg-muted">Sonic could not open your workspace.</p>
+            <p className="mt-1 break-words text-[11.5px] text-fg-subtle">{error}</p>
+          </> : <p className="mt-1.5 text-[12px] text-fg-muted">Opening your workspace…</p>}
         </div>
+        {error ? <div className="flex gap-2">
+          <Button size="sm" variant="primary" onClick={onRetry}>Retry</Button>
+          <Button size="sm" onClick={() => void ipc.invoke('window:close').catch(() => {})}>Close Sonic</Button>
+        </div> : null}
       </div>
     </div>
   )
@@ -56,6 +65,7 @@ export function App(): ReactNode {
   const reduceMotion = useReducedMotion()
 
   const booted = useApp((state) => state.booted)
+  const bootError = useApp((state) => state.bootError)
   const bootstrap = useApp((state) => state.bootstrap)
   const view = useApp((state) => state.view)
   const setCommandOpen = useApp((state) => state.setCommandOpen)
@@ -73,7 +83,7 @@ export function App(): ReactNode {
     setCommandOpen(!useApp.getState().commandOpen)
   })
 
-  if (!booted) return <BootSplash />
+  if (!booted) return <BootSplash error={bootError} onRetry={() => void bootstrap()} />
 
   return (
     <PlaybackProvider>

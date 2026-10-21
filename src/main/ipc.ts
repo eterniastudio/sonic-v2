@@ -8,7 +8,7 @@ import { SAMPLE_METADATA } from '@shared/sample'
 import { renderTemplate } from '@shared/template'
 import { parseVideoUrl } from '@shared/url'
 import { broadcast } from './broadcast'
-import { fileExists } from './lib/fsx'
+import { directoryExists, fileExists } from './lib/fsx'
 import { libraryAnalysis } from './analysis/libraryAnalysis'
 import { engineService } from './services/engine'
 import { libraryService } from './services/library'
@@ -108,7 +108,9 @@ function isSettingsPatch(value: unknown): boolean {
     if (SETTINGS_OPTIONS[key]) return typeof entry === 'string' && SETTINGS_OPTIONS[key].has(entry)
     if (['normalizeLufs', 'ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key) && entry === null) return true
     if (key === 'normalizeLufs') return typeof entry === 'number' && Number.isFinite(entry)
-    if (['ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key)) return typeof entry === 'string' && entry.length <= 4096
+    // Main executes these paths. Only the native engine:pickTool dialog may set
+    // one; the renderer can merely reset a tool to automatic discovery.
+    if (['ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key)) return false
     const original = current[key]
     if (typeof entry !== typeof original) return false
     if (typeof entry === 'string') return entry.length <= 4096
@@ -235,7 +237,7 @@ export function registerIpcHandlers(): void {
     const target = kind === 'userData' ? app.getPath('userData') :
       kind === 'engine' ? engineService.directory :
         settingsService.get().downloadDir || defaultDownloadDir()
-    if (!(await fileExists(target))) return false
+    if (!(await directoryExists(target))) return false
     const error = await shell.openPath(target)
     return error.length === 0
   })
@@ -351,14 +353,20 @@ export function registerIpcHandlers(): void {
   handle('queue:reorder', (ids) => queueService.reorder(ids))
   handle('queue:updateJob', (id, patch) => queueService.updateJob(id, patch))
   handle('queue:clearFinished', () => queueService.clearFinished())
+  // A library rename or removal outdates the job's recorded path; the record is authoritative.
+  const jobOutput = (id: string): string | null => {
+    const job = queueService.getJob(id)
+    if (!job) return null
+    return (job.libraryId ? libraryService.get(job.libraryId)?.filePath : null) ?? job.outputPath
+  }
   handle('queue:revealOutput', async (id) => {
-    const target = queueService.getJob(id)?.outputPath
+    const target = jobOutput(id)
     if (!target || !(await fileExists(target))) return false
     shell.showItemInFolder(target)
     return true
   })
   handle('queue:openOutput', async (id) => {
-    const target = queueService.getJob(id)?.outputPath
+    const target = jobOutput(id)
     return target && await fileExists(target) ? (await shell.openPath(target)).length === 0 : false
   })
 

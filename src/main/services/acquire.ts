@@ -166,6 +166,15 @@ export async function acquireAudio(
   }
 }
 
+/** yt-dlp partials and fragments, and Sonic's own conversion output, are never source media. */
+export function isStagingScratch(entry: string, jobId: string): boolean {
+  const rest = entry.slice(jobId.length + 1).toLowerCase()
+  if (rest.startsWith('out.')) return true
+  if (/(^|\.)(part|ytdl|temp|tmp)$/.test(rest) || /(^|\.)(part-frag|frag)\d+/.test(rest) || /(^|\.)temp\./.test(rest)) return true
+  // Intermediate per-format files look like `<id>.f137.mp4`.
+  return /(^|\.)f\d+\./.test(rest)
+}
+
 /** Locates the finished media file for a job, ignoring yt-dlp's scratch files. */
 export async function findStagedFile(jobId: string): Promise<string | null> {
   const staging = stagingDir()
@@ -176,16 +185,27 @@ export async function findStagedFile(jobId: string): Promise<string | null> {
     return null
   }
 
-  const candidates = entries.filter((entry) => {
-    if (!entry.startsWith(`${jobId}.`)) return false
-    if (entry.endsWith('.part') || entry.endsWith('.ytdl') || entry.endsWith('.temp')) return false
-    // Intermediate per-format files look like `<id>.f137.mp4`.
-    if (/\.f\d+\./.test(entry)) return false
-    return true
-  })
-
+  const candidates = entries.filter((entry) => entry.startsWith(`${jobId}.`) && !isStagingScratch(entry, jobId))
   if (candidates.length === 0) return null
-  return path.join(staging, candidates[0])
+  // One finished download is expected; prefer the largest if a stray remains.
+  const sized = await Promise.all(candidates.map(async (entry) => ({ entry, size: await fileSize(path.join(staging, entry)) })))
+  sized.sort((a, b) => b.size - a.size || a.entry.localeCompare(b.entry))
+  return path.join(staging, sized[0].entry)
+}
+
+/**
+ * Removes crash leftovers: every artefact of a job that no longer exists, and
+ * partial conversion output of a job that is not running. Shared areas
+ * (engine downloads, re-export folders) are left alone.
+ */
+export async function sweepStaging(known: (jobId: string) => boolean, running: (jobId: string) => boolean): Promise<void> {
+  let entries: string[]
+  try { entries = await readdir(stagingDir()) } catch { return }
+  for (const entry of entries) {
+    const id = /^(job_[0-9a-f]+)\./.exec(entry)?.[1]
+    if (!id || running(id)) continue
+    if (!known(id) || entry.slice(id.length + 1).startsWith('out.')) await removeFile(path.join(stagingDir(), entry))
+  }
 }
 
 /** Removes every staging artefact belonging to a job. */

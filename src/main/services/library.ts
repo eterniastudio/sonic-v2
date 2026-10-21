@@ -36,6 +36,10 @@ const FIELD_KEYS = new Set<string>([
 ])
 
 const SCAN_CONCURRENCY = 8
+/** exFAT, FAT32 and many SMB shares cannot hard-link; those renames fall back to a reserved move. */
+const LINK_UNSUPPORTED = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV', 'EISDIR', 'ENOSYS'])
+/** `normalizeLibrary` resets these on load; they never need a durable commit. */
+const TRANSIENT_STATUSES = new Set<AnalysisStatus>(['queued', 'analyzing'])
 type FileObservation = { exists: boolean; isFile: boolean; size: number; error?: string }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -234,6 +238,20 @@ export interface RecoveryCommit {
   recoveryInfo: RecoveryInfo
 }
 
+/** Move onto a name reserved with an exclusive create, so no other writer's file is replaced. */
+async function exclusiveRename(from: string, to: string): Promise<void> {
+  const handle = await open(to, 'wx')
+  let reservation: Awaited<ReturnType<typeof handle.stat>>
+  try { reservation = await handle.stat() } finally { await handle.close() }
+  try { await rename(from, to) } catch (error) {
+    try {
+      const current = await lstat(to)
+      if (current.isFile() && current.ino === reservation.ino && current.size === 0) await unlink(to)
+    } catch { /* The reservation is already gone. */ }
+    throw error
+  }
+}
+
 class LibraryService extends EventEmitter {
   private store = new JsonStore<LibraryBeat[]>(libraryFile(), [], normalizeLibrary)
   private rescanTimer: NodeJS.Timeout | null = null
@@ -298,7 +316,7 @@ class LibraryService extends EventEmitter {
     return state?.error ? state.revision : null
   }
 
-  private assertWritable(): void {
+  assertWritable(): void {
     if (this.pendingRevision() !== null) throw new Error('A library save is pending. Retry saving before changing files or records.')
   }
 
@@ -342,9 +360,26 @@ class LibraryService extends EventEmitter {
   }
 
   add(beat: LibraryBeat): LibraryBeat[] {
+    this.assertWritable()
     if (beat.fileOwnership === 'external') beat = { ...beat, sidecarPath: null, sidecarSync: undefined }
     const next = [beat, ...this.store.read().filter((entry) => entry.id !== beat.id)]
     this.store.write(next)
+    this.emitChanged()
+    return this.list()
+  }
+
+  /** Adds a batch in one committed revision; the result matches sequential `add` calls. */
+  addMany(beats: LibraryBeat[]): LibraryBeat[] {
+    if (beats.length === 0) return this.list()
+    this.assertWritable()
+    const ids = new Set<string>()
+    const incoming: LibraryBeat[] = []
+    for (const beat of [...beats].reverse()) {
+      if (ids.has(beat.id)) continue
+      ids.add(beat.id)
+      incoming.push(beat.fileOwnership === 'external' ? { ...beat, sidecarPath: null, sidecarSync: undefined } : beat)
+    }
+    this.store.write([...incoming, ...this.store.read().filter(entry => !ids.has(entry.id))])
     this.emitChanged()
     return this.list()
   }
@@ -632,9 +667,16 @@ class LibraryService extends EventEmitter {
       return { ...entry, analysisStatus: status }
     })
     if (changed) {
-      this.store.write(next)
+      this.commitStatuses(next, status)
       this.emitChanged()
     }
+  }
+
+  /** In-progress markers are discarded on load, so they are kept in memory only
+   * and ride along with the next durable commit; settled statuses are saved. */
+  private commitStatuses(next: LibraryBeat[], status: AnalysisStatus): void {
+    if (TRANSIENT_STATUSES.has(status)) this.store.stage(next)
+    else this.store.write(next)
   }
 
   /**
@@ -662,7 +704,7 @@ class LibraryService extends EventEmitter {
       return { ...entry, analysisStatus: status }
     })
     if (changed) {
-      this.store.write(next)
+      this.commitStatuses(next, status)
       this.emitChanged()
     }
   }
@@ -765,7 +807,7 @@ class LibraryService extends EventEmitter {
       updated.fileOwnership = 'external'
       updated.sidecarPath = null
       updated.sidecarSync = undefined
-      this.store.write(this.store.read().map(entry => entry.id === updated.id ? updated : entry))
+      this.commitChanged(previous, updated)
       return
     }
     const template = previous.namingTemplate || settingsService.get().namingTemplate
@@ -779,7 +821,7 @@ class LibraryService extends EventEmitter {
     const extension = path.extname(previous.fileName)
     const currentStem = path.parse(previous.fileName).name.replace(/ \(\d+\)$/, '')
     if (desiredStem === currentStem || previous.missing) {
-      this.store.write(this.store.read().map(entry => entry.id === updated.id ? updated : entry))
+      this.commitChanged(previous, updated)
       return
     }
     if (!previous.fingerprint || (await sha256File(previous.filePath)) !== previous.fingerprint ||
@@ -802,7 +844,7 @@ class LibraryService extends EventEmitter {
         // The library correction is authoritative. An optional, damaged sidecar
         // must not make a user's change disappear; sync will report the error.
         storageDiagnostic(libraryFile(), { operation: 'rename-deferred-sidecar', id: previous.id, error: String(error) })
-        this.store.write(this.store.read().map(entry => entry.id === updated.id ? updated : entry))
+        this.commitChanged(previous, updated)
         return
       }
     }
@@ -813,13 +855,18 @@ class LibraryService extends EventEmitter {
     })
     const nextAudio = path.join(directory, candidate)
     const nextSidecar = previous.sidecarPath ? path.join(path.dirname(previous.sidecarPath), `${candidate}.sonic.json`) : null
-    let linked = false
+    let moved: 'link' | 'rename' | null = null
     let createdSidecar = false
     let committed = false
     let pendingRename = false
     try {
-      await link(previous.filePath, nextAudio)
-      linked = true
+      try {
+        await link(previous.filePath, nextAudio)
+        moved = 'link'
+      } catch (error) {
+        if (!LINK_UNSUPPORTED.has((error as NodeJS.ErrnoException).code ?? '')) throw error
+        storageDiagnostic(libraryFile(), { operation: 'rename-link-unsupported', id: previous.id, nextAudio, error: String(error) })
+      }
       if (parsed && nextSidecar) {
         parsed.naming.fileName = candidate
         parsed.output.filePath = candidate
@@ -830,8 +877,16 @@ class LibraryService extends EventEmitter {
         try { await output.writeFile(JSON.stringify(parsed, null, 2), 'utf8'); await output.sync() }
         finally { await output.close() }
       }
+      if (!moved) {
+        // The old name disappears before the library commit; a crash here leaves
+        // the renamed audio and its new sidecar for recovery to match by fingerprint.
+        await exclusiveRename(previous.filePath, nextAudio)
+        moved = 'rename'
+      }
       updated.filePath = nextAudio
       updated.fileName = candidate
+      updated.missing = false
+      updated.fileAccessError = null
       updated.sidecarPath = nextSidecar
       updated.namingTemplate = template
       if (previous.ownershipEvidence) updated.ownershipEvidence = {
@@ -841,7 +896,8 @@ class LibraryService extends EventEmitter {
       const storeKey = path.resolve(this.store.path).toLowerCase()
       const beforeRevision = storageStatus().find(state => path.resolve(state.file).toLowerCase() === storeKey)?.revision ?? 0
       try {
-        this.store.write(this.store.read().map(entry => entry.id === updated.id ? updated : entry))
+        // A scan that observed the vacated name must not leave the moved record marked missing.
+        this.commitChanged(previous, updated, ['sidecarSync', 'missing', 'fileAccessError'])
       } catch (error) {
         const afterRevision = storageStatus().find(state => path.resolve(state.file).toLowerCase() === storeKey)?.revision ?? 0
         pendingRename = afterRevision > beforeRevision
@@ -854,15 +910,32 @@ class LibraryService extends EventEmitter {
     } catch (error) {
       if (!committed && !pendingRename) {
         if (createdSidecar && nextSidecar) await unlink(nextSidecar).catch(() => undefined)
-        if (linked) await unlink(nextAudio).catch(() => undefined)
+        if (moved === 'link') await unlink(nextAudio).catch(() => undefined)
+        if (moved === 'rename') {
+          try { await exclusiveRename(nextAudio, previous.filePath) } catch (rollbackError) {
+            storageDiagnostic(libraryFile(), { operation: 'rename-rollback-failed', id: previous.id,
+              previousPath: previous.filePath, nextAudio, error: String(rollbackError) })
+            throw new Error(`${String(error)}; the audio could not be moved back and remains at ${nextAudio}.`, { cause: error })
+          }
+        }
       }
       throw error
     }
-    for (const oldPath of [previous.sidecarPath, previous.filePath]) {
+    for (const oldPath of [previous.sidecarPath, moved === 'link' ? previous.filePath : null]) {
       if (!oldPath) continue
       try { await unlink(oldPath) }
       catch (error) { storageDiagnostic(libraryFile(), { operation: 'rename-old-file-cleanup', id: previous.id, oldPath, error: String(error) }) }
     }
+  }
+
+  /** Commit only the fields this operation changed onto the latest record, so status or
+   * source writes made during its awaits are kept. Its sidecar state is always its own. */
+  private commitChanged(previous: LibraryBeat, updated: LibraryBeat, force: (keyof LibraryBeat)[] = ['sidecarSync']): void {
+    const changed: Partial<LibraryBeat> = {}
+    for (const key of new Set([...Object.keys(previous), ...Object.keys(updated), ...force]) as Set<keyof LibraryBeat>) {
+      if (force.includes(key) || JSON.stringify(previous[key]) !== JSON.stringify(updated[key])) Object.assign(changed, { [key]: updated[key] })
+    }
+    this.store.write(this.store.read().map(entry => entry.id === updated.id ? { ...entry, ...changed } : entry))
   }
 
   private async assertSidecarReceipt(beat: LibraryBeat, parsed: BeatSidecar, file: string): Promise<void> {

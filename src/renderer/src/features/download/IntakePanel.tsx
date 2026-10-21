@@ -14,6 +14,8 @@ import { Switch } from '@/components/ui/Switch'
 import { Dropdown, DropdownItem, DropdownLabel } from '@/components/ui/Dropdown'
 import { toast } from '@/components/ui/Toaster'
 
+const QUEUE_ADD_LIMIT = 1000
+
 /** Link composer with a single queue action and persistent export defaults. */
 export function IntakePanel(): ReactNode {
   const [text, setText] = useState('')
@@ -64,13 +66,19 @@ export function IntakePanel(): ReactNode {
         setReview({ tracks: [...tracks.values()], summary: summaries.join(' · '), text: submittedText })
         return
       }
-      await addUrls([submittedText])
+      // Send the parsed links, never the raw paste: main caps each entry at 4,096
+      // characters and each call at 1,000 entries.
+      const urls = parsed.tracks.flatMap(track => track.normalized ? [track.normalized] : [])
+      const before = new Set(useApp.getState().queue.jobs.map(job => job.id))
+      for (let index = 0; index < urls.length; index += QUEUE_ADD_LIMIT) await addUrls(urls.slice(index, index + QUEUE_ADD_LIMIT))
+      const added = useApp.getState().queue.jobs.filter(job => !before.has(job.id)).length
+      const skipped = urls.length - added
       toast({
-        kind: 'success',
-        title: `Queued ${acceptedCount} link${acceptedCount === 1 ? '' : 's'}`,
-        description: autoStart
+        kind: added ? 'success' : 'info',
+        title: added ? `Queued ${added} link${added === 1 ? '' : 's'}` : 'Already in the queue',
+        description: `${skipped > 0 ? `${skipped} link${skipped === 1 ? ' was' : 's were'} already queued. ` : ''}${added === 0 ? '' : autoStart
           ? 'Inspecting and downloading now.'
-          : 'Review the metadata, then start the download.'
+          : 'Review the metadata, then start the download.'}`.trim()
       })
       // A slow queue request must not discard the user's next batch of links.
       setText((current) => current === submittedText ? '' : current)

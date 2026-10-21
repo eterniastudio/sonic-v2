@@ -54,6 +54,16 @@ export function Dropdown({
     fallbackCloseMs: 150
   })
 
+  // The panel exists only while open or playing its exit, so a closed menu (one
+  // per queue row) costs no portal subtree. A freshly mounted panel paints its
+  // resting state once before `is-open`, which keeps the entrance transition.
+  const mounted = open || phase !== 'closed'
+  const [entered, setEntered] = useState(false)
+  useLayoutEffect(() => {
+    if (!open) { setEntered(false); return }
+    void panelRef.current?.getBoundingClientRect()
+    setEntered(true)
+  }, [open])
   const [position, setPosition] = useState({ left: 0, top: 0, width: 176, maxHeight: 400, side })
   const close = (): void => { setOpen(false); wrapperRef.current?.querySelector<HTMLButtonElement>('button')?.focus() }
   useOverlay([panelRef, wrapperRef], () => setOpen(false), open)
@@ -85,7 +95,8 @@ export function Dropdown({
     const button = wrapperRef.current?.querySelector('button')
     button?.setAttribute('aria-haspopup', 'menu')
     button?.setAttribute('aria-expanded', String(open))
-    button?.setAttribute('aria-controls', `${id}-panel`)
+    if (open) button?.setAttribute('aria-controls', `${id}-panel`)
+    else button?.removeAttribute('aria-controls')
     if (button) {
       button.disabled = Boolean(disabled)
       if (!button.id) button.id = `${id}-trigger`
@@ -105,7 +116,7 @@ export function Dropdown({
         }
       }}>
       {trigger({ open, toggle: () => !disabled && setOpen(value => !value), id })}
-      {createPortal(<div ref={panelRef} id={`${id}-panel`} role="menu" data-origin={originFor(position.side, align)}
+      {mounted ? createPortal(<div ref={panelRef} id={`${id}-panel`} role="menu" data-origin={originFor(position.side, align)}
         inert={!open} aria-hidden={!open}
         onClick={event => event.stopPropagation()}
         onKeyDown={event => {
@@ -127,10 +138,10 @@ export function Dropdown({
             ordered.find(item => item.textContent?.trim().toLocaleLowerCase().startsWith(prefix))?.focus()
           }
         }}
-        className={cn('t-dropdown fixed z-[410] rounded-[12px] border border-line bg-surface p-1 shadow-pop', open && 'is-open', !open && phase === 'closing' && 'is-closing', phase === 'closed' && 'invisible', panelClassName)}
+        className={cn('t-dropdown fixed z-[410] rounded-[12px] border border-line bg-surface p-1 shadow-pop', open && entered && 'is-open', !open && phase === 'closing' && 'is-closing', panelClassName)}
         style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight, overflowY: 'auto', pointerEvents: open ? 'auto' : 'none' }}>
         {typeof children === 'function' ? children(close) : children}
-      </div>, overlayRoot())}
+      </div>, overlayRoot()) : null}
     </div>
   )
 }

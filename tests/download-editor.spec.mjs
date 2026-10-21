@@ -50,7 +50,8 @@ downloadTest('SoundCloud and YouTube links can be queued together', async page =
   await expect(page.getByText('2 ready', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
   await expect(input).toHaveValue('')
-  expect(await page.evaluate(() => window.download.queued)).toEqual([[links]])
+  // The parsed links are queued, never the raw paste (main caps each entry at 4,096 characters).
+  expect(await page.evaluate(() => window.download.queued)).toEqual([['https://soundcloud.com/producer/beat', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ']])
   await input.fill('https://soundcloud.com/producer/sets/beats')
   await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeDisabled()
 })
@@ -161,6 +162,22 @@ downloadTest('incoming metadata preserves the draft and updates untouched fields
   await key.fill('  F# minor  ')
   await key.press('Enter')
   await expect(key).toHaveValue('F# minor')
+})
+
+downloadTest('metadata is read-only once conversion starts and an interrupted edit is reported', async page => {
+  const bpm = page.getByLabel('BPM', { exact: true })
+  await bpm.fill('133')
+  await page.evaluate(() => window.download.setStage('converting'))
+  await expect(page.getByRole('note')).toContainText('Library inspector')
+  await expect(bpm).toHaveAttribute('readonly', '')
+  await expect(bpm).toHaveValue('120')
+  await expect(page.getByRole('alert')).toContainText('Not saved')
+  await page.getByLabel('Title', { exact: true }).click()
+  await page.keyboard.type('changed')
+  await page.getByRole('button', { name: 'Outside field', exact: true }).click()
+  expect(await page.evaluate(() => window.download.edits)).toEqual([])
+  await page.evaluate(() => window.download.setStage('complete'))
+  await expect(page.getByRole('note')).toContainText('in your library')
 })
 
 downloadTest('metadata failures retain the draft and a pending edit submits once', async page => {

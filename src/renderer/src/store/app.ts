@@ -53,6 +53,8 @@ const FALLBACK_SETTINGS: Settings = {
 
 interface AppState {
   booted: boolean
+  /** Why the last bootstrap attempt failed, so the splash can offer a retry. */
+  bootError: string | null
   info: AppInfo | null
   settings: Settings
   engine: EngineStatus | null
@@ -119,6 +121,7 @@ const EMPTY_QUEUE: QueueSnapshot = { jobs: [], paused: false, concurrency: 2 }
 
 export const useApp = create<AppState>()((set, get) => ({
   booted: false,
+  bootError: null,
   info: null,
   settings: FALLBACK_SETTINGS,
   engine: null,
@@ -132,15 +135,20 @@ export const useApp = create<AppState>()((set, get) => ({
   analysisProgress: null,
 
   async bootstrap() {
-    const [info, settings, engine, queue, library] = await Promise.all([
-      ipc.invoke('app:info'),
-      ipc.invoke('settings:get'),
-      ipc.invoke('engine:status'),
-      ipc.invoke('queue:snapshot'),
-      ipc.invoke('library:list')
-    ])
-    set({ info, settings, engine, queue: reuseQueueSnapshot(get().queue, queue),
-      library: reuseSnapshotItems(get().library, library), booted: true })
+    set({ bootError: null })
+    try {
+      const [info, settings, engine, queue, library] = await Promise.all([
+        ipc.invoke('app:info'),
+        ipc.invoke('settings:get'),
+        ipc.invoke('engine:status'),
+        ipc.invoke('queue:snapshot'),
+        ipc.invoke('library:list')
+      ])
+      set({ info, settings, engine, queue: reuseQueueSnapshot(get().queue, queue),
+        library: reuseSnapshotItems(get().library, library), booted: true })
+    } catch (error) {
+      set({ bootError: error instanceof Error ? error.message : String(error) })
+    }
   },
 
   setView: (view) => set({ view }),

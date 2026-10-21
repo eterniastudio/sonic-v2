@@ -8,8 +8,9 @@ no code or design language carried over from the original Tauri build.
 
 Read the [plain-language change history](docs/CHANGELOG.md) for the features,
 reliability fixes, and measured improvements delivered by the previous pull requests.
-The [October 14 improvement review](docs/IMPROVEMENTS-2026-10-14.md) explains the
-current changes, performance measurements, and verification limits.
+The [October 20 improvement review](docs/IMPROVEMENTS-2026-10-20.md) explains the
+current fixes, measurements, and verification limits; the
+[October 14 review](docs/IMPROVEMENTS-2026-10-14.md) covers the key-detection rework.
 
 > **Use responsibly.** Sonic is for media you own or are authorised to download. It does
 > not bypass DRM, authentication, private-video access, or geographic restrictions, and
@@ -84,7 +85,8 @@ Sonic V2 is built to handle.
   overlapping tempo/key audio — no second download or upload. Analysis itself
   needs no Python, native module, WASM, or additional DSP dependency.
 - **Tempo:** spectral-flux onset envelope → autocorrelation *and* a comb filter, combined
-  with an Ellis-2007 log-Gaussian tempo prior, then octave-aware peak picking. Half- and
+  with an Ellis-2007 log-Gaussian tempo prior, then octave-aware peak picking and
+  fractional-lag refinement over several beat periods. Half- and
   double-time readings are reported as alternatives rather than collapsed away.
 - **Key:** interpolated spectral peaks → tuning-corrected pitch-class profiles →
   correlation against all 24 published Shaath major/minor profiles. Complete
@@ -93,11 +95,11 @@ Sonic V2 is built to handle.
   review. See the [algorithm, sources, and measured limits](docs/IMPROVEMENTS-2026-10-14.md).
 - Runs on a **worker thread**, so a multi-second analysis never blocks the UI, with bounded
   concurrency, cancellation, timeouts and scratch-file cleanup.
-- Results are cached by **input hash + engine version**, and the stage order is
+- Results are cached by **input hash + engine and pipeline version**, and the stage order is
   download → tags → **analyze** → cover → convert → tag readback → publish, so accepted
   estimates reach the file name, the embedded tags and the sidecar.
 
-The current analyzer is `sonic-dsp/3`. The Library's **Analyze** count includes
+The current analyzer is `sonic-dsp/4`. The Library's **Analyze** count includes
 missing results and tracks last measured by an older engine. Reanalysis preserves your manual
 corrections; use the inspector to review the new estimate or choose a suggested
 alternative. Confidence is an evidence indicator, not a probability of correctness.

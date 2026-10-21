@@ -143,18 +143,86 @@ export interface FfmpegBuildContext {
   tags: FfmpegTagContext
 }
 
-/** ID3v2 / Vorbis keys differ slightly; MP3 accepts the raw frame names. */
-function tagArgs(preset: PresetDefinition, tags: FfmpegTagContext): string[] {
+/**
+ * Tag dialect of an output container, chosen from the output file's extension
+ * (the `original` preset keeps whatever container was acquired, so the preset
+ * alone does not name it).
+ *
+ *  - `id3`      MP3: ID3v2.3 frames TBPM / TKEY.
+ *  - `vorbis`   FLAC, Ogg, Opus: Vorbis comments BPM / INITIALKEY.
+ *  - `mp4`      M4A/MP4: the iTunes `tmpo` atom (integer BPM). ffmpeg 6 cannot
+ *               write the freeform `----:com.apple.iTunes:initialkey` atom that
+ *               DJ software reads, and `-movflags use_metadata_tags` would move
+ *               *every* tag (title, artist…) into QuickTime `mdta` keys that
+ *               iTunes-style readers ignore, so no key is embedded in MP4.
+ *  - `matroska` WebM/MKV: Matroska SimpleTags BPM / INITIAL_KEY.
+ *  - `riff`     WAV: ffmpeg's WAV muxer writes only LIST/INFO (no BPM or key
+ *               field, and no ID3 option), so Sonic appends a standard `id3 `
+ *               chunk with TBPM / TKEY after encoding (see `wavId3Frames`).
+ *  - `other`    anything else: common text tags only.
+ */
+export type TagDialect = 'id3' | 'vorbis' | 'mp4' | 'matroska' | 'riff' | 'other'
+
+export function tagDialectFor(outputPath: string): TagDialect {
+  const match = /\.([A-Za-z0-9]+)$/.exec(outputPath)
+  switch (match ? match[1].toLowerCase() : '') {
+    case 'mp3':
+      return 'id3'
+    case 'flac':
+    case 'ogg':
+    case 'oga':
+    case 'opus':
+      return 'vorbis'
+    case 'm4a':
+    case 'mp4':
+    case 'm4b':
+    case 'mov':
+      return 'mp4'
+    case 'webm':
+    case 'mkv':
+    case 'mka':
+      return 'matroska'
+    case 'wav':
+      return 'riff'
+    default:
+      return 'other'
+  }
+}
+
+/** Text form of a BPM tag value; NaN/Infinity and non-positive values are dropped. */
+function bpmText(bpm: number | null | undefined): string | null {
+  return bpm != null && Number.isFinite(bpm) && bpm > 0 ? String(bpm) : null
+}
+
+/** ID3v2 TBPM/TKEY frames to append to a WAV file as an `id3 ` chunk. */
+export function wavId3Frames(tags: FfmpegTagContext): { id: 'TBPM' | 'TKEY'; text: string }[] {
+  const frames: { id: 'TBPM' | 'TKEY'; text: string }[] = []
+  const bpm = bpmText(tags.bpm)
+  if (bpm) frames.push({ id: 'TBPM', text: bpm })
+  if (tags.key) frames.push({ id: 'TKEY', text: tags.key })
+  return frames
+}
+
+/** Maps reviewed values onto the output container's own BPM/key fields. */
+function tagArgs(dialect: TagDialect, tags: FfmpegTagContext): string[] {
   const pairs: [string, string | number | null | undefined][] = [
     ['title', tags.title],
     ['artist', tags.producer],
     ['album', tags.album],
     ['comment', tags.comment],
     ['date', tags.date],
-    ['genre', tags.genre],
-    ['TBPM', tags.bpm],
-    ['TKEY', tags.key]
+    ['genre', tags.genre]
   ]
+
+  const bpm = bpmText(tags.bpm)
+  if (dialect === 'id3') pairs.push(['TBPM', bpm], ['TKEY', tags.key])
+  if (dialect === 'vorbis') pairs.push(['BPM', bpm], ['INITIALKEY', tags.key])
+  if (dialect === 'matroska') pairs.push(['BPM', bpm], ['INITIAL_KEY', tags.key])
+  if (dialect === 'mp4' && tags.bpm != null && Number.isFinite(tags.bpm)) {
+    // `tmpo` is a 16-bit integer atom; a fractional BPM is rounded to fit.
+    const tempo = Math.round(tags.bpm)
+    if (tempo >= 1 && tempo <= 65535) pairs.push(['tmpo', tempo])
+  }
 
   const args: string[] = []
   for (const [key, value] of pairs) {
@@ -162,7 +230,7 @@ function tagArgs(preset: PresetDefinition, tags: FfmpegTagContext): string[] {
     args.push('-metadata', `${key}=${String(value)}`)
   }
 
-  if (preset.extension === 'mp3') {
+  if (dialect === 'id3') {
     args.push('-id3v2_version', '3', '-write_id3v1', '1')
   }
   return args
@@ -202,7 +270,7 @@ export function buildFfmpegArgs(presetId: PresetId, context: FfmpegBuildContext)
     args.push('-af', `loudnorm=I=${context.lufs}:TP=-1.0:LRA=11`)
   }
 
-  args.push(...tagArgs(preset, context.tags))
+  args.push(...tagArgs(tagDialectFor(context.outputPath), context.tags))
 
   args.push(context.outputPath)
   return args

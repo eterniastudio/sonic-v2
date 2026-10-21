@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CircleAlert, RotateCcw, Wand2, X } from 'lucide-react'
-import type { Job, MetadataDraft, MetadataField } from '@shared/domain'
+import type { Job, JobStage, MetadataDraft, MetadataField } from '@shared/domain'
 import { formatBpm, formatCents, formatDuration } from '@shared/format'
 import { VERDICT_LABEL } from '@shared/verification'
 import { renderTemplate } from '@shared/template'
@@ -19,6 +19,7 @@ function MetaField({
   value,
   placeholder,
   mono,
+  readOnly,
   onCommit,
   type = 'text'
 }: {
@@ -27,6 +28,7 @@ function MetaField({
   value: string | number | null
   placeholder?: string
   mono?: boolean
+  readOnly?: boolean
   type?: 'text' | 'number'
   onCommit: (raw: string) => Promise<void>
 }): ReactNode {
@@ -40,11 +42,15 @@ function MetaField({
 
   // Adopt external changes (probe results, resets) without stomping typing.
   useEffect(() => {
+    if (readOnly && dirty.current && !saving.current) {
+      dirty.current = false
+      setError('Not saved: conversion has started. Edit it from the Library inspector.')
+    }
     if (!dirty.current) setLocal(external)
-  }, [external, pending])
+  }, [external, pending, readOnly])
 
   const commit = async (): Promise<void> => {
-    if (saving.current || local === external) return
+    if (readOnly || saving.current || local === external) return
     saving.current = true
     setPending(true)
     setError('')
@@ -66,6 +72,7 @@ function MetaField({
         type={type}
         value={local}
         disabled={pending}
+        readOnly={readOnly}
         aria-busy={pending || undefined}
         aria-invalid={Boolean(error) || undefined}
         aria-describedby={error ? `${fieldId}-error` : undefined}
@@ -95,6 +102,9 @@ function MetaField({
   )
 }
 
+/** Conversion embeds the reviewed metadata; later edits belong to the library record. */
+const LOCKED_STAGES: JobStage[] = ['converting', 'tagging', 'publishing', 'complete']
+
 const SOURCE_LABEL: Record<string, string> = {
   title: 'Title',
   description: 'Description',
@@ -111,6 +121,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
 
   const draft = job.metadata
   const final = draft.final
+  const locked = LOCKED_STAGES.includes(job.stage) || job.libraryId != null
 
   const edit = async (field: MetadataField, raw: string): Promise<void> => {
     const numeric = field === 'bpm' || field === 'altBpm' || field === 'detune'
@@ -166,7 +177,13 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
             <p className="mt-0.5 truncate text-[11.5px] text-fg-subtle">{final.producer || job.uploader || 'Unknown producer'}</p>
           </div>
         </div>
+        {locked ? (
+          <p role="note" className="rounded-[6px] bg-surface-2 px-2.5 py-2 text-[11.5px] leading-relaxed text-fg-muted">
+            {job.stage === 'complete' || job.libraryId ? 'This export is in your library. Edit it from the Library inspector.' : 'Metadata is locked while it is written into the file. Edit it from the Library inspector once the export finishes.'}
+          </p>
+        ) : null}
         <MetaField
+          readOnly={locked}
           label="Title"
           value={final.title}
           placeholder="Beat title"
@@ -174,6 +191,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         />
 
         <MetaField
+          readOnly={locked}
           label="Producer"
           value={final.producer}
           placeholder="prod. by…"
@@ -182,6 +200,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
 
         <div className="grid grid-cols-2 gap-3 border-t border-line pt-3">
           <MetaField
+            readOnly={locked}
             label="BPM"
             hint={
               final.altBpm != null ? `alt ${final.altBpm}` : draft.suggested.bpm ? 'suggested' : undefined
@@ -192,6 +211,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
             onCommit={(raw) => edit('bpm', raw)}
           />
           <MetaField
+            readOnly={locked}
             label="Detune"
             hint="cents"
             value={final.detune}
@@ -203,12 +223,14 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
 
         <div className="grid grid-cols-2 gap-3">
           <MetaField
+            readOnly={locked}
             label="Key"
             value={final.key}
             placeholder="F# minor"
             onCommit={(raw) => edit('key', raw)}
           />
           <MetaField
+            readOnly={locked}
             label="Camelot"
             value={final.camelot}
             placeholder="11A"
@@ -217,6 +239,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         </div>
 
         <MetaField
+          readOnly={locked}
           label="Genre"
           value={final.genre}
           placeholder="Trap, Drill, R&B…"
@@ -310,13 +333,13 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
           </dl>
         </Accordion>
 
-        <AnalysisPanel job={job} />
+        <AnalysisPanel job={job} locked={locked} />
       </div>
 
       <div className="shrink-0 border-t border-line pt-2">
         <button
           type="button"
-          disabled={draft.overrides.length === 0}
+          disabled={locked || draft.overrides.length === 0}
           onClick={() => void updateJob(job.id, { clearOverrides: draft.overrides })}
           className="flex h-7 w-full items-center justify-center gap-1.5 rounded-[4px] px-2 text-[11px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
         >
@@ -335,13 +358,13 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
  * with what the engine actually measured, and can adopt or reject the estimate
  * per field. Only actions that exist are shown.
  */
-function AnalysisPanel({ job }: { job: Job }): ReactNode {
+function AnalysisPanel({ job, locked }: { job: Job; locked: boolean }): ReactNode {
   const updateJob = useApp((state) => state.updateJob)
   const draft = job.metadata
   const analysis = draft.analysis
   const verification = draft.verification
 
-  const adoptable = (['bpm', 'key'] as const).filter(
+  const adoptable = locked ? [] : (['bpm', 'key'] as const).filter(
     (field) => draft.analyzed[field] != null && !draft.overrides.includes(field)
   )
 

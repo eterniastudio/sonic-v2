@@ -252,8 +252,10 @@ class AnalysisService extends EventEmitter {
       this.emitProgress(request.requestId, 'decoding', 'Decoding audio…')
       // Decode branches independently; a bad window does not erase the other branch.
       let tempoWindow: DecodedWorkerWindow | null = null
+      let decodeError: unknown = null
       try { tempoWindow = await decodeOne(plan.tempo, 0) } catch (error) {
         if (controller.signal.aborted) throw error
+        decodeError = error
       }
 
       const keyWindows: AnalysisWorkerWindow[] = []
@@ -282,10 +284,18 @@ class AnalysisService extends EventEmitter {
           examined.push({ start: planned.offsetSec, end: planned.offsetSec + decoded.sampleCount / decoded.sampleRate })
         } catch (error) {
           if (controller.signal.aborted) throw error
+          decodeError = error
         }
       }
 
       this.throwIfAborted(controller.signal)
+
+      if (!tempoWindow && keyWindows.length === 0) {
+        const detail = decodeError instanceof Error ? decodeError.message : decodeError ? String(decodeError) : ''
+        const message = detail ? `The audio could not be decoded for analysis: ${detail}` : 'The audio could not be decoded for analysis.'
+        this.emitProgress(request.requestId, 'failed', message)
+        return { ok: false, analysis: null, fromCache: false, cancelled: false, error: message, elapsedMs: Date.now() - started }
+      }
 
       this.emitProgress(request.requestId, 'analyzing', 'Analyzing tempo and key…')
 

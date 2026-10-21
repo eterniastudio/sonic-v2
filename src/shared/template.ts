@@ -94,7 +94,11 @@ function tokenValue(token: TemplateToken, context: TemplateContext): string {
  */
 const ORPHANED_UNIT = /^(?:bpm|key|camelot|detune|cents?|st|semitones?|kbps|khz|source|date|index|duration|preset)$/i
 
-/** Drops bracket groups that nothing but an orphaned unit word survived in. */
+/**
+ * Drops bracket groups that nothing but an orphaned unit word survived in.
+ * Token values are still opaque slots here, so only brackets written in the
+ * template itself can form a group: a title such as `Love (Key)` is never cut.
+ */
 function stripEmptyGroups(input: string): string {
   // One level, non-nested — templates never nest groups in practice.
   return input.replace(/[[(]([^\])}]*)[\])}]/g, (match, inner: string) => {
@@ -119,18 +123,26 @@ function tidy(rendered: string): string {
     .trim()
 }
 
-export function renderTemplate(template: string, context: TemplateContext): TemplatePreview {
+/** Private-use delimiters for a token value while the template literal is tidied. */
+const SLOT_CHARS = /[\uE000\uE001]/g
+const SLOT = /\uE000(\d+)\uE001/g
+
+function renderWithin(template: string, context: TemplateContext, maxLength: number): TemplatePreview {
   const unknownTokens: string[] = []
-  const raw = template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, name: string) => {
+  const values: string[] = []
+  const raw = template.replace(SLOT_CHARS, '').replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, name: string) => {
     if ((TEMPLATE_TOKENS as readonly string[]).includes(name)) {
-      return tokenValue(name as TemplateToken, context)
+      const value = tokenValue(name as TemplateToken, context).replace(SLOT_CHARS, '').trim()
+      if (!value) return ''
+      values.push(value)
+      return `\uE000${values.length - 1}\uE001`
     }
     unknownTokens.push(name)
     return ''
   })
 
-  const tidied = tidy(raw)
-  const sanitized = sanitizeFilename(tidied)
+  const tidied = tidy(raw).replace(SLOT, (_match, index: string) => values[Number(index)] ?? '')
+  const sanitized = sanitizeFilename(tidied, maxLength)
   return {
     rendered: sanitized.value,
     unknownTokens,
@@ -138,13 +150,20 @@ export function renderTemplate(template: string, context: TemplateContext): Temp
   }
 }
 
+export function renderTemplate(template: string, context: TemplateContext): TemplatePreview {
+  return renderWithin(template, context, MAX_STEM_LENGTH)
+}
+
 /** A DAW-visible name always carries known tempo and key, even with a custom template. */
 export function renderExportStem(template: string, context: TemplateContext): string {
-  const rendered = renderTemplate(template, context).rendered
-  const parts = [rendered]
-  if (context.metadata.bpm != null && !template.includes('{bpm}')) parts.push(`[${formatBpm(context.metadata.bpm)} BPM]`)
-  if (context.metadata.key && !template.includes('{key}')) parts.push(`[${context.metadata.key}]`)
-  return sanitizeFilename(parts.filter(Boolean).join(' ')).value
+  const suffix: string[] = []
+  if (context.metadata.bpm != null && !template.includes('{bpm}')) suffix.push(`[${formatBpm(context.metadata.bpm)} BPM]`)
+  if (context.metadata.key && !template.includes('{key}')) suffix.push(`[${context.metadata.key}]`)
+  const tail = suffix.join(' ')
+  // Shorten the name, not the tempo and key that make it DAW-visible.
+  const room = tail ? Math.max(1, MAX_STEM_LENGTH - tail.length - 1) : MAX_STEM_LENGTH
+  const rendered = renderWithin(template, context, room).rendered
+  return sanitizeFilename([rendered, tail].filter(Boolean).join(' ')).value
 }
 
 const RESERVED_DEVICE_NAMES = new Set([
@@ -171,14 +190,40 @@ const RESERVED_DEVICE_NAMES = new Set([
   'LPT6',
   'LPT7',
   'LPT8',
-  'LPT9'
+  'LPT9',
+  'COM¹',
+  'COM²',
+  'COM³',
+  'LPT¹',
+  'LPT²',
+  'LPT³'
 ])
 
 /** Maximum stem length, leaving room for a numbered collision suffix and extension. */
 const MAX_STEM_LENGTH = 150
 
-export function sanitizeFilename(input: string): { value: string; changed: boolean } {
-  let value = input
+let graphemes: Intl.Segmenter | null | undefined
+
+/**
+ * Cuts to at most `max` UTF-16 units (the unit Windows path limits count) but
+ * only between user-perceived characters, so an emoji is never split into a
+ * lone surrogate.
+ */
+function truncateText(value: string, max: number): string {
+  if (value.length <= max) return value
+  if (graphemes === undefined) graphemes = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null
+  const pieces = graphemes ? Array.from(graphemes.segment(value), (part) => part.segment) : Array.from(value)
+  let out = ''
+  for (const piece of pieces) {
+    if (out.length + piece.length > max) break
+    out += piece
+  }
+  return out
+}
+
+export function sanitizeFilename(input: string, maxLength = MAX_STEM_LENGTH): { value: string; changed: boolean } {
+  // NFC keeps visually identical names identical on disk, whatever the source.
+  let value = input.normalize('NFC')
 
   // Windows forbids these outright; control characters are never useful.
   value = value.replace(/[<>:"/\\|?*]/g, '')
@@ -191,11 +236,11 @@ export function sanitizeFilename(input: string): { value: string; changed: boole
   value = value.replace(/\s{2,}/g, ' ')
   value = value.replace(/\.{2,}/g, '.')
 
-  if (value.length > MAX_STEM_LENGTH) {
-    value = value.slice(0, MAX_STEM_LENGTH).replace(/[. ]+$/g, '')
+  if (value.length > maxLength) {
+    value = truncateText(value, maxLength).replace(/[. ]+$/g, '')
   }
 
-  const stem = value.split('.')[0]?.toUpperCase() ?? ''
+  const stem = value.split('.')[0]?.trim().toUpperCase() ?? ''
   if (RESERVED_DEVICE_NAMES.has(stem)) {
     value = `_${value}`
   }
