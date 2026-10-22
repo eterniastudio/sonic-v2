@@ -1,29 +1,39 @@
-import { useMemo, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Pause, Play, Repeat, SkipBack, SkipForward, Volume2, X } from 'lucide-react'
-import { analyzedValuesFrom } from '@shared/analysis'
 import { formatBpm, formatDuration } from '@shared/format'
-import { decideMetadataField, type FieldOrigin } from '@shared/metadata'
+import type { FieldOrigin } from '@shared/metadata'
 import { cn } from '@/lib/cn'
 import { TrackArtwork } from '@/components/audio/TrackArtwork'
+import { ORIGIN_MARKS, ProvenanceValue, useBeatOrigins } from '@/components/audio/Provenance'
 import { IconButton } from '@/components/ui/Button'
 import { usePlayback } from './playbackSession'
 
-const ORIGINS: Record<FieldOrigin, { label: string; description: string }> = {
-  manual: { label: 'manual', description: 'Set manually' },
-  title: { label: 'title', description: 'From the source title' },
-  description: { label: 'description', description: 'From the source description' },
-  filename: { label: 'filename', description: 'From the audio filename' },
-  embedded: { label: 'tag', description: 'From embedded audio tags' },
-  audio: { label: 'audio', description: 'Measured from the audio' },
-  legacy: { label: 'source unknown', description: 'Origin was not recorded for this value' },
-  none: { label: 'source unknown', description: 'No source is recorded for this value' }
+function TrackValue({ value, unknown, origin, confidence = null }: { value: string | null; unknown: string; origin: FieldOrigin; confidence?: number | null }): ReactNode {
+  return (
+    <span className="flex min-w-0 items-baseline gap-1">
+      <ProvenanceValue value={value} origin={origin} confidence={confidence} unknown={unknown} className="shrink-0" />
+      {value ? <span className="truncate text-[12px] text-fg-subtle">{ORIGIN_MARKS[origin].label}</span> : null}
+    </span>
+  )
 }
 
-function TrackValue({ value, unknown, origin }: { value: string | null; unknown: string; origin: FieldOrigin }): ReactNode {
+/**
+ * The record on the platter: the source artwork as the centre label of a black
+ * disc that turns at 33 1/3 while audio plays and settles when it stops.
+ */
+function Platter({ beat, spinning }: { beat: { thumbnail?: string | null; sourceUrl?: string | null; title: string } | null; spinning: boolean }): ReactNode {
   return (
-    <span className="flex min-w-0 items-baseline gap-1" title={value ? `${value} · ${ORIGINS[origin].description}` : unknown}>
-      <span className={cn('shrink-0 whitespace-nowrap nums', value ? 'font-medium text-fg-muted' : 'text-fg-subtle')}>{value ?? unknown}</span>
-      {value ? <span className="truncate text-[10px] text-fg-subtle">{ORIGINS[origin].label}</span> : null}
+    <span className="relative grid size-[56px] shrink-0 place-items-center rounded-full bg-vinyl shadow-[inset_0_0_0_1px_var(--sonic-border-strong)]">
+      <span aria-hidden="true" className="absolute inset-[3px] rounded-full border border-white/[0.06]" />
+      <span aria-hidden="true" className="absolute inset-[8px] rounded-full border border-white/[0.05]" />
+      <span aria-hidden="true" className="absolute inset-[13px] rounded-full border border-white/[0.04]" />
+      <span
+        className="relative size-[26px] overflow-hidden rounded-full"
+        style={{ animation: 'sonic-spin 1.8s linear infinite', animationPlayState: spinning ? 'running' : 'paused' }}
+      >
+        <TrackArtwork thumbnail={beat?.thumbnail} sourceUrl={beat?.sourceUrl} title={beat?.title ?? 'No track selected'} className="size-full" placeholder="label" />
+        <span aria-hidden="true" className="absolute top-1/2 left-1/2 size-[4px] -translate-1/2 rounded-full bg-vinyl" />
+      </span>
     </span>
   )
 }
@@ -43,20 +53,7 @@ export function PlaybackDock(): ReactNode {
   const length = Math.max(0, Number.isFinite(duration) && duration > 0 ? duration : beat?.durationSec ?? 0)
   const artist = beat?.producer || beat?.sourceChannel || (beat?.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')
   const queueLabel = queueContext ? `${queueContext.label} · ${queueContext.index} of ${queueContext.count}` : null
-  const provenance = useMemo(() => {
-    if (!beat) return null
-    const evidence = {
-      current: beat,
-      overrides: beat.overrides,
-      sources: beat.sources,
-      embedded: beat.embedded,
-      analyzed: beat.analysis ? analyzedValuesFrom(beat.analysis) : {}
-    }
-    return {
-      bpm: decideMetadataField('bpm', evidence).origin,
-      key: decideMetadataField(beat.key ? 'key' : 'camelot', evidence).origin
-    }
-  }, [beat])
+  const provenance = useBeatOrigins(beat)
   const statusLabel = playing
     ? 'Now playing'
     : status === 'loading'
@@ -76,25 +73,23 @@ export function PlaybackDock(): ReactNode {
       data-playback-state={status}
       data-playback-beat-id={beatId ?? ''}
       aria-busy={closing && !saveError}
-      className="relative z-10 shrink-0 border-t border-line-strong bg-[var(--sonic-transport)] px-5 py-3"
+      className="relative z-10 shrink-0 border-t border-line bg-[var(--sonic-transport)] px-5 py-3"
     >
       <div className="grid min-w-0 grid-cols-[minmax(260px,1.1fr)_112px_minmax(180px,1.15fr)_auto] items-center gap-x-4">
         <div className="flex min-w-0 items-center gap-3">
-          <TrackArtwork thumbnail={beat?.thumbnail} sourceUrl={beat?.sourceUrl} title={beat?.title ?? 'No track selected'}
-            className="size-[52px] shrink-0 rounded-[8px] border border-line" iconClassName="size-5" />
+          <Platter beat={beat ?? null} spinning={playing} />
           <div className="min-w-0 flex-1">
             <span className="sr-only" role="status">{statusLabel}</span>
-            <p className="truncate text-[13px] leading-[18px] font-semibold tracking-[-0.015em] text-fg" title={beat?.title}>
+            <p className="truncate text-[13.5px] leading-[18px] font-bold text-fg" title={beat?.title}>
               {beat?.title ?? 'Choose a beat to audition'}
             </p>
-            <p className="truncate text-[11px] leading-4 text-fg-muted" title={beat ? [artist, queueLabel].filter(Boolean).join(' · ') : undefined}>
+            <p className="truncate text-[12px] leading-4 text-fg-muted" title={beat ? [artist, queueLabel].filter(Boolean).join(' · ') : undefined}>
               {beat ? artist : 'Select a track from your Library'}
               {queueLabel ? <><span aria-hidden="true"> · </span><span>{queueLabel}</span></> : null}
             </p>
-            {beat && provenance ? <div role="group" aria-label="Track metadata" className="mt-0.5 flex min-w-0 items-center gap-2 text-[12px] leading-[16px]">
-              <TrackValue value={beat.bpm != null ? `${formatBpm(beat.bpm)} BPM` : null} unknown="BPM unknown" origin={provenance.bpm} />
-              <span aria-hidden="true" className="text-fg-subtle/60">·</span>
-              <TrackValue value={beat.key || beat.camelot || null} unknown="Key unknown" origin={provenance.key} />
+            {beat && provenance ? <div role="group" aria-label="Track metadata" className="mt-1 flex min-w-0 items-center gap-2.5 text-[13.5px] leading-[17px]">
+              <TrackValue value={beat.bpm != null ? `${formatBpm(beat.bpm)} BPM` : null} unknown="BPM unknown" origin={provenance.bpm} confidence={provenance.bpmConfidence} />
+              <TrackValue value={beat.key || beat.camelot || null} unknown="Key unknown" origin={provenance.key} confidence={provenance.keyConfidence} />
             </div> : null}
           </div>
         </div>
@@ -126,7 +121,7 @@ export function PlaybackDock(): ReactNode {
             {!hasTrack ? <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px bg-line" /> : null}
             <div className="h-[25px]" data-waveform ref={attachWaveform} />
           </div>
-          <div className="flex min-w-0 items-center gap-2 text-[10px] text-fg-subtle nums">
+          <div className="flex min-w-0 items-center gap-2 text-[12px] text-fg-subtle nums">
             <span className="w-8 shrink-0">{formatDuration(elapsed)}</span>
             <input
               aria-label="Seek preview"
@@ -157,9 +152,9 @@ export function PlaybackDock(): ReactNode {
           <IconButton label="Stop playback" size="icon-sm" disabled={closing || (!hasTrack && status !== 'error')} onClick={stop}><X /></IconButton>
         </div>
       </div>
-      {closing && !saveError ? <p role="status" className="mt-1 text-[11px] text-fg-muted">Finishing listening save…</p> : null}
-      {error ? <p role="alert" className="mt-1 text-[11px] text-danger">{error}</p> : null}
-      {saveError ? <div className="mt-1 flex items-center gap-2 text-[11px] text-warning">
+      {closing && !saveError ? <p role="status" className="mt-1 text-[12px] text-fg-muted">Finishing listening save…</p> : null}
+      {error ? <p role="alert" className="mt-1 text-[12px] text-danger">{error}</p> : null}
+      {saveError ? <div className="mt-1 flex items-center gap-2 text-[12px] text-warning">
         <span>Listening state was not saved: {saveError}</span>
         <button type="button" onClick={() => { void retrySave().catch(() => undefined) }} className="underline underline-offset-2">Retry save</button>
       </div> : null}

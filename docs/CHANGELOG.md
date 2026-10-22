@@ -6,6 +6,25 @@ Each entry describes what became useful in the app, with links to the original
 change and its verification notes. Historical test results describe that version;
 they are not a claim that every later version has been tested the same way.
 
+## October 21, 2026
+
+### White Label: a full visual redesign
+
+Sonic has a new look built on promo white-label records. In the dark theme, label-white type sits on black vinyl. In the light theme, the interface is the label stock itself. Square-cut panels, one-pixel rules and a single stamp-blue ink replace the old graphite cards and the five-accent picker. Saved accent settings still load and now resolve to stamp blue.
+
+Every tempo and key value now shows where it came from, wherever you read it: library rows, the inspector, and the player.
+
+| Mark | Meaning |
+| --- | --- |
+| **Bold printed figure** | Read from the source title, description or file name |
+| Blue stamped box | Read from the file's own embedded tag |
+| Dotted underline with three dots | Measured from the audio; the dots show analyser confidence |
+| Handwritten figure | Your own correction, which always wins |
+
+A legend above the library table spells this out. The inspector shows the track as a record. Its centre label carries the artwork, or, when there is none, the tempo and key written in their marks. The player's record turns while audio plays.
+
+Type is now Archivo, with condensed caps for headings and figures, and Shantell Sans for manual corrections. Both are bundled locally under the SIL Open Font License, and Inter was removed. Layout, controls, keyboard access and accessible names are unchanged.
+
 ## October 9, 2026
 
 ### Test the app without interrupting your desktop — [PR #9](https://github.com/eterniastudio/sonic-v2/pull/9)

@@ -123,28 +123,28 @@ export function RecoveryDialog({ planId, onClose }: { planId: string; onClose: (
             {!terminal ? <input type="checkbox" aria-label={`Reconnect ${item.title}`} checked={selected.has(item.beatId)}
               disabled={review?.phase !== 'ready' || !choices[item.beatId]} className="mt-1 shrink-0 accent-[var(--sonic-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
               onChange={event => setSelected(current => { const next = new Set(current); event.target.checked ? next.add(item.beatId) : next.delete(item.beatId); return next })} /> : null}
-            <div className="min-w-0 flex-1"><h3 className="break-words text-[13px] font-medium text-fg">{item.title}</h3>
-              <p className="mt-0.5 text-[11px] text-fg-muted">{labels[item.status]}</p></div>
+            <div className="min-w-0 flex-1"><h3 className="break-words text-[13.5px] font-medium text-fg">{item.title}</h3>
+              <p className="mt-0.5 text-[12px] text-fg-muted">{labels[item.status]}</p></div>
           </div>
-          <p className="mt-2 text-[10px] uppercase tracking-wider text-fg-subtle">Last known location</p>
-          <p className="select-text break-all font-mono text-[11px] text-fg-muted" title={item.oldPath}>{item.oldPath}</p>
+          <p className="mt-2 text-[12px] font-bold text-fg-subtle">Last known location</p>
+          <p className="select-text break-all font-mono text-[12px] text-fg-muted" title={item.oldPath}>{item.oldPath}</p>
           {item.error ? <p role="alert" className="mt-2 break-words text-[12px] text-warning">{item.error}</p> : null}
           {item.candidates.map(candidate => <div key={candidate.id} className="mt-2 rounded-md border border-line p-2">
-            <label className="flex items-start gap-2 text-[11px] text-fg">
+            <label className="flex items-start gap-2 text-[12px] text-fg">
               {!terminal ? <input type="radio" name={`candidate-${item.beatId}`} aria-label={candidate.path}
                 checked={choices[item.beatId] === candidate.id} disabled={review?.phase !== 'ready'} className="mt-0.5 shrink-0 accent-[var(--sonic-accent)] focus-visible:outline focus-visible:outline-2"
                 onChange={() => { setChoices(current => ({ ...current, [item.beatId]: candidate.id })); setSelected(current => new Set([...current, item.beatId])) }} /> : null}
               <span className="min-w-0 select-text break-all font-mono" title={candidate.path}>{candidate.path}</span>
             </label>
-            <p className="mt-1 text-[11px] text-fg-muted">{candidate.ownership === 'retained' ? 'Sonic file ownership verified' : 'Read-only at this location'}</p>
-            {candidate.note ? <p className="mt-1 break-words text-[11px] leading-relaxed text-fg-muted">{candidate.note}</p> : null}
+            <p className="mt-1 text-[12px] text-fg-muted">{candidate.ownership === 'retained' ? 'Sonic file ownership verified' : 'Read-only at this location'}</p>
+            {candidate.note ? <p className="mt-1 break-words text-[12px] leading-relaxed text-fg-muted">{candidate.note}</p> : null}
           </div>)}
         </article>)}
         {review?.errors.length ? <div className="rounded-lg border border-line p-3"><h3 className="text-[12px] font-medium text-warning">Access and scan errors</h3>
-          {review.errors.map((entry, index) => <p key={index} className="mt-2 break-all text-[11px] text-fg-muted" title={entry.path}>{entry.path}: {entry.message}</p>)}
+          {review.errors.map((entry, index) => <p key={index} className="mt-2 break-all text-[12px] text-fg-muted" title={entry.path}>{entry.path}: {entry.message}</p>)}
         </div> : null}
       </div>
-      {pages > 1 ? <div className="flex items-center justify-between text-[11px] text-fg-muted"><Button size="sm" variant="ghost" disabled={page === 0} onClick={() => setPage(value => value - 1)}>Previous results</Button>
+      {pages > 1 ? <div className="flex items-center justify-between text-[12px] text-fg-muted"><Button size="sm" variant="ghost" disabled={page === 0} onClick={() => setPage(value => value - 1)}>Previous results</Button>
         <span>Page {page + 1} of {pages}</span><Button size="sm" variant="ghost" disabled={page + 1 >= pages} onClick={() => setPage(value => value + 1)}>Next results</Button></div> : null}
     </div>
   </Modal>

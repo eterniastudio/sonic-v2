@@ -54,7 +54,7 @@ export function ExportSection(): ReactNode {
                 id="settings-export-folder"
                 value={settings.downloadDir}
                 readOnly
-                className="font-mono text-[12px]"
+                className="font-mono text-[12px] text-ellipsis"
                 leading={<FolderOpen />}
               />
             </div>
@@ -101,7 +101,7 @@ export function ExportSection(): ReactNode {
           <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5">
             {TEMPLATE_TOKEN_HELP.map((entry) => (
               <li key={entry.token} className="flex items-baseline gap-2">
-                <code className="shrink-0 rounded-[4px] bg-surface-3 px-1 py-0.5 font-mono text-[12px] text-fg">
+                <code className="shrink-0 rounded-[2px] bg-surface-3 px-1 py-0.5 font-mono text-[12px] text-fg">
                   {`{${entry.token}}`}
                 </code>
                 <span className="truncate text-[12px] text-fg-muted">{entry.description}</span>
@@ -210,7 +210,7 @@ export function ExportSection(): ReactNode {
         </div>
 
         <div className="flex items-center gap-3 border-t border-line py-3">
-          <span className="flex-1 text-[12.5px] text-fg-muted">
+          <span className="flex-1 text-[13.5px] text-fg-muted">
             Concurrent analyses
             <span className="mt-0.5 block text-[12px] text-fg-subtle">
               One at a time keeps your workspace responsive.
@@ -290,7 +290,7 @@ export function ExportSection(): ReactNode {
         </div>
 
         <div className="flex items-center gap-3 border-t border-line pt-3">
-          <span className="flex-1 text-[12.5px] text-fg-muted">Concurrent downloads</span>
+          <span className="flex-1 text-[13.5px] text-fg-muted">Concurrent downloads</span>
           <Segmented
             value={String(settings.concurrency)}
             onChange={(next) => void patchSettings({ concurrency: Number(next) })}

@@ -58,7 +58,7 @@ const VIRTUALIZE_AFTER = 150
 const LIST_ROW_PX = 52
 const GRID_CARD_PX = 112
 const GRID_GAP_PX = 8
-const GRID_MIN_COLUMN_PX = 260
+const GRID_MIN_COLUMN_PX = 210
 /** Remembered across remounts so a restored grid scroll position has its real height. */
 let lastResultsWidth = 0
 
@@ -503,7 +503,7 @@ export function LibraryView(): ReactNode {
 
         {showFilters ? (
           <div className="flex max-h-[148px] flex-wrap items-center gap-x-5 gap-y-3 overflow-y-auto border-y border-line py-3">
-            <label className="flex items-center gap-1.5 text-[11px] font-medium text-fg-subtle">
+            <label className="flex items-center gap-1.5 text-[12px] font-medium text-fg-subtle">
               BPM
               <Input type="number" min="1" max="999" step="any" inputMode="decimal"
                 aria-label="Target BPM" value={bpmFilter} onChange={(event) => setBpmFilter(event.target.value)}
@@ -515,15 +515,15 @@ export function LibraryView(): ReactNode {
             </label>
             <div className="flex items-center gap-2">
               <Switch checked={includeHalfDouble} onChange={setIncludeHalfDouble} label="Include half and double time" />
-              <span className="text-[11px] text-fg-muted">Half/double time</span>
+              <span className="text-[12px] text-fg-muted">Half/double time</span>
             </div>
-            <label className="flex items-center gap-1.5 text-[11px] font-medium text-fg-subtle">
+            <label className="flex items-center gap-1.5 text-[12px] font-medium text-fg-subtle">
               Key / Camelot
               <Input aria-label="Key or Camelot" value={keyFilter} onChange={(event) => setKeyFilter(event.target.value)}
                 placeholder="e.g. 8A" className="w-[90px]" />
             </label>
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-fg-subtle">Tempo</span>
+              <span className="text-[12px] font-medium text-fg-subtle">Tempo</span>
               {TEMPO_BANDS.map((band) => (
                 <button
                   key={band.id}
@@ -531,7 +531,7 @@ export function LibraryView(): ReactNode {
                   onClick={() => toggle(bands, band.id, setBands)}
                   aria-pressed={bands.has(band.id)}
                   className={cn(
-                    'rounded-[6px] border px-2 py-1 text-[11px] transition-colors duration-[var(--duration-quick)]',
+                    'rounded-[2px] border px-2 py-1 text-[12px] transition-colors duration-[var(--duration-quick)]',
                     bands.has(band.id)
                       ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent'
                       : 'border-line text-fg-muted hover:border-line-strong hover:text-fg'
@@ -543,7 +543,7 @@ export function LibraryView(): ReactNode {
             </div>
 
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-fg-subtle">Format</span>
+              <span className="text-[12px] font-medium text-fg-subtle">Format</span>
               {availableFormats.map((format) => (
                 <button
                   key={format}
@@ -551,7 +551,7 @@ export function LibraryView(): ReactNode {
                   onClick={() => toggle(formats, format, setFormats)}
                   aria-pressed={formats.has(format)}
                   className={cn(
-                    'rounded-[6px] border px-2 py-1 text-[11px] uppercase transition-colors duration-[var(--duration-quick)]',
+                    'rounded-[2px] border px-2 py-1 text-[12px] uppercase transition-colors duration-[var(--duration-quick)]',
                     formats.has(format)
                       ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent'
                       : 'border-line text-fg-muted hover:border-line-strong hover:text-fg'
@@ -563,22 +563,22 @@ export function LibraryView(): ReactNode {
             </div>
 
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-fg-subtle">Files</span>
+              <span className="text-[12px] font-medium text-fg-subtle">Files</span>
               {(['all', 'present', 'missing'] as const).map((value) => (
                 <button key={value} type="button" onClick={() => setFileFilter(value)}
                   aria-pressed={fileFilter === value}
-                  className={cn('rounded-[6px] border px-2 py-1 text-[11px] capitalize transition-colors',
+                  className={cn('rounded-[2px] border px-2 py-1 text-[12px] capitalize transition-colors',
                     fileFilter === value ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent' : 'border-line text-fg-muted hover:border-line-strong hover:text-fg')}>
                   {value}
                 </button>
               ))}
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-fg-subtle">Review</span>
+              <span className="text-[12px] font-medium text-fg-subtle">Review</span>
               {(['all', 'incomplete', 'disagreement'] as const).map((value) => (
                 <button key={value} type="button" onClick={() => setReviewFilter(value)}
                   aria-pressed={reviewFilter === value}
-                  className={cn('rounded-[6px] border px-2 py-1 text-[11px] capitalize transition-colors',
+                  className={cn('rounded-[2px] border px-2 py-1 text-[12px] capitalize transition-colors',
                     reviewFilter === value ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent' : 'border-line text-fg-muted hover:border-line-strong hover:text-fg')}>
                   {value}
                 </button>
@@ -640,13 +640,13 @@ export function LibraryView(): ReactNode {
           <div className="studio-panel grid h-full min-h-[230px] place-items-center px-6 py-8">
             <div className="max-w-[360px] text-center">
               <Music4 className="mx-auto mb-4 size-6 text-fg-subtle" strokeWidth={1.4} />
-              <h2 className="text-[15px] font-medium text-fg">Your library is empty</h2>
+              <h2 className="label-type text-[20px] text-fg">Your library is empty</h2>
               <p className="mt-2 text-[12px] leading-relaxed text-fg-muted">Import audio from your computer, or add a link in Downloads.</p>
-              <p className="mt-5 text-[11px] text-fg-subtle">WAV · FLAC · MP3 · M4A · OGG</p>
+              <p className="mt-5 text-[12px] text-fg-subtle">WAV · FLAC · MP3 · M4A · OGG</p>
             </div>
           </div>
         ) : visible.length === 0 ? (
-          <div className="studio-panel grid h-full min-h-[180px] place-items-center px-8 text-center text-[13px] text-fg-muted">
+          <div className="studio-panel grid h-full min-h-[180px] place-items-center px-8 text-center text-[13.5px] text-fg-muted">
             {activeCollection?.type === 'manual' && activeCollection.beatIds.length === 0
               ? 'This collection is empty. Select beats and use Add to collection.'
               : activeScope === FAVORITES_COLLECTION_ID && !library.some(beat => organization && Object.prototype.hasOwnProperty.call(organization.annotations, beat.id) && organization.annotations[beat.id].favorite)
@@ -663,7 +663,7 @@ export function LibraryView(): ReactNode {
       </div>
 
       {selected ? (
-        <aside aria-label="Beat inspector" className="min-h-0 w-[300px] max-w-[39%] shrink-0 overflow-y-auto rounded-[10px] bg-surface">
+        <aside aria-label="Beat inspector" className="min-h-0 w-[300px] max-w-[39%] shrink-0 overflow-y-auto rounded-[2px] bg-surface">
           <PreviewTransport
           key={`preview-${selected.id}`}
           beat={selected}
@@ -686,7 +686,7 @@ export function LibraryView(): ReactNode {
 
       {menu && library.some(beat => beat.id === menu.id) ? createPortal(
         <div ref={menuRef} role="menu" aria-label="Beat actions" tabIndex={-1}
-          className="fixed z-[420] w-[208px] rounded-[12px] border border-line bg-surface p-1 shadow-pop"
+          className="fixed z-[420] w-[208px] rounded-[2px] border border-line bg-surface p-1 shadow-pop"
           style={{ left: menu.x, top: menu.y }}
           onKeyDown={event => {
             const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
@@ -700,7 +700,7 @@ export function LibraryView(): ReactNode {
             const beat = library.find(item => item.id === menu.id)!
             const item = (label: string, action: () => void | Promise<void>, disabled = false): ReactNode => (
               <button type="button" role="menuitem" disabled={disabled} key={label}
-                className="flex w-full rounded-[8px] px-2.5 py-2 text-left text-[12.5px] text-fg hover:bg-surface-2 focus:bg-surface-2 focus:outline-none disabled:opacity-40"
+                className="flex w-full rounded-[2px] px-2.5 py-2 text-left text-[13.5px] text-fg hover:bg-surface-2 focus:bg-surface-2 focus:outline-none disabled:opacity-40"
                 onClick={() => { setMenu(null); void Promise.resolve(action()).catch(error => toast({ kind: 'error', title: label, description: String(error) })) }}>
                 {label}
               </button>
@@ -768,7 +768,7 @@ export function LibraryView(): ReactNode {
         <label className="block text-[12px] font-medium text-fg-muted" htmlFor="local-export-preset">Audio format</label>
         <select id="local-export-preset" value={exportPresetId}
           onChange={event => setExportPresetId(event.target.value as PresetId)}
-          className="mt-1.5 h-9 w-full rounded-[9px] border border-line bg-surface-2 px-2.5 text-[13px] text-fg">
+          className="mt-1.5 h-9 w-full rounded-[2px] border border-line bg-surface-2 px-2.5 text-[13.5px] text-fg">
           {PRESETS.filter(preset => preset.id !== 'original').map(preset =>
             <option key={preset.id} value={preset.id}>{preset.label}</option>)}
         </select>
@@ -797,12 +797,12 @@ export function LibraryView(): ReactNode {
           setDeleteTarget(null)
         }}
       >
-        {deleteTarget?.fileOwnership !== 'external' ? <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
+        {deleteTarget?.fileOwnership !== 'external' ? <div className="flex items-center gap-2.5 rounded-[2px] border border-line bg-surface-2 px-3 py-2.5">
           <Switch checked={alsoDeleteFiles} onChange={setAlsoDeleteFiles} label="Also delete the files" />
-          <span className="text-[12.5px] text-fg-muted">Also delete the audio and sidecar</span>
+          <span className="text-[13.5px] text-fg-muted">Also delete the audio and sidecar</span>
         </div> : null}
         {deleteTarget ? (
-          <p className="mt-2 font-mono text-[10.5px] break-all text-fg-subtle">{deleteTarget.fileName}</p>
+          <p className="mt-2 font-mono text-[12px] break-all text-fg-subtle">{deleteTarget.fileName}</p>
         ) : null}
       </ConfirmDialog>
       {recoveryPlanId ? <RecoveryDialog planId={recoveryPlanId} onClose={() => setRecoveryPlanId(null)} /> : null}
@@ -867,19 +867,19 @@ const LibraryResults = memo(function LibraryResults({ visible, layout, selectedI
     />
   )
   const header = (
-    <div aria-hidden="true" className="mb-1 flex h-8 items-center gap-3 border-b border-line px-2 text-[11px] text-fg-subtle">
+    <div aria-hidden="true" className="mb-1 flex h-8 items-center gap-3 border-b border-line px-2 text-[12px] text-fg-subtle">
       <span className="w-[64px] shrink-0" />
       <span className="min-w-0 flex-1">Track</span>
-      <span className="hidden w-14 shrink-0 text-right @min-[440px]:block">BPM</span>
-      <span className="hidden w-14 shrink-0 text-right @min-[480px]:block">Key</span>
-      <span className="w-11 shrink-0 text-right">Time</span>
+      <span className="hidden w-14 shrink-0 text-right @min-[340px]:block">BPM</span>
+      <span className="hidden w-14 shrink-0 text-right @min-[380px]:block">Key</span>
+      <span className="hidden w-11 shrink-0 text-right @min-[480px]:block">Time</span>
       <span className="hidden w-12 shrink-0 text-right @min-[620px]:block">Format</span>
     </div>
   )
 
   if (!virtual) {
     return grid ? (
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2 pb-1">{visible.map(row)}</div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-2 pb-1">{visible.map(row)}</div>
     ) : (
       <div className="@container overflow-hidden">{header}{visible.map(row)}</div>
     )

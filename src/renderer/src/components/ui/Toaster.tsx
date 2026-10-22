@@ -97,7 +97,7 @@ function ToastCard({ record }: { record: ToastRecord }): ReactNode {
       role="status"
       aria-live={record.kind === 'error' ? 'assertive' : 'polite'}
       className={cn(
-        't-toast pointer-events-auto flex items-start gap-2.5 rounded-[12px] border border-line bg-surface p-3 shadow-pop',
+        't-toast pointer-events-auto flex items-start gap-2.5 rounded-[2px] border border-line bg-surface p-3 shadow-pop',
         open && 'is-open'
       )}
     >
@@ -112,9 +112,9 @@ function ToastCard({ record }: { record: ToastRecord }): ReactNode {
       </span>
 
       <div className="min-w-0 flex-1">
-        <div className="text-[12.5px] font-medium text-fg">{record.title}</div>
+        <div className="text-[13.5px] font-medium text-fg">{record.title}</div>
         {record.description ? (
-          <p className="mt-0.5 text-[11.5px] leading-relaxed break-words text-fg-muted">
+          <p className="mt-0.5 text-[12px] leading-relaxed break-words text-fg-muted">
             {record.description}
           </p>
         ) : null}
@@ -124,7 +124,7 @@ function ToastCard({ record }: { record: ToastRecord }): ReactNode {
         type="button"
         onClick={close}
         aria-label="Dismiss"
-        className="-mt-0.5 -mr-0.5 grid size-5 shrink-0 place-items-center rounded-[6px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
+        className="-mt-0.5 -mr-0.5 grid size-5 shrink-0 place-items-center rounded-[2px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
       >
         <X className="size-3.5" />
       </button>

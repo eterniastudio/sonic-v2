@@ -78,7 +78,7 @@ function MetaField({
         aria-describedby={error ? `${fieldId}-error` : undefined}
         placeholder={placeholder}
         spellCheck={false}
-        className={cn('h-7 rounded-[4px] bg-transparent px-2 text-[12.5px] focus:bg-transparent', mono && 'font-mono')}
+        className={cn('h-7 rounded-[2px] bg-transparent px-2 text-[13.5px] focus:bg-transparent', mono && 'font-mono')}
         onChange={(event) => {
           dirty.current = event.target.value !== external
           setLocal(event.target.value)
@@ -97,7 +97,7 @@ function MetaField({
           }
         }}
       />
-      {error ? <p id={`${fieldId}-error`} role="alert" className="text-[11px] text-danger">{error}</p> : null}
+      {error ? <p id={`${fieldId}-error`} role="alert" className="text-[12px] text-danger">{error}</p> : null}
     </Field>
   )
 }
@@ -156,13 +156,13 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
   }, [draft.evidence])
 
   return (
-    <aside aria-label="Download metadata inspector" className="flex min-h-0 w-[292px] shrink-0 flex-col overflow-hidden rounded-[10px] bg-surface p-4 xl:w-[300px]">
+    <aside aria-label="Download metadata inspector" className="flex min-h-0 w-[292px] shrink-0 flex-col overflow-hidden rounded-[2px] bg-surface p-4 xl:w-[300px]">
       <div className="flex shrink-0 items-center gap-2 pb-3">
-        <h2 className="flex-1 text-[13px] font-medium text-fg">Metadata</h2>
+        <h2 className="flex-1 text-[13.5px] font-medium text-fg">Metadata</h2>
         {draft.overrides.length > 0 ? (
-          <span className="text-[11px] text-fg-subtle">{draft.overrides.length} manual</span>
+          <span className="text-[12px] text-fg-subtle">{draft.overrides.length} manual</span>
         ) : (
-          <span className="text-[11px] text-fg-subtle">Source values</span>
+          <span className="text-[12px] text-fg-subtle">Source values</span>
         )}
         <IconButton label="Close inspector" size="icon-xs" onClick={() => setSelectedJob(null)}>
           <X />
@@ -171,14 +171,14 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
         <div className="flex min-w-0 items-center gap-3 pb-1">
-          <TrackArtwork thumbnail={job.thumbnail} sourceUrl={job.url} title={final.title || job.sourceTitle || 'Untitled'} className="size-11 rounded-[6px]" iconClassName="size-5" />
+          <TrackArtwork thumbnail={job.thumbnail} sourceUrl={job.url} title={final.title || job.sourceTitle || 'Untitled'} className="size-11 rounded-[2px]" iconClassName="size-5" />
           <div className="min-w-0">
-            <p className="truncate text-[13px] font-medium text-fg">{final.title || job.sourceTitle || 'Untitled'}</p>
-            <p className="mt-0.5 truncate text-[11.5px] text-fg-subtle">{final.producer || job.uploader || 'Unknown producer'}</p>
+            <p className="truncate text-[13.5px] font-medium text-fg">{final.title || job.sourceTitle || 'Untitled'}</p>
+            <p className="mt-0.5 truncate text-[12px] text-fg-subtle">{final.producer || job.uploader || 'Unknown producer'}</p>
           </div>
         </div>
         {locked ? (
-          <p role="note" className="rounded-[6px] bg-surface-2 px-2.5 py-2 text-[11.5px] leading-relaxed text-fg-muted">
+          <p role="note" className="rounded-[2px] bg-surface-2 px-2.5 py-2 text-[12px] leading-relaxed text-fg-muted">
             {job.stage === 'complete' || job.libraryId ? 'This export is in your library. Edit it from the Library inspector.' : 'Metadata is locked while it is written into the file. Edit it from the Library inspector once the export finishes.'}
           </p>
         ) : null}
@@ -248,14 +248,14 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
 
         {/* Live filename preview — the exact name the exporter will write. */}
         <div className="border-t border-line py-3">
-          <div className="mb-1.5 text-[11.5px] text-fg-subtle">
+          <div className="mb-1.5 text-[12px] text-fg-subtle">
             Output file name
           </div>
-          <div className="font-mono text-[11.5px] leading-relaxed break-all text-fg-muted">
+          <div className="font-mono text-[12px] leading-relaxed break-all text-fg-muted">
             {preview.rendered || 'untitled'}
           </div>
           {preview.unknownTokens.length > 0 ? (
-            <div className="mt-1.5 text-[11px] text-warning">
+            <div className="mt-1.5 text-[12px] text-warning">
               Unknown token{preview.unknownTokens.length === 1 ? '' : 's'}:{' '}
               {preview.unknownTokens.join(', ')}
             </div>
@@ -277,14 +277,14 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
             <ul className="space-y-2">
               {[...evidenceByField.entries()].map(([field, entries]) => (
                 <li key={field} className="flex gap-2.5">
-                  <span className="w-[74px] shrink-0 pt-0.5 text-[11.5px] font-medium text-fg-muted">
+                  <span className="w-[74px] shrink-0 pt-0.5 text-[12px] font-medium text-fg-muted">
                     {field}
                   </span>
                   <span className="min-w-0 flex-1 space-y-1">
                     {entries.map((entry, index) => (
                       <span key={index} className="block">
                         <span className="text-[12px] text-fg">{entry.value}</span>
-                        <span className="mt-0.5 block truncate font-mono text-[10.5px] text-fg-subtle" title={entry.matched}>
+                        <span className="mt-0.5 block truncate font-mono text-[12px] text-fg-subtle" title={entry.matched}>
                           {SOURCE_LABEL[entry.source] ?? entry.source} · “{entry.matched}”
                         </span>
                       </span>
@@ -300,7 +300,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
           <Accordion bare className="border-t border-line [&>button]:px-0 [&>button]:py-2 [&_.t-acc-panel-inner>div]:px-0" title="Conflicts" summary={`${draft.conflicts.length}`} defaultOpen>
             <ul className="space-y-2">
               {draft.conflicts.map((conflict) => (
-                <li key={conflict.field} className="flex items-start gap-2 text-[11.5px]">
+                <li key={conflict.field} className="flex items-start gap-2 text-[12px]">
                   <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
                   <span className="min-w-0">
                     <span className="font-medium text-fg">{conflict.field}</span>
@@ -315,7 +315,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
         ) : null}
 
         <Accordion bare className="border-t border-line [&>button]:px-0 [&>button]:py-2 [&_.t-acc-panel-inner>div]:px-0" title="Source" summary={job.uploader ?? undefined}>
-          <dl className="space-y-2 text-[11.5px]">
+          <dl className="space-y-2 text-[12px]">
             <div className="flex justify-between gap-3">
               <dt className="text-fg-subtle">Duration</dt>
               <dd className="text-fg nums">{formatDuration(job.durationSec)}</dd>
@@ -341,7 +341,7 @@ export function MetadataInspector({ job }: { job: Job }): ReactNode {
           type="button"
           disabled={locked || draft.overrides.length === 0}
           onClick={() => void updateJob(job.id, { clearOverrides: draft.overrides })}
-          className="flex h-7 w-full items-center justify-center gap-1.5 rounded-[4px] px-2 text-[11px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+          className="flex h-7 w-full items-center justify-center gap-1.5 rounded-[2px] px-2 text-[12px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
         >
           <RotateCcw className="size-3.5" />
           Clear {draft.overrides.length} manual override{draft.overrides.length === 1 ? '' : 's'}
@@ -384,7 +384,7 @@ function AnalysisPanel({ job, locked }: { job: Job; locked: boolean }): ReactNod
         </p>
       ) : (
         <div className="space-y-3">
-          <dl className="space-y-1.5 text-[11.5px]">
+          <dl className="space-y-1.5 text-[12px]">
             <AnalysisRow
               label="Tempo"
               value={
@@ -416,7 +416,7 @@ function AnalysisPanel({ job, locked }: { job: Job; locked: boolean }): ReactNod
           </dl>
 
           {analysis.tempo.alternatives.length > 0 || analysis.key.alternatives.length > 0 ? (
-            <div className="space-y-1 text-[11px] text-fg-subtle">
+            <div className="space-y-1 text-[12px] text-fg-subtle">
               {analysis.tempo.alternatives.length > 0 ? (
                 <div>
                   <span className="text-fg-muted">Tempo readings: </span>
@@ -437,7 +437,7 @@ function AnalysisPanel({ job, locked }: { job: Job; locked: boolean }): ReactNod
           {analysis.warnings.length > 0 ? (
             <ul className="space-y-1">
               {analysis.warnings.map((warning) => (
-                <li key={warning} className="flex gap-1.5 text-[11px] leading-relaxed text-warning">
+                <li key={warning} className="flex gap-1.5 text-[12px] leading-relaxed text-warning">
                   <CircleAlert className="mt-0.5 size-3 shrink-0" />
                   <span className="min-w-0">{warning}</span>
                 </li>
@@ -449,7 +449,7 @@ function AnalysisPanel({ job, locked }: { job: Job; locked: boolean }): ReactNod
             <button
               type="button"
               onClick={() => void updateJob(job.id, { adoptAnalyzed: [...adoptable] })}
-              className="flex w-full items-center justify-center gap-1.5 rounded-[4px] border border-line px-2 py-1.5 text-[11px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
+              className="flex w-full items-center justify-center gap-1.5 rounded-[2px] border border-line px-2 py-1.5 text-[12px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
             >
               <Wand2 className="size-3.5" />
               Use detected {adoptable.join(' + ')}
@@ -460,13 +460,13 @@ function AnalysisPanel({ job, locked }: { job: Job; locked: boolean }): ReactNod
 
       {verification && verification.fields.length > 0 ? (
         <div className="mt-3 space-y-2 border-t border-line pt-3">
-          <div className="text-[10.5px] font-semibold tracking-[0.12em] text-fg-subtle uppercase">
+          <div className="text-[12px] font-bold text-fg-subtle">
             Source vs audio
           </div>
           {verification.fields.map((field) => (
             <div key={field.field} className="space-y-1">
               <div className="flex items-center gap-1.5">
-                <span className="text-[11.5px] font-medium text-fg capitalize">{field.field}</span>
+                <span className="text-[12px] font-medium text-fg capitalize">{field.field}</span>
                 <Badge size="sm" tone={VERDICT_TONE[field.verdict]}>
                   {VERDICT_LABEL[field.verdict]}
                 </Badge>
@@ -475,14 +475,14 @@ function AnalysisPanel({ job, locked }: { job: Job; locked: boolean }): ReactNod
                 {field.candidates.map((candidate, index) => (
                   <li
                     key={`${candidate.origin}-${index}`}
-                    className="flex justify-between gap-3 text-[11px]"
+                    className="flex justify-between gap-3 text-[12px]"
                   >
                     <span className="text-fg-subtle">{candidate.label}</span>
                     <span className="text-fg nums">{candidate.value}</span>
                   </li>
                 ))}
               </ul>
-              <p className="text-[11px] leading-relaxed text-fg-subtle">{field.note}</p>
+              <p className="text-[12px] leading-relaxed text-fg-subtle">{field.note}</p>
             </div>
           ))}
         </div>
@@ -522,7 +522,7 @@ function AnalysisRow({
       <dd className="min-w-0 text-right">
         <span className={status === 'estimated' ? 'text-fg' : 'text-fg-subtle'}>{value}</span>
         {quality != null ? (
-          <span className="ml-1.5 text-[10.5px] text-fg-subtle nums">
+          <span className="ml-1.5 text-[12px] text-fg-subtle nums">
             {Math.round(quality * 100)}% quality
           </span>
         ) : null}

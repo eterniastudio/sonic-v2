@@ -31,9 +31,9 @@ export interface StatefulButtonProps {
 }
 
 const SIZES = {
-  sm: 'h-8 rounded-[9px] px-3 text-[13px]',
-  md: 'h-9.5 rounded-[10px] px-4 text-[13.5px]',
-  lg: 'h-11 rounded-[12px] px-5 text-[15px]'
+  sm: 'h-8 rounded-[2px] px-3 text-[13.5px]',
+  md: 'h-9.5 rounded-[2px] px-4 text-[13.5px]',
+  lg: 'h-11 rounded-[2px] px-5 text-[13.5px]'
 } as const
 
 export function StatefulButton({

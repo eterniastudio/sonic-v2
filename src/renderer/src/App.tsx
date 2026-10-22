@@ -24,10 +24,10 @@ function BootSplash({ error, onRetry }: { error: string | null; onRetry: () => v
       <div role={error ? 'alert' : 'status'} className="flex max-w-[420px] flex-col items-center gap-3 px-6">
         <Logo size={36} />
         <div className="text-center">
-          <div className="text-[16px] font-semibold tracking-[-0.035em] text-fg">Sonic</div>
+          <div className="label-type text-[20px] text-fg">Sonic</div>
           {error ? <>
             <p className="mt-1.5 text-[12px] text-fg-muted">Sonic could not open your workspace.</p>
-            <p className="mt-1 break-words text-[11.5px] text-fg-subtle">{error}</p>
+            <p className="mt-1 break-words text-[12px] text-fg-subtle">{error}</p>
           </> : <p className="mt-1.5 text-[12px] text-fg-muted">Opening your workspace…</p>}
         </div>
         {error ? <div className="flex gap-2">

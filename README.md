@@ -272,7 +272,11 @@ the queue on the next launch, so a hard exit loses at most a moment of progress.
 
 **Dark is the default; light is a full peer.** Both themes are driven by one set of
 semantic CSS custom properties (`--sonic-*`) exposed to Tailwind v4 through `@theme inline`,
-so components are written theme-agnostically. Five accent hues are available.
+so components are written theme-agnostically. The visual system is **White Label**
+(promo test pressings): label-white on vinyl black, one stamp-blue ink, square-cut
+surfaces, Archivo type, and provenance marks that show where every tempo and key
+value came from. [DESIGN.md](DESIGN.md) documents the tokens and rules;
+[PRODUCT.md](PRODUCT.md) records the product context they serve.
 
 ### transitions.dev
 

@@ -43,7 +43,7 @@ export function Tooltip({
   }, [open, side, id])
   return <span ref={ref} className={cn('inline-flex', className)} onPointerEnter={() => setOpen(true)} onPointerLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onPointerDown={() => setOpen(false)}>
     {children}
-    {open ? createPortal(<span ref={bubble} id={id} role="tooltip" className={cn('pointer-events-none fixed z-[900] max-w-64 rounded-md border border-line bg-surface px-2 py-1 text-[11.5px] font-medium text-fg shadow-pop', bubbleClassName)} style={{ left: point.x, top: point.y }}>{label}</span>, overlayRoot()) : null}
+    {open ? createPortal(<span ref={bubble} id={id} role="tooltip" className={cn('pointer-events-none fixed z-[900] max-w-64 rounded-md border border-line bg-surface px-2 py-1 text-[12px] font-medium text-fg shadow-pop', bubbleClassName)} style={{ left: point.x, top: point.y }}>{label}</span>, overlayRoot()) : null}
   </span>
 }
 

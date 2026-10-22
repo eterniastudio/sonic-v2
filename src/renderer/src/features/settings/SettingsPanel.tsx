@@ -22,7 +22,7 @@ export function SettingsPanel({
   return (
     <section className={cn('grid gap-4 border-b border-line py-5 min-[1000px]:grid-cols-[180px_minmax(0,1fr)] min-[1000px]:gap-8', className)}>
       <div className="min-w-0">
-        <h3 className="text-[14px] font-medium text-fg">{title}</h3>
+        <h3 className="text-[13.5px] font-medium text-fg">{title}</h3>
         {description ? (
           <p className="mt-1 text-[12px] leading-relaxed text-fg-subtle">{description}</p>
         ) : null}
