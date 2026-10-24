@@ -61,6 +61,25 @@ function snapshot(review: LocalImportReview): LocalImportReview {
   return { ...review, items: review.items.map(item => ({ ...item })) }
 }
 
+type LibraryLookup = { byPath: Map<string, LibraryBeat>; byFingerprint: Map<string, LibraryBeat> }
+const lookups = new WeakMap<readonly LibraryBeat[], LibraryLookup>()
+/** First newest-first record per canonical path and per fingerprint, built once per
+ * library revision instead of scanning every record for every inspected file. */
+function libraryLookup(): LibraryLookup {
+  const records = libraryService.ordered()
+  let lookup = lookups.get(records)
+  if (!lookup) {
+    lookup = { byPath: new Map(), byFingerprint: new Map() }
+    for (const beat of records) {
+      const key = canonicalPath(beat.filePath)
+      if (!lookup.byPath.has(key)) lookup.byPath.set(key, beat)
+      if (!lookup.byFingerprint.has(beat.fingerprint)) lookup.byFingerprint.set(beat.fingerprint, beat)
+    }
+    lookups.set(records, lookup)
+  }
+  return lookup
+}
+
 async function fingerprint(filePath: string, signal: AbortSignal): Promise<string> {
   const hash = createHash('sha256')
   const stream = createReadStream(filePath, { signal })
@@ -294,8 +313,8 @@ export class LocalImportService {
       session.inspectedBytes += initial.size
       const identity = await identityOf(filePath, signal)
       candidate.identity = identity
-      const existing = libraryService.list()
-      const already = existing.find(beat => canonicalPath(beat.filePath) === identity.path)
+      const existing = libraryLookup()
+      const already = existing.byPath.get(identity.path)
       if (already) {
         item.status = 'already-indexed'; item.duplicateOf = already.id
         return candidate
@@ -311,7 +330,7 @@ export class LocalImportService {
       item.bpm = draft.final.bpm
       item.key = draft.final.key
       item.durationSec = media.durationSec
-      const duplicate = existing.find(beat => beat.fingerprint === identity.fingerprint)
+      const duplicate = existing.byFingerprint.get(identity.fingerprint)
       item.duplicateOf = duplicate?.id ?? null
     } catch (error) {
       if (session.controller.signal.aborted) throw error
@@ -375,7 +394,7 @@ export class LocalImportService {
         if (current.path !== identity.path || current.size !== identity.size || current.modified !== identity.modified ||
           current.fingerprint !== identity.fingerprint) throw new Error('The file changed after review; inspect it again.')
         if (indexed.has(identity.path)) {
-          const already = libraryService.list().find(beat => canonicalPath(beat.filePath) === identity.path)
+          const already = libraryLookup().byPath.get(identity.path)
           item.status = 'already-indexed'; item.duplicateOf = already?.id ?? null
           continue
         }

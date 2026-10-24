@@ -146,6 +146,13 @@ export interface IpcMap {
   }
 }
 
+/** A library push relative to the previous push: the complete ordered ids, and
+ * only the records that changed. Unlisted records are unchanged. */
+export interface LibraryDelta {
+  ids: string[]
+  changed: LibraryBeat[]
+}
+
 /** Push channels, main → renderer. */
 export interface IpcEvents {
   'storage:changed': StorageStatus[]
@@ -154,6 +161,7 @@ export interface IpcEvents {
   'engine:progress': EngineProgress
   'settings:changed': Settings
   'library:changed': LibraryBeat[]
+  'library:delta': LibraryDelta
   'organization:changed': OrganizationSnapshot
   'app:notice': { kind: 'info' | 'success' | 'error'; message: string }
   'window:maximized': boolean
@@ -177,6 +185,7 @@ export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = [
   'engine:progress',
   'settings:changed',
   'library:changed',
+  'library:delta',
   'organization:changed',
   'app:notice',
   'window:maximized',

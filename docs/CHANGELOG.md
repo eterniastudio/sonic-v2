@@ -6,6 +6,20 @@ Each entry describes what became useful in the app, with links to the original
 change and its verification notes. Historical test results describe that version;
 they are not a claim that every later version has been tested the same way.
 
+## October 24, 2026
+
+### Large libraries stay responsive — [details](PERFORMANCE-2026-10-24.md)
+
+With 5,000 to 20,000 tracks, everyday library changes do much less work:
+
+- **Saving a change rewrites only what changed.** Sonic still saves the whole library file after each change, but it now re-encodes only the tracks that changed. Saving one analysis result took 685 ms at 20,000 tracks and now takes 134 ms, most of which is writing the file. At 5,000 tracks it went from 125 ms to 31 ms. The file format is unchanged.
+- **The window receives only what changed.** A one-track change sent all 47.6 MB of the library to the window. It now sends 296 KB. Delivering and applying it took 953 ms and now takes 18 ms.
+- **Search indexing waits until you search.** Filling in tempo and key no longer rebuilds the search index for every track analysed. It is built when you type a query, or once the library is quiet. Search results are unchanged.
+- **Import review no longer slows down as the library grows.** Checking each file against the library took 101 ms at 20,000 tracks and now takes under 1 ms.
+- Key filters are about ten times faster.
+
+Opening the library is 14–52 ms slower, because saved tracks are now protected against accidental in-place edits. The first search after a change costs what an index rebuild cost before.
+
 ## October 21, 2026
 
 ### White Label: a full visual redesign

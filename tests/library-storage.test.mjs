@@ -89,17 +89,21 @@ async function fixture(t, records, options = {}) {
 }
 
 test('library views sort/index once, preserve caller array isolation, and refresh after writes and storage retries', async t => {
-  const { library, storage, setFailure, readCommitted } = await fixture(t, [
+  const { library, storage, file, setFailure } = await fixture(t, [
     beat('older', { addedAt: 1 }), beat('newer', { addedAt: 2 }), beat('middle', { addedAt: 1.5 })
   ])
   let idReads = 0, dateReads = 0
-  for (const record of readCommitted()) {
-    const id = record.id, addedAt = record.addedAt
-    Object.defineProperties(record, {
-      id: { enumerable: true, get: () => { idReads++; return id } },
-      addedAt: { enumerable: true, get: () => { dateReads++; return addedAt } }
-    })
-  }
+  // Committed records are frozen once loaded, so instrument them as they load.
+  new storage.JsonStore(file, [], records => {
+    for (const record of records) {
+      const id = record.id, addedAt = record.addedAt
+      Object.defineProperties(record, {
+        id: { enumerable: true, get: () => { idReads++; return id } },
+        addedAt: { enumerable: true, get: () => { dateReads++; return addedAt } }
+      })
+    }
+    return records
+  }).read()
   assert.deepEqual(library.list().map(record => record.title), ['newer', 'middle', 'older'])
   assert.ok(idReads > 0 && dateReads > 0)
   idReads = 0; dateReads = 0
