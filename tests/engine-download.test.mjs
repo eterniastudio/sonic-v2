@@ -3,6 +3,7 @@ import { EventEmitter, once } from 'node:events'
 import * as fs from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import * as https from 'node:https'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
@@ -39,7 +40,8 @@ async function downloadFixture(t, respond, overrides = {}) {
     await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
   })
   const { downloadToFile, fetchText } = load('../src/main/lib/net.ts', {
-    './publicAddress': { assertPublicUrl: async () => {} },
+    './publicAddress': { publicLookup: () => {}, refuseLiteral: () => {} },
+    'node:https': https,
     'node:fs': overrides.fs ?? fs,
     'node:stream': streams,
     'node:stream/promises': streamPromises,

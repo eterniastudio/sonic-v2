@@ -1,6 +1,6 @@
 import type { ProbeResult } from '@shared/domain'
 import { artworkFor, describeProviderError, isSoundCloudShareUrl, parseVideoUrl, type ProviderId } from '@shared/url'
-import { assertPublicUrl } from '../lib/publicAddress'
+import { assertPublicUrl, guardedYtDlpArgs } from '../lib/publicAddress'
 import { run } from '../lib/child'
 import { engineService } from './engine'
 import { settingsService } from './settings'
@@ -129,6 +129,7 @@ export async function probeUrl(url: string, signal?: AbortSignal): Promise<Probe
   }
   const args = [
     ...sharedArgs,
+    ...(await guardedYtDlpArgs(parsed.provider)),
     '--dump-single-json',
     '--skip-download',
     '--socket-timeout',

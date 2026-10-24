@@ -7,7 +7,7 @@ import { baseYtDlpArgs, summariseYtDlpError } from './probe'
 import { stagingDir } from './paths'
 import { settingsService } from './settings'
 import { isSoundCloudShareUrl, parseVideoUrl } from '@shared/url'
-import { assertPublicUrl } from '../lib/publicAddress'
+import { assertPublicUrl, guardedYtDlpArgs } from '../lib/publicAddress'
 
 export interface AcquireProgress {
   percent: number | null
@@ -89,6 +89,7 @@ export async function acquireAudio(
   const outputTemplate = path.join(staging, `${jobId}.%(ext)s`)
   const args = [
     ...(await baseYtDlpArgs(options.signal)),
+    ...(await guardedYtDlpArgs(parsed.provider)),
     '--newline',
     '--progress',
     '--progress-template',

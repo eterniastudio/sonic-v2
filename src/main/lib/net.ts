@@ -3,7 +3,9 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { ensureDir, removeFile } from './fsx'
 import path from 'node:path'
-import { assertPublicUrl } from './publicAddress'
+import { request as httpsRequest } from 'node:https'
+import type { IncomingMessage } from 'node:http'
+import { publicLookup, refuseLiteral } from './publicAddress'
 
 export interface DownloadOptions {
   signal?: AbortSignal
@@ -17,17 +19,40 @@ export interface DownloadOptions {
 
 const MAX_REDIRECTS = 5
 
-/** Follows redirects by hand so each hop's host can be checked before it is requested. */
+/**
+ * Follows redirects by hand over https, checking each hop where the socket
+ * connects: `publicLookup` refuses private addresses during resolution, so the
+ * address checked is the address used.
+ */
 async function fetchPublic(url: string, init: RequestInit): Promise<Response> {
   let current = url
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    if (new URL(current).protocol !== 'https:') throw new Error('Refused a non-https redirect.')
-    await assertPublicUrl(current)
-    const response = await fetch(current, { ...init, redirect: 'manual' })
-    const location = response.headers.get('location')
-    if (response.status < 300 || response.status >= 400 || !location) return response
-    await response.body?.cancel().catch(() => undefined)
-    current = new URL(location, current).href
+    const target = new URL(current)
+    if (target.protocol !== 'https:') throw new Error('Refused a non-https link.')
+    refuseLiteral(target.hostname)
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      const request = httpsRequest(target, {
+        method: 'GET',
+        headers: init.headers as Record<string, string>,
+        signal: init.signal ?? undefined,
+        lookup: publicLookup
+      }, resolve)
+      request.on('error', reject)
+      request.end()
+    })
+    const status = response.statusCode ?? 502
+    const location = response.headers.location
+    if (status >= 300 && status < 400 && location) {
+      response.resume()
+      current = new URL(location, current).href
+      continue
+    }
+    const headers = new Headers()
+    for (const [name, value] of Object.entries(response.headers)) {
+      if (value != null) headers.set(name, Array.isArray(value) ? value.join(', ') : value)
+    }
+    const body = status === 204 || status === 304 ? null : Readable.toWeb(response) as ReadableStream<Uint8Array>
+    return new Response(body, { status, statusText: response.statusMessage, headers })
   }
   throw new Error('Too many redirects.')
 }

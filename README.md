@@ -58,10 +58,10 @@ sites use the thumbnail yt-dlp reports.
 
 Links from other sites are refused by default. Turn on **Settings → Media engine → Allow
 other sites** to pass any other public https page to yt-dlp's generic extractor.
-Results vary by site. Before a direct file or other-site link is inspected or downloaded,
-Sonic resolves its host and refuses it if any address is on your computer or a private
-network. Cover art downloads check every redirect the same way; yt-dlp's own redirects
-are not re-checked. Public
+Results vary by site. Direct-file and other-site links never reach your computer or a
+private network: yt-dlp runs through a local proxy that checks every connection,
+including redirects and media URLs found on the page, against the address actually
+connected to. Cover art downloads check every redirect the same way. Public
 content on the listed sites needs no cookies. If a site asks for a signed-in session,
 choose a browser under **Use cookies from a browser**.
 
