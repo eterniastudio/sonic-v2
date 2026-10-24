@@ -29,7 +29,9 @@ export async function createOwnedProfile(info) {
 
 async function processTable() {
   const { stdout } = await exec(powershell, ['-NoProfile', '-NonInteractive', '-File', processHandles, '-Mode', 'Snapshot'], { windowsHide: true, timeout: 10000, maxBuffer: 8 * 1024 * 1024 })
-  return JSON.parse(stdout || '[]')
+  // Unrelated processes can carry raw control characters in their command lines,
+  // which ConvertTo-Json leaves unescaped; they are never part of what we match.
+  return JSON.parse((stdout || '[]').replace(/[\u0000-\u001f]/g, ' '))
 }
 
 async function record(state, event, data = {}) {

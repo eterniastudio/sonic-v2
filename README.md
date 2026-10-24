@@ -49,6 +49,19 @@ operations. Source links, channel names, and artwork URLs are stored in the loca
 `library.json` record; the sidecar carries the same source provenance when enabled.
 User profiles, downloads, and test artifacts are excluded from the source repository.
 
+### Working the library next to a DAW
+
+| Task | How |
+| --- | --- |
+| Drag into your DAW or Explorer | Drag a library row. When the row is part of a multi-selection, the whole selection comes along (up to 100 files). Sonic's main process looks up the files by record id; the interface never handles file paths. Rows whose audio is missing are not draggable. |
+| Find compatible tracks | Right-click a track and choose **Find compatible tracks**, or focus a row and press **C**. The list narrows to the same Camelot position, one step either way round the wheel, and the relative major/minor, at the same tempo ±4 BPM including half and double time. The banner shows the exact keys and BPM ranges; change the tolerance (±2/4/8) or turn half/double time off there. A track with no key or no BPM is never matched on the value it lacks. **Show all tracks** ends the view. |
+| Favorite from the keyboard | Press **F** on a focused row to favorite it, or press it again to unfavorite. With tracks selected, F acts on the whole selection. |
+| Built-in views | Beside **Favorites**: **Recently added** (the last 14 days), **Needs review** (no BPM, no key, or the source disagrees with the audio on BPM or key), and **Duplicates**. Each tab shows its count. |
+| Resolve duplicates | **Duplicates** groups records that share a source link (watch, short and share links to one video count as one) or identical audio. Pick the record to keep, then **Remove N other records**. Favorites, tags, notes and collection places move to the kept record. The other records leave the library, and no audio file is deleted. |
+| Export a track list | **Export list** saves the displayed tracks, or the selection if there is one, as CSV or JSON. Choose the type in the save dialog. Columns: title, producer, BPM, key, Camelot, duration, source, source URL, file name and manual collections. Only file names are written, never full paths, and the CSV guards cells against spreadsheet formulas. |
+| Retry failed downloads | **Retry failed (n)** in the queue header, or the command palette, re-queues every failed job. Cancelled jobs stay cancelled. |
+| Clipboard link watch | Off by default. Turn it on in **Settings → Advanced → Link intake**. When Sonic regains focus with a supported link on the clipboard that isn't already queued, a small prompt offers **Add to queue**. Nothing is added without that click, and Sonic won't offer the same clipboard twice. |
+
 Export filenames include every known BPM and key even when a custom naming template omits those tokens. Later manual corrections and accepted analysis rename Sonic-owned audio safely, with collision suffixes and a matching sidecar. A rename leaves existing audio tags unchanged; **re-export** to rewrite tags. FL Studio can read specific WAV tempo-sync metadata, but a BPM printed in a filename does not by itself set the FL Studio project tempo. Check the BPM badge and set or confirm the project tempo when importing; Sonic's acoustic estimate can be inconclusive or wrong.
 
 ### Producer metadata Sonic understands

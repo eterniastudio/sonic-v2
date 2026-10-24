@@ -48,7 +48,8 @@ const FALLBACK_SETTINGS: Settings = {
   maxDurationSec: 3600,
   skipExisting: true,
   cookiesFromBrowser: 'none',
-  rescanIntervalMs: 120_000
+  rescanIntervalMs: 120_000,
+  watchClipboard: false
 }
 
 interface AppState {

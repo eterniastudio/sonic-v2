@@ -42,7 +42,9 @@ export function defaultSettings(): Settings {
     skipExisting: true,
     cookiesFromBrowser: 'none',
 
-    rescanIntervalMs: 120_000
+    rescanIntervalMs: 120_000,
+
+    watchClipboard: false
   }
 }
 
@@ -103,7 +105,10 @@ function normalizeSettings(raw: unknown): Settings {
       ? (source.cookiesFromBrowser as Settings['cookiesFromBrowser'])
       : 'none',
 
-    rescanIntervalMs: clamp(Math.round(Number(source.rescanIntervalMs ?? base.rescanIntervalMs)) || 0, 0, 3_600_000)
+    rescanIntervalMs: clamp(Math.round(Number(source.rescanIntervalMs ?? base.rescanIntervalMs)) || 0, 0, 3_600_000),
+
+    // Older settings files have no value: the watch stays off until chosen.
+    watchClipboard: source.watchClipboard === true
   }
 }
 

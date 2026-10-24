@@ -8,6 +8,7 @@ import {
   Pause,
   Play,
   RefreshCw,
+  RotateCcw,
   Settings as SettingsIcon,
   Wand2
 } from 'lucide-react'
@@ -30,6 +31,7 @@ export function CommandPalette(): ReactNode {
   const setLibraryFocus = useApp((state) => state.setLibraryFocus)
   const library = useApp((state) => open ? state.library : NO_BEATS)
   const ready = useApp((state) => open ? state.queue.jobs.reduce((count, job) => count + Number(job.stage === 'ready'), 0) : 0)
+  const failed = useApp((state) => open ? state.queue.jobs.reduce((count, job) => count + Number(job.stage === 'failed'), 0) : 0)
   const paused = useApp((state) => state.queue.paused)
   const settings = useApp((state) => state.settings)
 
@@ -89,6 +91,19 @@ export function CommandPalette(): ReactNode {
         keywords: 'begin export run',
         onSelect: () => {
           void useApp.getState().startJobs(null)
+        }
+      })
+    }
+
+    if (failed > 0) {
+      list.push({
+        id: 'queue-retry-failed',
+        group: 'Queue',
+        label: `Retry ${failed} failed download${failed === 1 ? '' : 's'}`,
+        icon: <RotateCcw />,
+        keywords: 'again redo error cancelled',
+        onSelect: () => {
+          void window.sonic.invoke('queue:retryFailed').then(queue => useApp.getState().setQueueSnapshot(queue))
         }
       })
     }
@@ -174,7 +189,7 @@ export function CommandPalette(): ReactNode {
 
     // The catalog is complete; only the rendered results are capped by Spotlight.
     return list.concat(beatItems)
-  }, [open, ready, beatItems, paused, settings.defaultPresetId, settings.downloadDir, settings.theme, setView])
+  }, [open, ready, failed, beatItems, paused, settings.defaultPresetId, settings.downloadDir, settings.theme, setView])
 
   return (
     <AppleSpotlight
