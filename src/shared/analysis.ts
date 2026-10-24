@@ -14,8 +14,13 @@
  * sonic-dsp/4: smoothed onset envelope, fractional multi-period tempo
  * refinement, 3:2 grouping and octave-accent checks, band-limited method
  * cross-check, non-finite samples treated as silence.
+ *
+ * sonic-dsp/5: half band-equalised onset envelope, metrical-consistency
+ * candidate scoring (with octave candidates), producer octave folding into
+ * 130–165 BPM, key-signature eligibility and a scale-residual gate for key,
+ * half-size real FFT. See docs/DETECTION-2026-10-24.md.
  */
-export const ANALYSIS_ENGINE = 'sonic-dsp/4'
+export const ANALYSIS_ENGINE = 'sonic-dsp/5'
 
 /**
  * Version of the pipeline around the DSP: which windows are decoded

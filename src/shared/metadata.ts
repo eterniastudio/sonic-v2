@@ -108,6 +108,22 @@ const LEAD = String.raw`(?:^|[\s[(\-–—|,_:=/#•·])`
 const NUMBER = String.raw`(\d{2,3}(?:\.\d+)?)`
 /** A number that is not the start of a longer number, decimal or percentage. */
 const NUMBER_END = String.raw`(?![\d%]|\.\d)`
+/** `LEAD` plus `@`, as in `Drill Type Beat @140bpm`. Only tempo tokens accept it. */
+const BPM_LEAD = String.raw`(?:^|[\s[(\-–—|,_:=/#•·@])`
+/** Tempos without a `bpm` word are accepted only inside the common producer range. */
+const BARE_BPM_MIN = 60
+const BARE_BPM_MAX = 200
+/** Two numbers before one `bpm` read as a range when within 25% of each other (`140 - 145 BPM`). */
+const BPM_RANGE_SPREAD = 0.25
+
+function inBareBpmRange(value: number): boolean {
+  return Number.isFinite(value) && value >= BARE_BPM_MIN && value <= BARE_BPM_MAX
+}
+
+/** A 2:1 pair within 3%, as producers quote half-time tempos (`70 - 140 BPM`). */
+function isOctavePair(a: number, b: number): boolean {
+  return Math.abs(Math.max(a, b) / Math.min(a, b) - 2) <= 0.03
+}
 
 /**
  * Reads tempo declarations. A `72 / 144 BPM` pairing is recorded with the
@@ -118,52 +134,62 @@ function parseBpm(text: string, source: EvidenceSource, evidence: Evidence[]): {
   bpm: number | null
   altBpm: number | null
 } {
-  const patterns: { pattern: RegExp; confidence: number }[] = [
-    { pattern: new RegExp(`${LEAD}${NUMBER}\\s*\\/\\s*${NUMBER}\\s*bpm(?![a-z])`, 'i'), confidence: 0.98 },
+  type Shape = 'pair' | 'range' | 'single' | 'bare'
+  const patterns: { pattern: RegExp; confidence: number; shape: Shape }[] = [
+    { pattern: new RegExp(`${BPM_LEAD}${NUMBER}\\s*\\/\\s*${NUMBER}\\s*bpm(?![a-z])`, 'i'), confidence: 0.98, shape: 'pair' },
+    { pattern: new RegExp(`(?<![a-z])bpm\\s*[:=\\-–]?\\s*${NUMBER}\\s*\\/\\s*${NUMBER}${NUMBER_END}`, 'i'), confidence: 0.96, shape: 'pair' },
+    // `140 - 145 BPM` is a range (the first number leads); `70 - 140 BPM` is a
+    // half-time pair. Anything else, e.g. `Track 12 - 140 BPM`, falls through.
+    { pattern: new RegExp(`${BPM_LEAD}${NUMBER}\\s*(?:[-–—~]|to)\\s*${NUMBER}\\s*bpm(?![a-z])`, 'i'), confidence: 0.9, shape: 'range' },
     // `140 BPM` before `BPM 140`, so `140 BPM 2024` never reads the year.
-    { pattern: new RegExp(`${LEAD}${NUMBER}\\s*bpm(?![a-z])`, 'i'), confidence: 0.95 },
-    { pattern: new RegExp(`(?<![a-z])bpm\\s*[:=\\-–]?\\s*${NUMBER}${NUMBER_END}`, 'i'), confidence: 0.95 },
-    { pattern: /\b(\d{2,3}(?:\.\d+)?)\s*beats?\s*per\s*minute\b/i, confidence: 0.9 },
-    { pattern: new RegExp(`\\btempo\\s*[:=]?\\s*${NUMBER}${NUMBER_END}`, 'i'), confidence: 0.8 }
+    { pattern: new RegExp(`${BPM_LEAD}${NUMBER}\\s*bpm(?![a-z])`, 'i'), confidence: 0.95, shape: 'single' },
+    { pattern: new RegExp(`(?<![a-z])bpm\\s*[:=\\-–]?\\s*${NUMBER}${NUMBER_END}`, 'i'), confidence: 0.95, shape: 'single' },
+    { pattern: /\b(\d{2,3}(?:\.\d+)?)\s*beats?\s*per\s*minute\b/i, confidence: 0.9, shape: 'single' },
+    { pattern: new RegExp(`\\btempo\\s*[:=]?\\s*${NUMBER}${NUMBER_END}`, 'i'), confidence: 0.8, shape: 'single' },
+    // `@ 140` with no unit is producers' shorthand for "at 140 BPM".
+    { pattern: new RegExp(`(?:^|\\s)@\\s*${NUMBER}(?![\\d%a-z]|\\.\\d)`, 'i'), confidence: 0.75, shape: 'bare' }
   ]
 
-  for (const { pattern, confidence } of patterns) {
+  const record = (bpm: number, altBpm: number | null, matched: string, confidence: number) => {
+    evidence.push({ field: 'bpm', value: formatBpm(bpm), source, matched: matched.trim(), confidence })
+    if (altBpm != null) {
+      evidence.push({ field: 'altBpm', value: formatBpm(altBpm), source, matched: matched.trim(), confidence: confidence - 0.05 })
+    }
+    return { bpm, altBpm }
+  }
+
+  for (const { pattern, confidence, shape } of patterns) {
     const match = firstMatch(text, pattern)
     if (!match) continue
 
     const first = Number(match[1])
     const second = match[2] != null ? Number(match[2]) : null
 
-    if (second != null) {
+    if (shape === 'pair' && second != null) {
       if (!inBpmRange(first) && !inBpmRange(second)) continue
       const primary = Math.max(inBpmRange(first) ? first : second, inBpmRange(second) ? second : first)
       const alternate = primary === first ? second : first
-      evidence.push({
-        field: 'bpm',
-        value: formatBpm(primary),
-        source,
-        matched: match[0].trim(),
-        confidence
-      })
-      evidence.push({
-        field: 'altBpm',
-        value: formatBpm(alternate),
-        source,
-        matched: match[0].trim(),
-        confidence: confidence - 0.05
-      })
-      return { bpm: primary, altBpm: alternate }
+      return record(primary, alternate, match[0], confidence)
     }
 
-    if (!inBpmRange(first)) continue
-    evidence.push({
-      field: 'bpm',
-      value: formatBpm(first),
-      source,
-      matched: match[0].trim(),
-      confidence
-    })
-    return { bpm: first, altBpm: null }
+    if (shape === 'range' && second != null) {
+      if (!inBpmRange(first) || !inBpmRange(second) || first === second) continue
+      if (isOctavePair(first, second)) return record(Math.max(first, second), Math.min(first, second), match[0], confidence)
+      if (Math.abs(first - second) / Math.min(first, second) > BPM_RANGE_SPREAD) continue
+      return record(first, null, match[0], confidence)
+    }
+
+    if (shape === 'bare' ? !inBareBpmRange(first) : !inBpmRange(first)) continue
+    return record(first, null, match[0], confidence)
+  }
+
+  // A bracketed number, `Pain [140] Type Beat`, is a tempo only when it is the
+  // single bracketed number in the text and sits in the producer range; `[808]`,
+  // `[2026]` and `(Part 2)` never qualify, and neither does a second `[10]`.
+  const bracketed = [...text.matchAll(/[[(]\s*(\d{1,4}(?:\.\d+)?)\s*[\])]/g)]
+  if (bracketed.length === 1) {
+    const value = Number(bracketed[0][1])
+    if (inBareBpmRange(value)) return record(value, null, bracketed[0][0], 0.7)
   }
 
   return { bpm: null, altBpm: null }
@@ -190,20 +216,20 @@ function parseKey(
   }
 
   // 1. Camelot, explicitly labelled.
-  const labelledCamelot = firstMatch(text, /\bcamelot\s*[:=#]?\s*(1[0-2]|[1-9])\s*([AB])\b/i)
+  const labelledCamelot = firstMatch(text, /\bcamelot\s*[:=#]?\s*(1[0-2]|0?[1-9])\s*([AB])\b/i)
   if (labelledCamelot) {
-    const found = fromCamelot(`${labelledCamelot[1]}${labelledCamelot[2].toUpperCase()}`, labelledCamelot[0], 0.98, 0.9)
+    const found = fromCamelot(`${Number(labelledCamelot[1])}${labelledCamelot[2].toUpperCase()}`, labelledCamelot[0], 0.98, 0.9)
     if (found) return found
   }
 
   // 2. Explicit `key:` label, which may carry either a note name or a Camelot code.
   const labelledKey = firstMatch(
     text,
-    new RegExp(`(?<![a-z])key\\s*[:=#\\-–]?\\s*(?:(1[0-2]|[1-9])([AB])(?![a-z\\d])|([A-G][#b♯♭]?)\\s*[-–—]?\\s*(${MODE_WORDS}|m)?(?![a-z\\d#♯♭]))`, 'i')
+    new RegExp(`(?<![a-z])key\\s*[:=#\\-–]?\\s*(?:(1[0-2]|0?[1-9])([AB])(?![a-z\\d])|([A-G][#b♯♭]?)\\s*[-–—]?\\s*(${MODE_WORDS}|m)?(?![a-z\\d#♯♭]))`, 'i')
   )
   if (labelledKey) {
     if (labelledKey[1]) {
-      const found = fromCamelot(`${labelledKey[1]}${labelledKey[2].toUpperCase()}`, labelledKey[0], 0.96, 0.92)
+      const found = fromCamelot(`${Number(labelledKey[1])}${labelledKey[2].toUpperCase()}`, labelledKey[0], 0.96, 0.92)
       if (found) return found
     } else if (labelledKey[4]) {
       const note = labelledKey[3]
@@ -215,6 +241,42 @@ function parseKey(
         evidence.push({ field: 'key', value: key, source, matched: labelledKey[0].trim(), confidence: 0.96 })
         return { key, camelot: mode && mode !== 'modal' ? camelotFor(note, mode) : null }
       }
+    }
+  }
+
+  // 2b. `in the key of G`, `key of F# minor`, `key of B flat`. The note must be
+  //     a capital letter (`key of a lifetime` is prose); no mode means major.
+  const keyOf = findMatch(
+    text,
+    new RegExp(`(?<![a-z])key\\s+of\\s+([A-G])(?:([#b♯♭])|[\\s-]+(sharp|flat))?(?:\\s*[-–—]?\\s*(${MODE_WORDS}|m))?(?![a-z\\d#♯♭])`, 'i'),
+    (match) => /[A-G]/.test(match[1])
+  )
+  if (keyOf) {
+    const accidental = keyOf[2] ?? (keyOf[3] ? (keyOf[3].toLowerCase() === 'sharp' ? '#' : 'b') : '')
+    const note = `${keyOf[1]}${accidental}`
+    const modeRaw = keyOf[4]
+    const mode = modeRaw == null ? 'major' : modeRaw === 'm' ? 'minor' : modeRaw === 'M' ? 'major' : normalizeMode(modeRaw)
+    const key = mode ? formatKey(note, mode === 'modal' ? modeRaw : mode) : null
+    if (key) {
+      evidence.push({ field: 'key', value: key, source, matched: keyOf[0].trim(), confidence: modeRaw == null ? 0.85 : 0.94 })
+      return { key, camelot: mode && mode !== 'modal' ? camelotFor(note, mode) : null }
+    }
+  }
+
+  // 2c. Spelled accidentals: `C sharp minor`, `B-flat major`. As below, a
+  //     lowercase `a` is the article (`a sharp minor turn` is prose).
+  const spelled = findMatch(
+    text,
+    new RegExp(`${LEAD}([A-G])[\\s-]*(sharp|flat)\\s*[-–—]?\\s*(${MODE_WORDS})(?![a-z\\d])`, 'i'),
+    (match) => match[1] !== 'a'
+  )
+  if (spelled) {
+    const note = `${spelled[1].toUpperCase()}${spelled[2].toLowerCase() === 'sharp' ? '#' : 'b'}`
+    const key = formatKey(note, spelled[3])
+    if (key) {
+      const mode = normalizeMode(spelled[3])
+      evidence.push({ field: 'key', value: key, source, matched: spelled[0].trim(), confidence: 0.9 })
+      return { key, camelot: mode && mode !== 'modal' ? camelotFor(note, mode) : null }
     }
   }
 
@@ -255,9 +317,9 @@ function parseKey(
 
   // 5. Bare Camelot position. Lowest confidence — could be anything, so it is
   //    only accepted when the token stands alone between separators or at an edge.
-  const bareCamelot = firstMatch(text, new RegExp(`${LEAD}(1[0-2]|[1-9])([AB])(?=$|[\\s)\\]|\\-–—_,/;:•·])`))
+  const bareCamelot = firstMatch(text, new RegExp(`${LEAD}(1[0-2]|0?[1-9])([AB])(?=$|[\\s)\\]|\\-–—_,/;:•·])`))
   if (bareCamelot) {
-    const found = fromCamelot(`${bareCamelot[1]}${bareCamelot[2]}`, bareCamelot[0], 0.6, null)
+    const found = fromCamelot(`${Number(bareCamelot[1])}${bareCamelot[2]}`, bareCamelot[0], 0.6, null)
     if (found) return found
   }
 
@@ -374,13 +436,13 @@ function parseProducer(
   evidence: Evidence[]
 ): string | null {
   const patterns: { pattern: RegExp; confidence: number }[] = [
-    { pattern: /\bprod(?:\.|uced)?\s*by\s*[:\-]?\s*([\p{L}\p{N}][\p{L}\p{N}_.\-&' ]{0,48})/iu, confidence: 0.95 },
-    { pattern: /\bproduced\s*by\s*[:\-]?\s*([\p{L}\p{N}][\p{L}\p{N}_.\-&' ]{0,48})/iu, confidence: 0.95 },
-    { pattern: /\bbeat\s*by\s*[:\-]?\s*([\p{L}\p{N}][\p{L}\p{N}_.\-&' ]{0,48})/iu, confidence: 0.9 },
-    { pattern: /\bprod\.?\s*[:\-]\s*([\p{L}\p{N}][\p{L}\p{N}_.\-&' ]{0,48})/iu, confidence: 0.85 },
+    { pattern: /\bprod(?:\.|uced)?\s*by\s*[:\-]?\s*@?([\p{L}\p{N}][\p{L}\p{N}_.\-&' ]{0,48})/iu, confidence: 0.95 },
+    { pattern: /\bproduced\s*by\s*[:\-]?\s*@?([\p{L}\p{N}][\p{L}\p{N}_.\-&' ]{0,48})/iu, confidence: 0.95 },
+    { pattern: /\bbeat\s*by\s*[:\-]?\s*@?([\p{L}\p{N}][\p{L}\p{N}_.\-&' ]{0,48})/iu, confidence: 0.9 },
+    { pattern: /\bprod\.?\s*[:\-]\s*@?([\p{L}\p{N}][\p{L}\p{N}_.\-&' ]{0,48})/iu, confidence: 0.85 },
     // `prod. NAME` / `prod NAME` with neither "by" nor a colon is just as common
     // as the labelled forms, so it is accepted last and at lower confidence.
-    { pattern: /\bprod(?:\.|uced)?\s+([\p{L}\p{N}][\p{L}\p{N}_.\-&' ]{0,48})/iu, confidence: 0.8 }
+    { pattern: /\bprod(?:\.|uced)?\s+@?([\p{L}\p{N}][\p{L}\p{N}_.\-&' ]{0,48})/iu, confidence: 0.8 }
   ]
 
   for (const { pattern, confidence } of patterns) {
@@ -452,8 +514,8 @@ export function extractTitle(rawTitle: string): string {
   let out = rawTitle
   // Remove bracketed metadata groups.
   out = out.replace(/[[({][^\])}]*[\])}]/g, ' ')
-  // Remove producer credits.
-  out = out.replace(/\bprod(?:\.|uced)?\s*(?:by)?\s*[:\-]?\s*[\p{L}\p{N}][\p{L}\p{N}_.\-&' ]*/giu, ' ')
+  // Remove producer credits, including `@handle` credits.
+  out = out.replace(/\bprod(?:\.|uced)?\s*(?:by)?\s*[:\-]?\s*@?[\p{L}\p{N}][\p{L}\p{N}_.\-&' ]*/giu, ' ')
   // Tempo, key and tuning declarations belong in metadata, not in the name.
   out = out.replace(/\b(?:tuning\s*[:=]?\s*)?A\s*=\s*\d{3}(?:\.\d+)?\s*hz\b/gi, ' ')
   out = out.replace(
@@ -466,6 +528,7 @@ export function extractTitle(rawTitle: string): string {
   out = out.replace(/\bbpm\s*[:=]?\s*\d{2,3}(?:\.\d+)?/gi, ' ')
   out = out.replace(/\bbpm\b/gi, ' ')
   // Remove the trailing descriptor that every type-beat upload carries.
+  out = out.replace(/\bfree\s*(?:for|4)\s*profit\b/gi, ' ')
   out = out.replace(/\b(?:free|type|instrumental|beat|remake|flip)\b/gi, ' ')
   out = out.replace(/\b(?:19|20)\d{2}\b/g, ' ')
   // Collapse runs of separators left behind by the removals above.

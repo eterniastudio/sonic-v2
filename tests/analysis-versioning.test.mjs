@@ -70,9 +70,11 @@ test('storing a result replaces every older-version entry for the same bytes', (
 
 test('library refresh treats an older engine or pipeline as stale', () => {
   const beat = { missing: false, analysisStatus: 'estimated', analysis: { engine: shared.ANALYSIS_ENGINE, pipeline: shared.ANALYSIS_PIPELINE } }
-  assert.equal(shared.ANALYSIS_ENGINE, 'sonic-dsp/4')
+  assert.equal(shared.ANALYSIS_ENGINE, 'sonic-dsp/5')
   assert.equal(shared.needsAnalysisRefresh(beat), false)
   assert.equal(shared.needsAnalysisRefresh({ ...beat, analysis: { engine: 'sonic-dsp/3' } }), true)
+  // sonic-dsp/4 results (pre-October 24 tempo/key decisions) must reanalyse.
+  assert.equal(shared.needsAnalysisRefresh({ ...beat, analysis: { engine: 'sonic-dsp/4', pipeline: shared.ANALYSIS_PIPELINE } }), true)
   assert.equal(shared.needsAnalysisRefresh({ ...beat, analysis: { engine: shared.ANALYSIS_ENGINE, pipeline: 'windows/0+merge/0' } }), true)
 })
 
