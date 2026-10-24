@@ -6,6 +6,36 @@ Each entry describes what became useful in the app, with links to the original
 change and its verification notes. Historical test results describe that version;
 they are not a claim that every later version has been tested the same way.
 
+## October 24, 2026
+
+### Tempo and key detection that reads beats the way producers label them
+
+The analyser is now `sonic-dsp/5`. Tracks measured by the previous engine show up
+in the Library's **Analyze** count, and your manual corrections are untouched.
+
+- **Tempo** no longer lands on a cross-rhythm. House at 122 had read 81, and
+  afrobeats or dembow at 100 had read 133. Trap and drill now read at their labelled
+  130–165 BPM rate rather than half of it. The other octave is still offered as an
+  alternative.
+- **Key** no longer names the key a fifth away when a minor loop leans on its
+  flat-seventh chord. An Am–G–F–G loop had read G major. Ambiguous relative
+  major/minor material says so and lists both keys. Drum loops without harmony no
+  longer get a key.
+- **Analysis is about twice as fast.** Key analysis takes 14 ms instead of 30 ms
+  on the reference clip; a 150 s tempo window takes 221 ms instead of 362 ms.
+- **Titles:** the parser now reads `140 - 145 BPM` (as 140), `bpm 140/70`,
+  `@ 140`, a lone `[140]`, `C sharp minor`, `in the key of G`, `08A` and
+  `prod. @name`, and drops `Free for profit` from clean titles. Years, `808` and
+  phrases like "a minor setback" are still never read as tempo or key.
+
+Measured on 47 new generated producer-style beats: exact tempo went from 24 to 40
+of 43, and confidently wrong keys from 15 to 2. On 28 real guitar recordings,
+exact tempo went from 14 to 18 and wrong keys from 9 to 4. Existing
+regression suites are unchanged. These are generated fixtures and a small
+non-held-out guitar corpus, not a measurement on real beats. Details, limits
+and the ideas that were tried and dropped are in
+[DETECTION-2026-10-24.md](DETECTION-2026-10-24.md).
+
 ## October 21, 2026
 
 ### White Label: a full visual redesign

@@ -84,22 +84,30 @@ Sonic V2 is built to handle.
 - Decodes bounded excerpts through ffmpeg to **22050 Hz mono** float PCM, sharing
   overlapping tempo/key audio — no second download or upload. Analysis itself
   needs no Python, native module, WASM, or additional DSP dependency.
-- **Tempo:** spectral-flux onset envelope → autocorrelation *and* a comb filter, combined
-  with an Ellis-2007 log-Gaussian tempo prior, then octave-aware peak picking and
-  fractional-lag refinement over several beat periods. Half- and
+- **Tempo:** spectral-flux onset envelope, half of it equalised across low, mid and
+  high bands so hats cannot outvote the kick → autocorrelation *and* a comb filter →
+  candidates (each peak plus its half and double) scored by **metrical consistency**,
+  i.e. how well the period also repeats at 2, 3 and 4 beats, under an Ellis-2007
+  log-Gaussian tempo prior → **producer octave folding**: a 65–82 BPM reading with a
+  hat pulse or subdivision at its double reads as 130–165, as trap and drill are
+  labelled → fractional-lag refinement over several beat periods. Half- and
   double-time readings are reported as alternatives rather than collapsed away.
 - **Key:** interpolated spectral peaks → tuning-corrected pitch-class profiles →
-  correlation against all 24 published Shaath major/minor profiles. Complete
-  tonic-chord observations can support close relative-key decisions; unresolved
-  evidence remains inconclusive. Tuning and alternative keys stay available for
-  review. See the [algorithm, sources, and measured limits](docs/IMPROVEMENTS-2026-10-14.md).
+  correlation against all 24 published Shaath major/minor profiles, restricted to keys
+  whose **scale fits the chroma** (so an Am–G–F–G loop is not called G major). Pitch
+  content that does not follow a scale once its strongest note is removed, such as a
+  kick drum's pitch sweep, is inconclusive. Complete tonic-chord observations can
+  support close relative-key decisions; unresolved evidence remains inconclusive.
+  Tuning and alternative keys stay available for review. See the
+  [October 24 detection notes](docs/DETECTION-2026-10-24.md) and the earlier
+  [algorithm, sources, and measured limits](docs/IMPROVEMENTS-2026-10-14.md).
 - Runs on a **worker thread**, so a multi-second analysis never blocks the UI, with bounded
   concurrency, cancellation, timeouts and scratch-file cleanup.
 - Results are cached by **input hash + engine and pipeline version**, and the stage order is
   download → tags → **analyze** → cover → convert → tag readback → publish, so accepted
   estimates reach the file name, the embedded tags and the sidecar.
 
-The current analyzer is `sonic-dsp/4`. The Library's **Analyze** count includes
+The current analyzer is `sonic-dsp/5`. The Library's **Analyze** count includes
 missing results and tracks last measured by an older engine. Reanalysis preserves your manual
 corrections; use the inspector to review the new estimate or choose a suggested
 alternative. Confidence is an evidence indicator, not a probability of correctness.
@@ -108,15 +116,21 @@ alternative. Confidence is an evidence indicator, not a probability of correctne
 
 | Source text | Interpreted as |
 | --- | --- |
-| `144 BPM`, `BPM: 144`, `bpm 144` | `144` |
-| `72 / 144 BPM` | `144` with a `72` half-time alternate |
-| `F# minor`, `F#m`, `Key: F# minor` | `F# minor` / Camelot `11A` |
-| `11A`, `Camelot: 11A` | `F# minor` / Camelot `11A` |
+| `144 BPM`, `144bpm`, `BPM: 144`, `bpm 144`, `@ 144` | `144` |
+| `72 / 144 BPM`, `BPM 144/72`, `72 - 144 BPM` | `144` with a `72` half-time alternate |
+| `140 - 145 BPM` | `140` (the first number of a range) |
+| `[144]` | `144`, only when it is the one bracketed number and within 60–200 |
+| `F# minor`, `F#m`, `F#min`, `G♯m`, `F sharp minor`, `Key: F# minor`, `Key - F#m` | `F# minor` / Camelot `11A` |
+| `in the key of G` | `G major` (no mode written means major) |
+| `11A`, `08A`, `Camelot: 11A` | the matching key / Camelot code |
 | `detuned -18 cents`, `-0.25 st` | `-18 ¢` / `-25 ¢` |
 | `Tuning: A=432Hz` | `-31.8 ¢` |
-| `prod. by NAME`, `prod NAME`, `beat by NAME` | producer credit |
-| `"Quoted Beat Name" Type Beat` | clean title |
+| `prod. by NAME`, `prod NAME`, `prod. @NAME`, `(prod by A x B)`, `beat by NAME` | producer credit |
+| `"Quoted Beat Name" Type Beat`, `[FREE]`, `Free for profit` | clean title |
 | `Trap`, `Drill`, `Jersey Club`, … | genre hint |
+
+Years (`Type Beat 2026`), `808`, `[808]`, `(Part 2)`, `Track 12 - 140 BPM`'s `12`, and
+prose such as `a minor setback` or `key of a lifetime` are never read as tempo or key.
 
 ### Export recipes
 
@@ -199,6 +213,7 @@ missing on Windows, Sonic can fetch a static build for you.
 | `pnpm test:unit` | Run the complete isolated unit regression suite |
 | `pnpm test:key` | Check all 24 keys across tuning, voicing, and sample-rate fixtures |
 | `pnpm benchmark:analysis` | Measure decode/PCM-load time and scratch bytes on generated audio |
+| `node scripts/benchmark-producer-beats.mjs [--baseline-ref REF]` | Score tempo/key on 47 generated producer-style beats (trap, drill, house, afro, …) against an optional earlier engine |
 | `pnpm test:ui` | Build the current application and component harness, then run the Windows UI suite |
 | `pnpm test:ui:hidden` | Build and test the UI with Electron windows hidden; skip native window and OS pointer checks |
 | `pnpm smoke` | Headless boot self-check (DOM, theme, parser, templates) |
