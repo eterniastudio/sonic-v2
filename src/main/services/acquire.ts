@@ -7,6 +7,7 @@ import { baseYtDlpArgs, summariseYtDlpError } from './probe'
 import { stagingDir } from './paths'
 import { settingsService } from './settings'
 import { isSoundCloudShareUrl, parseVideoUrl } from '@shared/url'
+import { assertPublicUrl } from '../lib/publicAddress'
 
 export interface AcquireProgress {
   percent: number | null
@@ -75,6 +76,7 @@ export async function acquireAudio(
   if (!parsed.ok || !parsed.normalized || isSoundCloudShareUrl(parsed.normalized)) {
     throw new Error(parsed.reason ?? 'Inspect the SoundCloud share link before downloading.')
   }
+  if (parsed.provider === 'direct' || parsed.provider === 'generic') await assertPublicUrl(parsed.normalized)
   const ytdlp = await engineService.resolve('yt-dlp', false, options.signal)
   options.signal.throwIfAborted()
   if (!ytdlp.path) {

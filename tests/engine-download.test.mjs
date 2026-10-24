@@ -39,6 +39,7 @@ async function downloadFixture(t, respond, overrides = {}) {
     await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
   })
   const { downloadToFile, fetchText } = load('../src/main/lib/net.ts', {
+    './publicAddress': { assertPublicUrl: async () => {} },
     'node:fs': overrides.fs ?? fs,
     'node:stream': streams,
     'node:stream/promises': streamPromises,

@@ -1,5 +1,6 @@
 import type { ProbeResult } from '@shared/domain'
 import { artworkFor, describeProviderError, isSoundCloudShareUrl, parseVideoUrl, type ProviderId } from '@shared/url'
+import { assertPublicUrl } from '../lib/publicAddress'
 import { run } from '../lib/child'
 import { engineService } from './engine'
 import { settingsService } from './settings'
@@ -99,6 +100,11 @@ export async function probeUrl(url: string, signal?: AbortSignal): Promise<Probe
 
   if (!parsed.ok || !parsed.normalized) {
     return { ...empty, error: parsed.reason ?? 'Unsupported URL' }
+  }
+
+  if (parsed.provider === 'direct' || parsed.provider === 'generic') {
+    try { await assertPublicUrl(parsed.normalized) }
+    catch (error) { return { ...empty, error: error instanceof Error && /private network/.test(error.message) ? error.message : "Could not resolve this link's host. Check the address and your connection." } }
   }
 
   if (signal?.aborted) return { ...empty, error: 'Cancelled' }

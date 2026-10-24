@@ -53,6 +53,7 @@ test('mixed YouTube and SoundCloud intake deduplicates canonical links and retai
 function probeFixture(info, overrides = {}) {
   const calls = []
   const service = load('../src/main/services/probe.ts', {
+    '../lib/publicAddress': { assertPublicUrl: async () => {} },
     '@shared/url': urls,
     './settings': { settingsService: { get: () => ({ cookiesFromBrowser: 'none' }) } },
     './engine': { engineService: { resolve: async () => ({ path: '/isolated/tool' }) } },

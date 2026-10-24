@@ -323,6 +323,7 @@ for (const target of ['acquire', 'transcode', 'probe']) {
     let result
     if (target === 'acquire') {
       const service = load('../src/main/services/acquire.ts', {
+        '../lib/publicAddress': { assertPublicUrl: async () => {} },
         ...common, 'node:fs/promises': {}, 'node:path': path, '../lib/fsx': {},
         './probe': {}, './paths': {}, './settings': {}, '@shared/url': sourceUrls
       })
@@ -334,6 +335,7 @@ for (const target of ['acquire', 'transcode', 'probe']) {
       result = service.transcode({ signal: controller.signal })
     } else {
       const service = load('../src/main/services/probe.ts', {
+    '../lib/publicAddress': { assertPublicUrl: async () => {} },
         ...common, '@shared/url': { parseVideoUrl: () => ({ ok: true, normalized: 'https://example.invalid', videoId: 'a' }) }, './settings': {}
       })
       result = service.probeUrl('https://example.invalid', controller.signal)
@@ -349,6 +351,7 @@ test('URL probe preserves its cancelled outcome during shared ffmpeg resolution'
   const controller = new AbortController()
   const resolutions = []
   const service = load('../src/main/services/probe.ts', {
+    '../lib/publicAddress': { assertPublicUrl: async () => {} },
     '@shared/url': { parseVideoUrl: () => ({ ok: true, normalized: 'https://example.invalid', videoId: 'a' }) },
     './settings': { settingsService: { get: () => ({ cookiesFromBrowser: 'none' }) } },
     './engine': { engineService: { async resolve(name, force, signal) {
@@ -366,6 +369,7 @@ test('URL probe preserves its cancelled outcome during shared ffmpeg resolution'
 test('queue shutdown during probe ffmpeg resolution leaves the interrupted job ready for retry', async t => {
   let resolvingFfmpeg = false
   const probeService = load('../src/main/services/probe.ts', {
+    '../lib/publicAddress': { assertPublicUrl: async () => {} },
     '@shared/url': { parseVideoUrl: () => ({ ok: true, normalized: 'https://example.invalid', videoId: 'a' }) },
     './settings': { settingsService: { get: () => ({ cookiesFromBrowser: 'none' }) } },
     './engine': { engineService: { async resolve(name, force, signal) {

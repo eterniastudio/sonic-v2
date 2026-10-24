@@ -19,7 +19,8 @@ its site's rules when you paste it. Profiles and channels are rejected with a re
 that names the site, and download errors are worded per site. YouTube artwork still
 comes from the video thumbnail. Other sites use the thumbnail yt-dlp reports. A new
 **Allow other sites** setting, off by default, passes any other public https page to
-yt-dlp's generic extractor. Local and private network addresses are always refused.
+yt-dlp's generic extractor. Links whose host resolves to your own computer or a private
+network are refused before inspection, download and cover fetch.
 In the library, **Open on …** names the beat's site, and smart collections can filter
 by every source. Existing library records, smart collections and settings load as before.
 

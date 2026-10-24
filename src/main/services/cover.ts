@@ -60,7 +60,7 @@ export async function fetchCover(
 
   const partial = path.join(directory, `${key}.${process.pid}.${randomUUID()}.jpg${PARTIAL}`)
   try {
-    await downloadToFile(url, partial, { signal, idleTimeoutMs: 20_000 })
+    await downloadToFile(url, partial, { signal, idleTimeoutMs: 20_000, publicOnly: true })
     if (!(await usableCover(partial))) throw new Error('Incomplete cover image.')
     await rename(partial, target)
     return target

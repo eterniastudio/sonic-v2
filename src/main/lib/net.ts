@@ -3,6 +3,7 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { ensureDir, removeFile } from './fsx'
 import path from 'node:path'
+import { assertPublicUrl } from './publicAddress'
 
 export interface DownloadOptions {
   signal?: AbortSignal
@@ -10,6 +11,25 @@ export interface DownloadOptions {
   onProgress?: (receivedBytes: number, totalBytes: number | null) => void
   /** Give up if no bytes arrive for this long. */
   idleTimeoutMs?: number
+  /** Refuse the request, and every redirect hop, unless the host resolves to public addresses. */
+  publicOnly?: boolean
+}
+
+const MAX_REDIRECTS = 5
+
+/** Follows redirects by hand so each hop's host can be checked before it is requested. */
+async function fetchPublic(url: string, init: RequestInit): Promise<Response> {
+  let current = url
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (new URL(current).protocol !== 'https:') throw new Error('Refused a non-https redirect.')
+    await assertPublicUrl(current)
+    const response = await fetch(current, { ...init, redirect: 'manual' })
+    const location = response.headers.get('location')
+    if (response.status < 300 || response.status >= 400 || !location) return response
+    await response.body?.cancel().catch(() => undefined)
+    current = new URL(location, current).href
+  }
+  throw new Error('Too many redirects.')
 }
 
 const DEFAULT_IDLE_TIMEOUT = 45_000
@@ -45,7 +65,7 @@ export async function downloadToFile(
 
   try {
     resetIdle()
-    const response = await fetch(url, {
+    const response = await (options.publicOnly ? fetchPublic : fetch)(url, {
       redirect: 'follow',
       signal: controller.signal,
       headers: {
