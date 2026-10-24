@@ -89,6 +89,19 @@ function createWaveSurfer(container: HTMLElement): PlaybackEngine {
   }
 }
 
+/** Id lookup over the store's library, rebuilt only when the library array changes. */
+let beatIndex: { library: LibraryBeat[]; byId: Map<string, LibraryBeat> } | null = null
+function beatById(id: string): LibraryBeat | undefined {
+  const library = useApp.getState().library
+  if (beatIndex?.library !== library) {
+    const byId = new Map<string, LibraryBeat>()
+    // First match wins, as with `Array.find`.
+    for (const beat of library) if (!byId.has(beat.id)) byId.set(beat.id, beat)
+    beatIndex = { library, byId }
+  }
+  return beatIndex.byId.get(id)
+}
+
 /** One live media owner for the entire app shell. The view subtree can remount freely. */
 export function PlaybackProvider({ children }: { children: ReactNode }): ReactNode {
   const library = useApp(state => state.library)
@@ -104,7 +117,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }): ReactNo
   if (!controllerRef.current) {
     const save = saveRef.current
     const controller = new PlaybackController({
-      getBeat: id => useApp.getState().library.find(beat => beat.id === id),
+      getBeat: beatById,
       identify: async id => (await ipc.invoke('playback:identity', id)).fingerprint,
       createEngine: createWaveSurfer,
       checkpoint: command => {

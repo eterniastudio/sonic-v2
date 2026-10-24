@@ -47,6 +47,7 @@ function BootSplash({ error, onRetry }: { error: string | null; onRetry: () => v
 function useMainProcessBridge(): void {
   useIpcEvent('queue:changed', (queue) => useApp.getState().setQueueSnapshot(queue))
   useIpcEvent('library:changed', (library) => useApp.getState().setLibrarySnapshot(library))
+  useIpcEvent('library:delta', (delta) => useApp.getState().applyLibraryDelta(delta))
   useIpcEvent('settings:changed', (settings) => useApp.setState({ settings }))
   useIpcEvent('engine:status', (engine) => useApp.setState({ engine }))
   useIpcEvent('engine:progress', (engineProgress) => useApp.setState({ engineProgress }))

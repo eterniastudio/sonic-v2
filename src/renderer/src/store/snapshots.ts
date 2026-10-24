@@ -31,6 +31,31 @@ export function reuseSnapshotItems<T extends { id: string }>(previous: T[], inco
   return unchanged ? previous : reused ? next : incoming
 }
 
+/**
+ * Rebuild a pushed list from a delta: `ids` is the complete order, `changed`
+ * holds every record that differs from the previous push. Returns null when a
+ * listed id is unknown here (for example a push that raced the first load), so
+ * the caller can fetch the full list instead.
+ */
+export function applySnapshotDelta<T extends { id: string }>(previous: T[], ids: readonly string[], changed: readonly T[]): T[] | null {
+  const byId = new Map<string, T>()
+  for (const item of previous) if (!byId.has(item.id)) byId.set(item.id, item)
+  const updates = new Map<string, T>()
+  for (const item of changed) {
+    const existing = byId.get(item.id)
+    updates.set(item.id, existing && sameValue(existing, item) ? existing : item)
+  }
+  let unchanged = previous.length === ids.length
+  const next: T[] = new Array(ids.length)
+  for (let index = 0; index < ids.length; index++) {
+    const value = updates.get(ids[index]) ?? byId.get(ids[index])
+    if (!value) return null
+    if (value !== previous[index]) unchanged = false
+    next[index] = value
+  }
+  return unchanged ? previous : next
+}
+
 export function reuseQueueSnapshot(previous: QueueSnapshot, incoming: QueueSnapshot): QueueSnapshot {
   if (previous === incoming) return previous
   const jobs = reuseSnapshotItems(previous.jobs, incoming.jobs)

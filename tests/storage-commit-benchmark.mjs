@@ -83,11 +83,14 @@ async function scenario() {
     return dependencies[name]
   })
   const revision = () => storage.storageStatus()[0]?.revision ?? 0
+  let start = performance.now()
   libraryService.list()
+  const loadMs = performance.now() - start
 
   // Local import: the production call pattern of each revision.
   const incoming = Array.from({ length: imports }, (_, i) => beat(`import-${i}`))
-  let start = performance.now(), before = revision()
+  start = performance.now()
+  let before = revision()
   if (typeof libraryService.addMany === 'function') {
     for (let i = 0; i < incoming.length; i += 250) libraryService.addMany(incoming.slice(i, i + 250))
   } else for (const record of incoming) libraryService.add(record)
@@ -102,13 +105,45 @@ async function scenario() {
     libraryService.update(id, { analysisStatus: 'estimated', analysis: { ...beat(id).analysis, analyzedAt: Date.now() } })
   }
   const analysisMs = performance.now() - start, analysisCommits = revision() - before
+  // Import review: each inspected file is checked against the library by canonical
+  // path and fingerprint. Previous revisions scanned every record per file; the
+  // working tree indexes the revision once (localImport.ts libraryLookup).
+  const canonical = filePath => path.win32.normalize(path.win32.resolve(filePath)).toLocaleLowerCase('en-US')
+  const probes = Array.from({ length: 200 }, (_, i) => canonical(path.win32.join("C:", "Users", "producer", "Music", "New", `${i}.wav`)))
+  start = performance.now()
+  for (const probe of probes) {
+    const existing = libraryService.list()
+    existing.find(beat => canonical(beat.filePath) === probe); existing.find(beat => beat.fingerprint === probe)
+  }
+  const reviewScanMsPerFile = (performance.now() - start) / probes.length
+  let reviewIndexMsPerFile = null
+  if (typeof libraryService.ordered === 'function') {
+    start = performance.now()
+    const cache = new WeakMap()
+    for (const probe of probes) {
+      const records = libraryService.ordered()
+      let lookup = cache.get(records)
+      if (!lookup) {
+        lookup = { byPath: new Map(), byFingerprint: new Map() }
+        for (const beat of records) {
+          const key = canonical(beat.filePath)
+          if (!lookup.byPath.has(key)) lookup.byPath.set(key, beat)
+          if (!lookup.byFingerprint.has(beat.fingerprint)) lookup.byFingerprint.set(beat.fingerprint, beat)
+        }
+        cache.set(records, lookup)
+      }
+      lookup.byPath.get(probe); lookup.byFingerprint.get(probe)
+    }
+    reviewIndexMsPerFile = +((performance.now() - start) / probes.length).toFixed(3)
+  }
   const bytes = (await fsp.stat(libraryFile)).size
   const reread = JSON.parse(await fsp.readFile(libraryFile, 'utf8'))
   assert.equal(reread.length, existing + imports)
   await libraryService.shutdown()
   await fsp.rm(profile, { recursive: true, force: true })
-  return { ref: ref ?? 'working-tree', existing, imports, importMs: Math.round(importMs), importCommits,
-    analyzed, analysisMs: Math.round(analysisMs), analysisCommits, analysisMsPerBeat: +(analysisMs / analyzed).toFixed(1), libraryBytes: bytes }
+  return { ref: ref ?? 'working-tree', existing, loadMs: Math.round(loadMs), imports, importMs: Math.round(importMs), importCommits,
+    analyzed, analysisMs: Math.round(analysisMs), analysisCommits, analysisMsPerBeat: +(analysisMs / analyzed).toFixed(1),
+    reviewScanMsPerFile: +reviewScanMsPerFile.toFixed(3), reviewIndexMsPerFile, libraryBytes: bytes }
 }
 
 console.log(JSON.stringify(await scenario()))
