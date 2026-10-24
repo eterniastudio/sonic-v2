@@ -860,7 +860,7 @@ export function LibraryView(): ReactNode {
               {beat.missing || beat.fileAccessError ? item('Locate file…', () => locateFile(beat.id), pickingRecovery) : null}
               {providerById(beat.sourceKind) && beat.sourceUrl ? <>
                 {item(providerById(beat.sourceKind)!.openLabel, async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid source link is saved for this beat.') })}
-                {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.getState().setLibrarySnapshot(refreshed) })}
+                {item('Refresh channel name', async () => { await ipc.invoke('library:refreshSource', beat.id) })}
               </> : null}
               {item(beat.fileOwnership === 'external' ? 'Rename in library…' : 'Rename beat and file…', () => { setRenameTarget(beat); setRenameTitle(beat.title); setRenameError('') })}
               {beat.fileOwnership === 'external' ? item('Export prepared copy…', () => {

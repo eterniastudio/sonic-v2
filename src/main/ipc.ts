@@ -443,7 +443,7 @@ export function registerIpcHandlers(): void {
     if (result.error || !result.uploader) throw new Error(result.error || 'The source did not return a channel name.')
     libraryService.update(id, { sourceChannel: result.uploader, thumbnail: result.thumbnail })
     if (beat.sidecarPath) await libraryService.retrySidecar(id)
-    return libraryService.list()
+    return libraryService.get(id) ?? null
   })
   handle('library:revealFile', async (id) => {
     const target = libraryService.get(id)?.filePath
@@ -460,9 +460,12 @@ export function registerIpcHandlers(): void {
     return target && await fileExists(target) ? (await shell.openPath(target)).length === 0 : false
   })
 
-  handle('library:updateMetadata', (id, patch, clearOverrides) =>
-    libraryService.updateMetadata(id, patch, clearOverrides ?? [])
-  )
+  // Returning the whole library here cost about a second per edit at 20,000
+  // tracks; the window already receives the change as a delta.
+  handle('library:updateMetadata', async (id, patch, clearOverrides) => {
+    await libraryService.updateMetadata(id, patch, clearOverrides ?? [])
+    return libraryService.get(id) ?? null
+  })
 
   handle('library:remove', async (id, deleteFiles, expected) => {
     const current = libraryService.get(id)
@@ -472,10 +475,10 @@ export function registerIpcHandlers(): void {
     if (!result.ok && result.reason) {
       throw new Error(result.reason)
     }
-    return result.library
+    return { ok: true as const }
   })
 
-  handle('library:rescan', () => libraryService.rescan())
+  handle('library:rescan', async () => ({ count: (await libraryService.rescan()).length }))
   handle('library:startDrag', ids => startLibraryDrag(getMainWindow()!.webContents, ids))
   handle('library:exportList', ids => exportLibraryList(ids))
   handle('library:resolveDuplicates', (keepId, removeIds) => resolveDuplicates(keepId, removeIds))

@@ -107,13 +107,15 @@ export interface IpcMap {
   'import:confirm': { args: [sessionId: string, selectedIds: string[]]; result: LocalImportReview }
   'import:cancel': { args: [sessionId: string]; result: LocalImportReview | null }
   'library:openSource': { args: [id: string]; result: boolean }
-  'library:refreshSource': { args: [id: string]; result: LibraryBeat[] }
+  /** Edits reach the window through `library:changed`/`library:delta`; replies stay small. */
+  'library:refreshSource': { args: [id: string]; result: LibraryBeat | null }
   'library:revealFile': { args: [id: string]; result: boolean }
   'library:openFile': { args: [id: string]; result: boolean }
   'library:openSidecarFile': { args: [id: string]; result: boolean }
   'library:updateMetadata': {
     args: [id: string, patch: Partial<BeatMetadata>, clearOverrides?: MetadataField[]]
-    result: LibraryBeat[]
+    /** The updated record. The list itself arrives through the library change push. */
+    result: LibraryBeat | null
   }
   /** Starts an OS drag of these records' audio files (to a DAW or Explorer). Paths stay in main. */
   'library:startDrag': { args: [ids: string[]]; result: { started: boolean; count: number } }
@@ -121,7 +123,7 @@ export interface IpcMap {
   'library:exportList': { args: [ids: string[]]; result: { saved: boolean; count: number; fileName: string | null } }
   /** Keeps one record of a duplicate group, merges its annotations, and removes the others from the library only. */
   'library:resolveDuplicates': { args: [keepId: string, removeIds: string[]]; result: LibraryBeat[] }
-  'library:remove': { args: [id: string, deleteFiles: boolean, expected?: { filePath: string; fingerprint: string }]; result: LibraryBeat[] }
+  'library:remove': { args: [id: string, deleteFiles: boolean, expected?: { filePath: string; fingerprint: string }]; result: { ok: true } }
 
   // --------------------------------------------------------------- analysis
   'analysis:beat': {
@@ -142,7 +144,7 @@ export interface IpcMap {
       enabled: boolean
     }
   }
-  'library:rescan': { args: []; result: LibraryBeat[] }
+  'library:rescan': { args: []; result: { count: number } }
   'library:reexport': {
     args: [id: string, presetId: PresetId]
     result: { ok: boolean; outputPath: string | null; error: string | null; pendingSave?: boolean; publishedBeatId?: string }

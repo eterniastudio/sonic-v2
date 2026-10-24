@@ -265,13 +265,12 @@ export const useApp = create<AppState>()((set, get) => ({
   },
 
   async rescanLibrary() {
-    const library = await ipc.invoke('library:rescan')
-    get().setLibrarySnapshot(library)
+    // The refreshed list arrives through the library change push.
+    await ipc.invoke('library:rescan')
   },
 
   async updateBeatMetadata(id, patch, clearOverrides) {
-    const library = await ipc.invoke('library:updateMetadata', id, patch, clearOverrides)
-    get().setLibrarySnapshot(library)
+    await ipc.invoke('library:updateMetadata', id, patch, clearOverrides)
   },
 
   async analyzeBeat(id, force = false) {
@@ -297,8 +296,7 @@ export const useApp = create<AppState>()((set, get) => ({
   setAnalysisProgress: (analysisProgress) => set({ analysisProgress }),
 
   async removeBeat(id, deleteFiles, expected) {
-    const library = await ipc.invoke('library:remove', id, deleteFiles, expected)
-    get().setLibrarySnapshot(library)
+    await ipc.invoke('library:remove', id, deleteFiles, expected)
   },
 
   async reexportBeat(id, presetId) {
