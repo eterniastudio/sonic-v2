@@ -33,7 +33,7 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-const sourceUrls = load('../src/shared/url.ts', {})
+const sourceUrls = load('../src/shared/url.ts', { './providers': load('../src/shared/providers.ts', {}) })
 
 async function until(predicate) {
   for (let turn = 0; turn < 100; turn += 1) {

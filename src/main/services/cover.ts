@@ -26,8 +26,20 @@ async function usableCover(file: string): Promise<boolean> {
   } finally { await handle?.close() }
 }
 
+/** Cover art is only ever fetched over https, with no credentials or custom port. */
+function isFetchableCover(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password && !parsed.port
+  } catch { return false }
+}
+
 /**
  * Downloads a provider thumbnail for use as embedded cover art.
+ *
+ * The URL is the job's probed thumbnail: i.ytimg.com artwork for YouTube, and
+ * the thumbnail yt-dlp reported for every other provider (already filtered to
+ * public https hosts by `artworkFor` at probe time).
  *
  * Failures are non-fatal by design: cover art is cosmetic, and a missing image
  * must never block an export. The image is written to a private partial file
@@ -38,7 +50,7 @@ export async function fetchCover(
   key: string,
   signal?: AbortSignal
 ): Promise<string | null> {
-  if (!url) return null
+  if (!url || !isFetchableCover(url)) return null
 
   const directory = coverCacheDir()
   await ensureDir(directory)

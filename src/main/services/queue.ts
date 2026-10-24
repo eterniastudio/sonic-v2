@@ -225,7 +225,7 @@ class QueueService extends EventEmitter {
     const existing = new Set(this.jobs.filter((job) => !TERMINAL.includes(job.stage)).map((job) => job.url))
 
     for (const raw of urls) {
-      const { accepted } = extractVideoUrls(raw)
+      const { accepted } = extractVideoUrls(raw, { allowOtherSites: settings.allowOtherSites === true })
       for (const parsed of accepted) {
         if (!parsed.normalized || !parsed.provider) continue
         if (existing.has(parsed.normalized)) continue
@@ -529,11 +529,12 @@ class QueueService extends EventEmitter {
 
     // Skip work that already exists in the library.
     if (settings.skipExisting) {
-      const sourceUrl = parseVideoUrl(startJob.url).normalized
+      // Identity comparison only: any stored https link may be matched, whatever the intake gate says.
+      const sourceUrl = parseVideoUrl(startJob.url, { allowOtherSites: true }).normalized
       const existing = libraryService
         .list()
         .find((beat) => !beat.missing && sourceUrl != null && beat.sourceKind === startJob.sourceKind &&
-          beat.sourceUrl != null && parseVideoUrl(beat.sourceUrl).normalized === sourceUrl)
+          beat.sourceUrl != null && parseVideoUrl(beat.sourceUrl, { allowOtherSites: true }).normalized === sourceUrl)
       if (existing) {
         this.setStage(id, 'complete', {
           progress: 1,

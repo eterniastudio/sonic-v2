@@ -8,6 +8,7 @@
 import type { BeatMetadata, PresetId, SourceKind, TemplatePreview } from './domain'
 import { formatBpm, formatCents, formatDateStamp, formatDuration } from './format'
 import { getPreset } from './presets'
+import { ALL_PROVIDERS } from './providers'
 
 export const TEMPLATE_TOKENS = [
   'title',
@@ -50,12 +51,11 @@ export interface TemplateContext {
   durationSec?: number | null
 }
 
-const SOURCE_LABELS: Record<SourceKind, string> = {
-  youtube: 'YouTube',
-  soundcloud: 'SoundCloud',
+const SOURCE_LABELS = {
+  ...Object.fromEntries(ALL_PROVIDERS.map(provider => [provider.id, provider.tokenLabel])),
   local: 'Local',
   unknown: 'Source'
-}
+} as Record<SourceKind, string>
 
 function tokenValue(token: TemplateToken, context: TemplateContext): string {
   const { metadata } = context
@@ -75,7 +75,7 @@ function tokenValue(token: TemplateToken, context: TemplateContext): string {
     case 'preset':
       return getPreset(context.presetId).short
     case 'source':
-      return SOURCE_LABELS[context.sourceKind]
+      return SOURCE_LABELS[context.sourceKind] ?? SOURCE_LABELS.unknown
     case 'date':
       return formatDateStamp(context.date ?? new Date())
     case 'index':

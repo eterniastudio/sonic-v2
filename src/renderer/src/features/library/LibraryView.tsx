@@ -18,6 +18,7 @@ import { needsAnalysisRefresh } from '@shared/analysis'
 import { FAVORITES_COLLECTION_ID, type OrganizationCommand, type OrganizationSnapshot } from '@shared/organization'
 import type { BatchSession } from '@shared/batch'
 import { PRESETS } from '@shared/presets'
+import { providerById } from '@shared/providers'
 import { cn } from '@/lib/cn'
 import { useReducedMotion } from '@/lib/theme'
 import { useApp } from '@/store/app'
@@ -708,8 +709,8 @@ export function LibraryView(): ReactNode {
             return <>
               {item('Play this beat', () => playOne(beat.id), beat.missing)}
               {beat.missing || beat.fileAccessError ? item('Locate file…', () => locateFile(beat.id), pickingRecovery) : null}
-              {(beat.sourceKind === 'youtube' || beat.sourceKind === 'soundcloud') && beat.sourceUrl ? <>
-                {item(beat.sourceKind === 'soundcloud' ? 'Open on SoundCloud' : 'Open on YouTube', async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid source link is saved for this beat.') })}
+              {providerById(beat.sourceKind) && beat.sourceUrl ? <>
+                {item(providerById(beat.sourceKind)!.openLabel, async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid source link is saved for this beat.') })}
                 {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.getState().setLibrarySnapshot(refreshed) })}
               </> : null}
               {item(beat.fileOwnership === 'external' ? 'Rename in library…' : 'Rename beat and file…', () => { setRenameTarget(beat); setRenameTitle(beat.title); setRenameError('') })}
