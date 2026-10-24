@@ -462,6 +462,12 @@ export interface Settings {
 
   /** Library rescan cadence in ms; 0 disables the background rescan. */
   rescanIntervalMs: number
+
+  /**
+   * When Sonic gains focus, offer to queue a supported link found on the
+   * clipboard. Opt-in: off by default, and nothing is queued without a click.
+   */
+  watchClipboard: boolean
 }
 
 export interface QueueSnapshot {

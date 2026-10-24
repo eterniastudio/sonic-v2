@@ -1,7 +1,9 @@
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Download, ListChecks, Pause, Play } from 'lucide-react'
+import { Download, ListChecks, Pause, Play, RotateCcw } from 'lucide-react'
 import type { Job } from '@shared/domain'
 import { useApp } from '@/store/app'
+import { ipc } from '@/lib/ipc'
+import { toast } from '@/components/ui/Toaster'
 import { Button } from '@/components/ui/Button'
 import { Segmented } from '@/components/ui/Segmented'
 import { useVirtualRows, withPinned } from '@/lib/virtualRows'
@@ -31,6 +33,11 @@ export function QueueList(): ReactNode {
   const readyCount = jobs.filter((job) => job.stage === 'ready').length
   const activeCount = jobs.filter((job) => !TERMINAL.has(job.stage)).length
   const finishedCount = jobs.filter((job) => job.stage === 'complete' || job.stage === 'cancelled').length
+  const failedCount = jobs.filter((job) => job.stage === 'failed').length
+  const retryFailed = (): void => {
+    void ipc.invoke('queue:retryFailed').then((queue) => useApp.getState().setQueueSnapshot(queue))
+      .catch((error) => toast({ kind: 'error', title: 'Could not retry failed downloads', description: String(error) }))
+  }
 
   return (
     <section className="flex min-h-[180px] flex-1 flex-col overflow-hidden" aria-labelledby="queue-heading">
@@ -38,6 +45,7 @@ export function QueueList(): ReactNode {
         <h2 id="queue-heading" className="text-[13.5px] font-medium text-fg">Queue</h2>
         <span className="text-[12px] text-fg-subtle nums">{jobs.length}</span>
         <span className="flex-1" />
+        {failedCount > 0 ? <Button variant="ghost" size="xs" leading={<RotateCcw />} onClick={retryFailed} className="h-6 px-1.5 text-[12px]">Retry failed ({failedCount})</Button> : null}
         <Button variant="ghost" size="xs" leading={<ListChecks />} disabled={finishedCount === 0} onClick={() => void clearFinished()} className="h-6 px-1.5 text-[12px]">Clear done</Button>
         <Button variant="primary" size="xs" leading={<Download />} disabled={readyCount === 0} onClick={() => void startJobs(null)} className="h-6 rounded-[2px] px-2 text-[12px] shadow-none">
           Download all{readyCount > 0 ? ` (${readyCount})` : ''}

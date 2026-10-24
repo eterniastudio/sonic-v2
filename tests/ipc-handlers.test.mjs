@@ -25,7 +25,8 @@ const inert = new Proxy({}, { get: (_target, name) => name === '__esModule' ? fa
 async function ipcFixture(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'sonic-ipc-'))
   t.after(() => rm(root, { recursive: true, force: true }))
-  const handlers = new Map(), opened = [], added = []
+  const handlers = new Map(), opened = [], added = [], retried = [], dragged = []
+  const queueJobs = [{ id: 'failed-1', stage: 'failed' }, { id: 'cancelled-1', stage: 'cancelled' }, { id: 'done-1', stage: 'complete' }, { id: 'failed-2', stage: 'failed' }]
   const webContents = { mainFrame: {} }
   const window = { isDestroyed: () => false, webContents }
   const paths = { userData: root, engine: path.join(root, 'missing-engine'), downloads: root }
@@ -42,12 +43,19 @@ async function ipcFixture(t) {
     './services/engine': { engineService: { get directory() { return paths.engine } } },
     './services/settings': { settingsService: { get: () => ({ downloadDir: paths.downloads }) } },
     './services/paths': { defaultDownloadDir: () => paths.downloads },
-    './services/queue': { queueService: { add: urls => { added.push(urls); return { jobs: [], paused: false, concurrency: 2 } }, flush() {} } }
+    './services/queue': { queueService: { add: urls => { added.push(urls); return { jobs: [], paused: false, concurrency: 2 } }, flush() {},
+      snapshot: () => ({ jobs: queueJobs, paused: false, concurrency: 2 }), retry: id => { retried.push(id) } } },
+    './services/libraryTools': {
+      MAX_DRAG_FILES: 100,
+      startLibraryDrag: async (_sender, ids) => { dragged.push(ids); return { started: true, count: ids.length } },
+      exportLibraryList: async ids => ({ saved: true, count: ids.length, fileName: 'list.csv' }),
+      resolveDuplicates: async () => []
+    }
   }
   load('../src/main/ipc.ts', name => modules[name] ?? inert).registerIpcHandlers()
   const event = { sender: webContents, senderFrame: webContents.mainFrame }
   const invoke = (channel, ...args) => handlers.get(channel)(event, ...args)
-  return { root, paths, opened, added, invoke }
+  return { root, paths, opened, added, invoke, retried, dragged, queueJobs }
 }
 
 test('app:openDirectory opens existing folders and refuses missing ones or files', async t => {
@@ -68,4 +76,23 @@ test('queue:add accepts a large paste only as individual links', async t => {
   await assert.rejects(f.invoke('queue:add', [urls.join('\n')]), /invalid|argument/i)
   await f.invoke('queue:add', urls)
   assert.deepEqual(f.added, [urls])
+})
+
+test('queue:retryFailed re-queues failed jobs only; cancelled and finished jobs stay put', async t => {
+  const f = await ipcFixture(t)
+  await f.invoke('queue:retryFailed')
+  assert.deepEqual(f.retried, ['failed-1', 'failed-2'])
+  await assert.rejects(f.invoke('queue:retryFailed', 'extra'), /invalid/i)
+})
+
+test('library drag, list export and duplicate resolution take record ids only, within limits', async t => {
+  const f = await ipcFixture(t)
+  assert.deepEqual(await f.invoke('library:startDrag', ['beat-1', 'beat-2']), { started: true, count: 2 })
+  assert.deepEqual(f.dragged, [['beat-1', 'beat-2']])
+  await assert.rejects(f.invoke('library:startDrag', []), /invalid/i)
+  await assert.rejects(f.invoke('library:startDrag', Array.from({ length: 101 }, (_, index) => `beat-${index}`)), /invalid/i)
+  await assert.rejects(f.invoke('library:startDrag', 'C:\\audio\\beat.wav'), /invalid/i)
+  await assert.rejects(f.invoke('library:exportList', []), /invalid/i)
+  await assert.rejects(f.invoke('library:resolveDuplicates', 'keep', []), /invalid/i)
+  assert.deepEqual(await f.invoke('library:exportList', ['beat-1']), { saved: true, count: 1, fileName: 'list.csv' })
 })

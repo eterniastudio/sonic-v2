@@ -23,6 +23,21 @@ yt-dlp's generic extractor. Local and private network addresses are always refus
 In the library, **Open on …** names the beat's site, and smart collections can filter
 by every source. Existing library records, smart collections and settings load as before.
 
+### Library tools for working next to a DAW
+
+| What you can do | How |
+| --- | --- |
+| Drag tracks into a DAW or Explorer | Drag a library row; a multi-selection drags together, up to 100 files. Sonic's main process resolves the files from record ids, so the interface still never handles file paths. |
+| Find compatible tracks | Right-click a track and choose **Find compatible tracks**, or press **C** on a focused row. The list shows the same Camelot key, ±1 on the wheel, and the relative key, at ±4 BPM including half and double time. The banner shows the exact ranges and lets you change the tolerance. |
+| Favorite from the keyboard | Press **F** on a focused row, or on a selection, to toggle favorite. |
+| Recently added, Needs review, Duplicates | Built-in views beside Favorites. Needs review lists tracks with no BPM or key, or with a source-versus-audio disagreement on either. |
+| Clean up duplicates | Records that share a source link or identical audio are grouped. Keep one and the others leave the library. Their favorite, tags, notes and collection places move to the kept record. No audio file is deleted. |
+| Export a track list | **Export list** saves the displayed or selected tracks as CSV or JSON, with title, producer, BPM, key, Camelot, duration, source, file name and collections. Full paths are never written. |
+| Retry failed downloads at once | **Retry failed (n)** in the queue header and the command palette. |
+| Queue a copied link | An opt-in setting, off by default (**Settings → Advanced → Link intake**). When Sonic regains focus, it offers to queue a supported copied link that isn't already queued. |
+
+Saved settings and organization files from earlier versions load unchanged: the clipboard watch reads as off, and a saved built-in view reopens. Verified with new unit tests (`tests/library-tools.test.mjs`, plus handler checks in `tests/ipc-handlers.test.mjs`) and a hidden-window UI spec (`tests/library-tools.spec.mjs`). The drag test replaces Electron's `startDrag` to confirm which file is offered. It does not perform a real drop into a DAW.
+
 ## October 21, 2026
 
 ### White Label: a full visual redesign

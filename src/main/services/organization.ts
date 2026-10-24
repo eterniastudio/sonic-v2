@@ -5,6 +5,7 @@ import { isStopping } from '../lifecycle'
 import { libraryService } from './library'
 import { organizationFile } from './paths'
 import { parseKeyString } from '@shared/music'
+import { BUILT_IN_VIEW_IDS } from '@shared/libraryTools'
 import {
   ORGANIZATION_SORTS,
   FAVORITES_COLLECTION_ID,
@@ -27,6 +28,8 @@ const DEFAULTS: OrganizationSnapshot = {
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const MAX_COLLECTIONS = 100
 const MAX_MEMBERS = 10_000
+/** Favorites and the computed views (Recently added, Needs review, Duplicates) are always selectable. */
+const isBuiltInView = (id: string): boolean => id === FAVORITES_COLLECTION_ID || BUILT_IN_VIEW_IDS.includes(id)
 const emptyAnnotation = (): UserAnnotation => ({ favorite: false, tags: [], notes: '' })
 const annotationAt = (annotations: Record<string, UserAnnotation>, id: string): UserAnnotation =>
   Object.hasOwn(annotations, id) ? annotations[id] : emptyAnnotation()
@@ -99,7 +102,7 @@ function normalizeStored(raw: unknown): OrganizationSnapshot {
   if (active !== null && typeof active !== 'string') throw new Error('Invalid active collection ID.')
   return {
     schemaVersion: 1, annotations, collections,
-    view: { activeCollectionId: active && (active === FAVORITES_COLLECTION_ID || collectionIds.has(active)) ? active : null, layout, sort: sort as OrganizationSnapshot['view']['sort'] }
+    view: { activeCollectionId: active && (isBuiltInView(active) || collectionIds.has(active)) ? active : null, layout, sort: sort as OrganizationSnapshot['view']['sort'] }
   }
 }
 
@@ -186,7 +189,7 @@ class OrganizationService extends EventEmitter {
         break
       }
       case 'set-view':
-        if (command.activeCollectionId && command.activeCollectionId !== FAVORITES_COLLECTION_ID && !next.collections.some(item => item.id === command.activeCollectionId)) throw new Error('Active collection no longer exists.')
+        if (command.activeCollectionId && !isBuiltInView(command.activeCollectionId) && !next.collections.some(item => item.id === command.activeCollectionId)) throw new Error('Active collection no longer exists.')
         next.view = { activeCollectionId: command.activeCollectionId, layout: command.layout, sort: command.sort }
         break
     }
@@ -194,6 +197,64 @@ class OrganizationService extends EventEmitter {
     const snapshot = structuredClone(committed)
     this.emit('changed', snapshot)
     return snapshot
+  }
+
+  /**
+   * Folds the producer's work on duplicate records into the record being kept:
+   * favorite is kept if any copy was a favorite, tags are merged, distinct notes
+   * are appended, and manual collections reference the kept record instead.
+   * The removed records' annotations are dropped. Library records are untouched.
+   */
+  mergeInto(keepId: string, removeIds: string[]): OrganizationSnapshot {
+    if (isStopping()) throw new Error('Sonic is closing. Wait for saving to finish.')
+    const removed = new Set(removeIds.filter(id => id !== keepId))
+    if (!removed.size) return this.snapshot()
+    const next = this.snapshot()
+    const kept = annotationAt(next.annotations, keepId)
+    const notes = [kept.notes]
+    let favorite = kept.favorite
+    let tags = [...kept.tags]
+    for (const id of removed) {
+      if (!Object.hasOwn(next.annotations, id)) continue
+      const other = next.annotations[id]
+      favorite ||= other.favorite
+      tags = [...tags, ...other.tags]
+      if (other.notes.trim() && !notes.some(existing => existing.trim() === other.notes.trim())) notes.push(other.notes)
+      delete next.annotations[id]
+    }
+    // Keep the first 24 distinct tags; the kept record's own tags come first.
+    const seen = new Set<string>()
+    const mergedTags = tags.filter(tag => {
+      const key = tag.toLocaleLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    }).slice(0, 24)
+    const mergedNotes = notes.filter(Boolean).join('\n\n').slice(0, 4000)
+    if (favorite || mergedTags.length || mergedNotes) putAnnotation(next.annotations, keepId, { favorite, tags: mergedTags, notes: mergedNotes })
+    for (const collection of next.collections) {
+      if (collection.type !== 'manual') continue
+      const out: string[] = []
+      for (const id of collection.beatIds) {
+        const target = removed.has(id) ? keepId : id
+        if (!out.includes(target)) out.push(target)
+      }
+      collection.beatIds = out
+    }
+    const committed = this.store.write(next)
+    const snapshot = structuredClone(committed)
+    this.emit('changed', snapshot)
+    return snapshot
+  }
+
+  /** Collection names per beat, for list exports. */
+  collectionNamesByBeat(): Map<string, string[]> {
+    const out = new Map<string, string[]>()
+    for (const collection of this.store.read().collections) {
+      if (collection.type !== 'manual') continue
+      for (const id of collection.beatIds) out.set(id, [...(out.get(id) ?? []), collection.name])
+    }
+    return out
   }
 
   private assertBeats(ids: string[]): void {

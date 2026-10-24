@@ -5,6 +5,7 @@ import { FAVORITES_COLLECTION_ID, type LibraryCollection, type OrganizationComma
 import type { BatchSession } from '@shared/batch'
 import { PRESETS } from '@shared/presets'
 import { ALL_PROVIDERS } from '@shared/providers'
+import { DUPLICATES_VIEW_ID, NEEDS_REVIEW_VIEW_ID, RECENT_VIEW_ID, RECENT_WINDOW_DAYS } from '@shared/libraryTools'
 import { ipc } from '@/lib/ipc'
 import { Button, IconButton } from '@/components/ui/Button'
 import { Dropdown, DropdownItem } from '@/components/ui/Dropdown'
@@ -15,9 +16,15 @@ import { toast } from '@/components/ui/Toaster'
 
 type Mode = 'create-manual' | 'create-smart' | 'edit-smart' | 'rename' | 'delete' | 'tag-add' | 'tag-remove' | 'add-members' | 'export' | null
 const EMPTY_RULE: SmartCollectionRule = { version: 1 }
+/** Computed views, always present beside Favorites. */
+const BUILT_IN_VIEWS = [
+  { id: RECENT_VIEW_ID, label: 'Recently added', title: `Added in the last ${RECENT_WINDOW_DAYS} days` },
+  { id: NEEDS_REVIEW_VIEW_ID, label: 'Needs review', title: 'No BPM or key yet, or the source disagrees with the audio' },
+  { id: DUPLICATES_VIEW_ID, label: 'Duplicates', title: 'Records that share a source link or identical audio' }
+] as const
 
 export function CollectionWorkspace({ organization, activeId, library, visible, selectedIds, clearSelection, selectAll, onPlayDisplayed, onPlaySelected,
-  onScope, command, batch, setBatch, defaultPresetId, manualSort }: {
+  onScope, command, batch, setBatch, defaultPresetId, manualSort, viewCounts = {} }: {
   organization: OrganizationSnapshot | null
   activeId: string | null
   library: LibraryBeat[]
@@ -33,6 +40,8 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
   setBatch: (batch: BatchSession | null) => void
   defaultPresetId: PresetId
   manualSort: boolean
+  /** Track (or group) counts for the computed views, shown beside their names. */
+  viewCounts?: Record<string, number>
 }): ReactNode {
   const [mode, setMode] = useState<Mode>(null)
   const [name, setName] = useState('')
@@ -97,6 +106,12 @@ export function CollectionWorkspace({ organization, activeId, library, visible, 
           onClick={() => void run(() => onScope(null), false)} className={`flex h-9 items-center border-b-2 text-[12px] font-medium transition-colors ${activeId === null ? 'border-fg-muted text-fg' : 'border-transparent text-fg-subtle hover:text-fg'}`}>All audio</button>
         <button type="button" aria-label="Favorites" aria-current={activeId === FAVORITES_COLLECTION_ID ? 'page' : undefined}
           onClick={() => void run(() => onScope(FAVORITES_COLLECTION_ID), false)} className={`flex h-9 items-center gap-1.5 border-b-2 text-[12px] font-medium transition-colors ${activeId === FAVORITES_COLLECTION_ID ? 'border-fg-muted text-fg' : 'border-transparent text-fg-subtle hover:text-fg'}`}>Favorites</button>
+        {BUILT_IN_VIEWS.map(view => <button key={view.id} type="button" aria-label={view.label} title={view.title}
+          aria-current={activeId === view.id ? 'page' : undefined} onClick={() => void run(() => onScope(view.id), false)}
+          className={`flex h-9 items-center gap-1.5 border-b-2 text-[12px] font-medium transition-colors ${activeId === view.id ? 'border-fg-muted text-fg' : 'border-transparent text-fg-subtle hover:text-fg'}`}>
+          {view.label}{viewCounts[view.id] ? <span aria-hidden="true" className="font-normal text-fg-subtle nums">{viewCounts[view.id]}</span> : null}
+        </button>)}
+        <span aria-hidden="true" className="h-4 w-px bg-line" />
         {organization?.collections.map(item => <button key={item.id} type="button" aria-label={`Collection: ${item.name}`}
           aria-current={activeId === item.id ? 'page' : undefined} onClick={() => void run(() => onScope(item.id), false)}
           className={`flex h-9 max-w-[190px] items-center gap-1.5 border-b-2 text-[12px] font-medium transition-colors ${activeId === item.id ? 'border-fg-muted text-fg' : 'border-transparent text-fg-subtle hover:text-fg'}`}>

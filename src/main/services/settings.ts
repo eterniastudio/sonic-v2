@@ -43,7 +43,9 @@ export function defaultSettings(): Settings {
     cookiesFromBrowser: 'none',
     allowOtherSites: false,
 
-    rescanIntervalMs: 120_000
+    rescanIntervalMs: 120_000,
+
+    watchClipboard: false
   }
 }
 
@@ -107,7 +109,10 @@ function normalizeSettings(raw: unknown): Settings {
     // migrate to the safe default (registry sites only).
     allowOtherSites: source.allowOtherSites === true,
 
-    rescanIntervalMs: clamp(Math.round(Number(source.rescanIntervalMs ?? base.rescanIntervalMs)) || 0, 0, 3_600_000)
+    rescanIntervalMs: clamp(Math.round(Number(source.rescanIntervalMs ?? base.rescanIntervalMs)) || 0, 0, 3_600_000),
+
+    // Older settings files have no value: the watch stays off until chosen.
+    watchClipboard: source.watchClipboard === true
   }
 }
 

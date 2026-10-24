@@ -16,6 +16,7 @@ import { LibraryView } from '@/features/library/LibraryView'
 import { PlaybackDock } from '@/features/playback/PlaybackDock'
 import { PlaybackProvider } from '@/features/playback/playbackSession'
 import { SettingsView } from '@/features/settings/SettingsView'
+import { ClipboardOffer } from '@/features/intake/ClipboardOffer'
 
 /** First-paint splash while the main process answers the bootstrap calls. */
 function BootSplash({ error, onRetry }: { error: string | null; onRetry: () => void }): ReactNode {
@@ -116,6 +117,7 @@ export function App(): ReactNode {
 
       {/* Ctrl+K is handled globally; this keeps the palette mounted for exits. */}
       <CommandPalette />
+      <ClipboardOffer />
       <Toaster />
     </div>
     </PlaybackProvider>

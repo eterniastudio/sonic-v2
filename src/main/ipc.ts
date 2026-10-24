@@ -23,6 +23,7 @@ import { probeUrl } from './services/probe'
 import { inspectPlaylist, cancelPlaylist } from './services/playlist'
 import { queueService } from './services/queue'
 import { reexportBeat } from './services/reexport'
+import { exportLibraryList, MAX_DRAG_FILES, resolveDuplicates, startLibraryDrag } from './services/libraryTools'
 import { settingsService } from './services/settings'
 import {
   closeWindow,
@@ -127,7 +128,7 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
     case 'playback:get': case 'storage:status': case 'storage:retry': case 'app:readClipboard': case 'app:info':
     case 'window:minimize': case 'window:toggleMaximize': case 'window:close': case 'window:isMaximized':
     case 'engine:status': case 'engine:setup': case 'settings:get': case 'settings:chooseDir': case 'queue:snapshot':
-    case 'queue:clearFinished': case 'library:list': case 'library:rescan': case 'import:chooseFiles':
+    case 'queue:clearFinished': case 'queue:retryFailed': case 'library:list': case 'library:rescan': case 'import:chooseFiles':
     case 'organization:snapshot':
     case 'analysis:queueMissing': case 'analysis:clearCache': case 'analysis:status':
       valid = args.length === 0; break
@@ -138,6 +139,12 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
     case 'import:status': case 'import:cancel': case 'batch:status': case 'batch:cancel': case 'batch:retry':
     case 'recovery:chooseFile': case 'recovery:status': case 'recovery:cancel': case 'playlist:cancel':
       valid = args.length === 1 && isId(a); break
+    case 'library:startDrag':
+      valid = args.length === 1 && isStringArray(a, MAX_DRAG_FILES) && a.length > 0; break
+    case 'library:exportList':
+      valid = args.length === 1 && isStringArray(a, 50_000) && a.length > 0; break
+    case 'library:resolveDuplicates':
+      valid = args.length === 2 && isId(a) && isStringArray(b, 1000) && b.length > 0; break
     case 'recovery:chooseFolder':
       valid = args.length === 1 && isStringArray(a, 10_000) && a.length > 0 && new Set(a).size === a.length; break
     case 'recovery:apply':
@@ -353,6 +360,12 @@ export function registerIpcHandlers(): void {
   handle('queue:reorder', (ids) => queueService.reorder(ids))
   handle('queue:updateJob', (id, patch) => queueService.updateJob(id, patch))
   handle('queue:clearFinished', () => queueService.clearFinished())
+  handle('queue:retryFailed', () => {
+    for (const job of queueService.snapshot().jobs) {
+      if (job.stage === 'failed') queueService.retry(job.id)
+    }
+    return queueService.snapshot()
+  })
   // A library rename or removal outdates the job's recorded path; the record is authoritative.
   const jobOutput = (id: string): string | null => {
     const job = queueService.getJob(id)
@@ -463,6 +476,9 @@ export function registerIpcHandlers(): void {
   })
 
   handle('library:rescan', () => libraryService.rescan())
+  handle('library:startDrag', ids => startLibraryDrag(getMainWindow()!.webContents, ids))
+  handle('library:exportList', ids => exportLibraryList(ids))
+  handle('library:resolveDuplicates', (keepId, removeIds) => resolveDuplicates(keepId, removeIds))
 
   handle('library:reexport', async (id, presetId) => reexportBeat(id, presetId))
 

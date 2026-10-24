@@ -84,6 +84,8 @@ export interface IpcMap {
   'queue:reorder': { args: [ids: string[]]; result: QueueSnapshot }
   'queue:updateJob': { args: [id: string, patch: JobPatch]; result: Job | null }
   'queue:clearFinished': { args: []; result: QueueSnapshot }
+  /** Re-queues every failed job in one step; cancelled jobs stay cancelled. */
+  'queue:retryFailed': { args: []; result: QueueSnapshot }
   'queue:revealOutput': { args: [id: string]; result: boolean }
   'queue:openOutput': { args: [id: string]; result: boolean }
 
@@ -113,6 +115,12 @@ export interface IpcMap {
     args: [id: string, patch: Partial<BeatMetadata>, clearOverrides?: MetadataField[]]
     result: LibraryBeat[]
   }
+  /** Starts an OS drag of these records' audio files (to a DAW or Explorer). Paths stay in main. */
+  'library:startDrag': { args: [ids: string[]]; result: { started: boolean; count: number } }
+  /** Saves these records as a CSV or JSON track list via a native save dialog. */
+  'library:exportList': { args: [ids: string[]]; result: { saved: boolean; count: number; fileName: string | null } }
+  /** Keeps one record of a duplicate group, merges its annotations, and removes the others from the library only. */
+  'library:resolveDuplicates': { args: [keepId: string, removeIds: string[]]; result: LibraryBeat[] }
   'library:remove': { args: [id: string, deleteFiles: boolean, expected?: { filePath: string; fingerprint: string }]; result: LibraryBeat[] }
 
   // --------------------------------------------------------------- analysis
@@ -218,6 +226,7 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'queue:reorder',
   'queue:updateJob',
   'queue:clearFinished',
+  'queue:retryFailed',
   'queue:revealOutput',
   'queue:openOutput',
   'library:list',
@@ -244,6 +253,9 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'library:openSidecarFile',
   'library:updateMetadata',
   'library:remove',
+  'library:startDrag',
+  'library:exportList',
+  'library:resolveDuplicates',
   'analysis:beat',
   'analysis:cancel',
   'analysis:queueMissing',

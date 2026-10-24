@@ -2,6 +2,7 @@ import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMem
 import { createPortal } from 'react-dom'
 import {
   ArrowDownUp,
+  FileSpreadsheet,
   LayoutGrid,
   List,
   Music4,
@@ -12,7 +13,7 @@ import {
   TriangleAlert,
   X
 } from 'lucide-react'
-import type { FocusEvent as ReactFocusEvent, MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { DragEvent as ReactDragEvent, FocusEvent as ReactFocusEvent, MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { LibraryBeat, PresetId } from '@shared/domain'
 import { needsAnalysisRefresh } from '@shared/analysis'
 import { FAVORITES_COLLECTION_ID, type OrganizationCommand, type OrganizationSnapshot } from '@shared/organization'
@@ -40,6 +41,18 @@ import { RecoveryDialog } from './RecoveryDialog'
 import { createLibraryIndex, searchLibrary, searchSmartCollection, type LibraryIndex, type LibrarySort } from './librarySearch'
 import { CollectionWorkspace } from './CollectionWorkspace'
 import { AnnotationEditor } from './AnnotationEditor'
+import { DuplicatesPanel } from './DuplicatesPanel'
+import { CompatibleBanner, type CompatibleState } from './CompatibleBanner'
+import {
+  compatibilityCriteria,
+  DUPLICATES_VIEW_ID,
+  findDuplicateGroups,
+  isCompatible,
+  isRecentlyAdded,
+  needsReview,
+  NEEDS_REVIEW_VIEW_ID,
+  RECENT_VIEW_ID
+} from '@shared/libraryTools'
 import { usePlaybackActions, usePlaybackIdentity } from '@/features/playback/playbackSession'
 import { useVirtualRows, withPinned } from '@/lib/virtualRows'
 
@@ -69,6 +82,17 @@ const TEMPO_BANDS: { id: string; label: string }[] = [
   { id: 'trap', label: '120–150' },
   { id: 'fast', label: '150+' }
 ]
+
+const BUILT_IN_VIEW_LABELS: Record<string, string> = {
+  [FAVORITES_COLLECTION_ID]: 'Favorites',
+  [RECENT_VIEW_ID]: 'Recently added',
+  [NEEDS_REVIEW_VIEW_ID]: 'Needs review',
+  [DUPLICATES_VIEW_ID]: 'Duplicates'
+}
+
+/** Typing in a field never triggers a list shortcut. */
+const isTextEntry = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
 
 /** Searchable archive of imported audio and Sonic-created exports. */
 export function LibraryView(): ReactNode {
@@ -122,6 +146,8 @@ export function LibraryView(): ReactNode {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
+  const [compatible, setCompatible] = useState<CompatibleState | null>(null)
+  const [exportingList, setExportingList] = useState(false)
   const [recoveryPlanId, setRecoveryPlanId] = useState<string | null>(null)
   const [pickingRecovery, setPickingRecovery] = useState(false)
   const recoveryPicker = useRef(false)
@@ -236,7 +262,7 @@ export function LibraryView(): ReactNode {
     event.stopPropagation()
     if (!useLibraryWorkspace.getState().selectedIds.has(beat.id)) { setSelectedIds(new Set([beat.id])); setSelectionAnchor(beat.id) }
     setMenu({ id: beat.id, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 216)) })
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 252)) })
   }, [setSelectedIds, setSelectionAnchor])
 
   const cardRefs = useRef(new Map<string, HTMLDivElement>())
@@ -257,6 +283,21 @@ export function LibraryView(): ReactNode {
     [library]
   )
 
+  const duplicateGroups = useMemo(() => findDuplicateGroups(library), [library])
+  // "Recently added" is relative to when the library last changed, not every render.
+  const recentSince = useMemo(() => Date.now(), [library])
+  const viewCounts = useMemo(() => ({
+    [RECENT_VIEW_ID]: library.filter(beat => isRecentlyAdded(beat, recentSince)).length,
+    [NEEDS_REVIEW_VIEW_ID]: library.filter(needsReview).length,
+    [DUPLICATES_VIEW_ID]: duplicateGroups.length
+  }), [library, recentSince, duplicateGroups])
+  const compatibleSeed = useMemo(() => compatible ? library.find(beat => beat.id === compatible.seedId) ?? null : null, [library, compatible])
+  const compatibleCriteria = useMemo(() => compatibleSeed && compatible
+    ? compatibilityCriteria(compatibleSeed, { bpmTolerance: compatible.bpmTolerance, includeHalfDouble: compatible.includeHalfDouble })
+    : null, [compatibleSeed, compatible])
+  // A seed that was deleted, or lost its BPM and key, ends the compatible view.
+  useEffect(() => { if (compatible && !compatibleCriteria) setCompatible(null) }, [compatible, compatibleCriteria])
+
   const visible = useMemo(() => {
     let scope = library
     if (activeCollection?.type === 'manual') {
@@ -266,17 +307,30 @@ export function LibraryView(): ReactNode {
       scope = searchSmartCollection(library, index, activeCollection.rules, organization.annotations, effectiveSort)
     } else if (activeScope === FAVORITES_COLLECTION_ID) {
       scope = library.filter(beat => organization && Object.prototype.hasOwnProperty.call(organization.annotations, beat.id) && organization.annotations[beat.id].favorite)
+    } else if (activeScope === RECENT_VIEW_ID) {
+      scope = library.filter(beat => isRecentlyAdded(beat, recentSince))
+    } else if (activeScope === NEEDS_REVIEW_VIEW_ID) {
+      scope = library.filter(needsReview)
+    } else if (activeScope === DUPLICATES_VIEW_ID) {
+      const members = new Set(duplicateGroups.flatMap(group => group.beatIds))
+      scope = library.filter(beat => members.has(beat.id))
     }
-    const rows = searchLibrary(scope, index, {
+    let rows = searchLibrary(scope, index, {
       query: searchQuery, sort: effectiveSort, bands, formats, fileFilter, reviewFilter, bpm: bpmFilter,
       bpmTolerance, includeHalfDouble, key: keyFilter
     })
-    if (activeCollection?.type !== 'manual' || effectiveSort !== 'manual') return rows
-    const positions = new Map(activeCollection.beatIds.map((id, position) => [id, position]))
-    return rows.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity))
-  }, [library, index, organization, activeScope, activeCollection, searchQuery, effectiveSort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter])
+    if (activeCollection?.type === 'manual' && effectiveSort === 'manual') {
+      const positions = new Map(activeCollection.beatIds.map((id, position) => [id, position]))
+      rows.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity))
+    }
+    if (compatibleCriteria && compatibleSeed) {
+      // The seed always leads, even when a search or filter would hide it.
+      rows = [compatibleSeed, ...rows.filter(beat => beat.id !== compatibleSeed.id && isCompatible(beat, compatibleCriteria))]
+    }
+    return rows
+  }, [library, index, organization, activeScope, activeCollection, searchQuery, effectiveSort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter, recentSince, duplicateGroups, compatibleCriteria, compatibleSeed])
 
-  const auditionLabel = activeCollection?.name ?? (activeScope === FAVORITES_COLLECTION_ID ? 'Favorites' : 'All audio')
+  const auditionLabel = compatibleSeed ? `Compatible with ${compatibleSeed.title}` : activeCollection?.name ?? BUILT_IN_VIEW_LABELS[activeScope] ?? 'All audio'
   const visibleRef = useRef(visible)
   useLayoutEffect(() => { visibleRef.current = visible }, [visible])
   const playDisplayed = (): void => {
@@ -290,7 +344,7 @@ export function LibraryView(): ReactNode {
 
   // Keyed by the typed query, not the deferred one, so a search change clears the
   // selection in the same commit as the keystroke rather than a render later.
-  const selectionScope = `${activeScope}\u0000${activeCollection?.type === 'smart' ? JSON.stringify(activeCollection.rules) : ''}\u0000${query}\u0000${[...bands].sort()}\u0000${[...formats].sort()}\u0000${fileFilter}\u0000${reviewFilter}\u0000${bpmFilter}\u0000${bpmTolerance}\u0000${includeHalfDouble}\u0000${keyFilter}`
+  const selectionScope = `${activeScope}\u0000${activeCollection?.type === 'smart' ? JSON.stringify(activeCollection.rules) : ''}\u0000${query}\u0000${[...bands].sort()}\u0000${[...formats].sort()}\u0000${fileFilter}\u0000${reviewFilter}\u0000${bpmFilter}\u0000${bpmTolerance}\u0000${includeHalfDouble}\u0000${keyFilter}\u0000${compatible ? `${compatible.seedId}:${compatible.bpmTolerance}:${compatible.includeHalfDouble}` : ''}`
   const scrollRef = useRef<HTMLDivElement>(null)
   const restoredScroll = useRef(false)
   useLayoutEffect(() => {
@@ -356,7 +410,8 @@ export function LibraryView(): ReactNode {
       setRevealId(null)
       return
     }
-    if (visible.some(beat => beat.id === focusId)) {
+    // The Duplicates view lists groups, not cards: reveal in All audio instead.
+    if (activeScope !== DUPLICATES_VIEW_ID && visible.some(beat => beat.id === focusId)) {
       // Displayed but outside the rendered window: mount it, then this effect reruns.
       if (revealId !== focusId) setRevealId(focusId)
       return
@@ -366,6 +421,7 @@ export function LibraryView(): ReactNode {
       useLibraryWorkspace.setState({ query: '', bands: new Set(), formats: new Set(), fileFilter: 'all',
         reviewFilter: 'all', bpmFilter: '', keyFilter: '', selectedIds: new Set(), selectionAnchor: null })
     }
+    setCompatible(null)
     if (organization.view.activeCollectionId !== null && !revealingScope.current) {
       revealingScope.current = true
       void changeScope(null).catch(error => {
@@ -402,6 +458,83 @@ export function LibraryView(): ReactNode {
     finally { recoveryPicker.current = false; setPickingRecovery(false) }
   }
 
+  const findCompatible = (beat: LibraryBeat): void => {
+    if (!compatibilityCriteria(beat, { bpmTolerance: 4, includeHalfDouble: true })) {
+      toast({ kind: 'info', title: 'Nothing to match yet', description: 'This track has no BPM or key. Analyze it or enter them first.' })
+      return
+    }
+    setCompatible({ seedId: beat.id, bpmTolerance: 4, includeHalfDouble: true })
+    setSelectedId(beat.id)
+  }
+
+  const toggleFavorite = (ids: string[]): void => {
+    if (!organization || !ids.length) return
+    const annotations = organization.annotations
+    const allFavorite = ids.every(id => Object.prototype.hasOwnProperty.call(annotations, id) && annotations[id].favorite)
+    const many = ids.length === 1 ? '' : `${ids.length} tracks `
+    void executeOrganization({ type: 'batch-annotation', beatIds: ids.slice(0, 5000), favorite: !allFavorite })
+      .then(() => toast({ kind: 'success', title: allFavorite ? `Removed ${many}from favorites` : `Added ${many}to favorites` }))
+      .catch(error => toast({ kind: 'error', title: 'Favorite was not saved', description: String(error) }))
+  }
+
+  /** The tracks a shortcut acts on: the batch selection, else the focused row, else the inspected one. */
+  const shortcutTargets = (target: EventTarget | null): string[] => {
+    const { selectedIds: batch, selectedId: inspected } = useLibraryWorkspace.getState()
+    if (batch.size) return [...batch]
+    const row = target instanceof HTMLElement ? target.closest<HTMLElement>('[data-beat-id]')?.dataset.beatId : undefined
+    return row ? [row] : inspected ? [inspected] : []
+  }
+  const listShortcuts = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.ctrlKey || event.metaKey || event.altKey || isTextEntry(event.target)) return
+    const key = event.key.toLowerCase()
+    if (key === 'f') {
+      const ids = shortcutTargets(event.target)
+      if (!ids.length) return
+      event.preventDefault()
+      toggleFavorite(ids)
+    } else if (key === 'c') {
+      const [id] = shortcutTargets(event.target)
+      const beat = id ? library.find(item => item.id === id) : undefined
+      if (!beat) return
+      event.preventDefault()
+      findCompatible(beat)
+    }
+  }
+
+  /** Drag rows out to a DAW or Explorer. Main resolves the files; the renderer only names records. */
+  const dragOut = (event: ReactDragEvent<HTMLDivElement>): void => {
+    const id = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-beat-id]')?.dataset.beatId
+    if (!id) return
+    event.preventDefault()
+    const batch = useLibraryWorkspace.getState().selectedIds
+    const ids = batch.has(id) ? [id, ...[...batch].filter(other => other !== id)].slice(0, 100) : [id]
+    void ipc.invoke('library:startDrag', ids).then(result => {
+      if (!result.started) toast({ kind: 'error', title: 'Nothing to drag', description: 'The audio file is missing or unavailable.' })
+    }).catch(error => toast({ kind: 'error', title: 'Could not start the drag', description: String(error) }))
+  }
+
+  const exportList = (): void => {
+    const ids = selectedIds.size ? visible.filter(beat => selectedIds.has(beat.id)).map(beat => beat.id) : visible.map(beat => beat.id)
+    if (!ids.length || exportingList) return
+    setExportingList(true)
+    void ipc.invoke('library:exportList', ids).then(result => {
+      if (result.saved) toast({ kind: 'success', title: `Exported ${result.count} track${result.count === 1 ? '' : 's'}`, description: result.fileName ?? undefined })
+    }).catch(error => toast({ kind: 'error', title: 'Track list was not exported', description: String(error) }))
+      .finally(() => setExportingList(false))
+  }
+
+  const resolveDuplicates = async (keepId: string, removeIds: string[]): Promise<void> => {
+    const next = await ipc.invoke('library:resolveDuplicates', keepId, removeIds)
+    useApp.getState().setLibrarySnapshot(next)
+    setSelectedId(current => current && removeIds.includes(current) ? keepId : current)
+    toast({ kind: 'success', title: `Removed ${removeIds.length} duplicate record${removeIds.length === 1 ? '' : 's'}`, description: 'Audio files were left on disk.' })
+  }
+  const visibleGroups = useMemo(() => {
+    const shown = new Set(visible.map(beat => beat.id))
+    return duplicateGroups.filter(group => group.beatIds.some(id => shown.has(id)))
+  }, [duplicateGroups, visible])
+  const byId = useMemo(() => new Map(library.map(beat => [beat.id, beat])), [library])
+
   return (
     <div className="workspace-page flex h-full min-h-0 flex-col gap-3">
       <header className="page-header flex shrink-0 items-center justify-between gap-4">
@@ -414,6 +547,10 @@ export function LibraryView(): ReactNode {
               void analyzeMissing().then(queued => toast({ kind: 'info', title: `Analyzing ${queued} track${queued === 1 ? '' : 's'}`,
                 description: 'Working from the files on disk — nothing is re-downloaded.' }))
             }}>Analyze <span className="ml-1 text-fg-subtle nums">{needsAnalysis}</span></Button> : null}
+          <Button variant="ghost" size="md" aria-label="Export track list" leading={<FileSpreadsheet />}
+            disabled={!visible.length || exportingList}
+            title={selectedIds.size ? `Save the ${selectedIds.size} selected tracks as CSV or JSON` : `Save the ${visible.length} displayed tracks as CSV or JSON`}
+            onClick={exportList}>Export list</Button>
           <ImportAudio />
         </div>
       </header>
@@ -623,10 +760,14 @@ export function LibraryView(): ReactNode {
         onPlayDisplayed={playDisplayed}
         onPlaySelected={playSelected}
         onScope={changeScope} command={executeOrganization} batch={batch} setBatch={setBatch}
-        defaultPresetId={defaultPresetId} manualSort={effectiveSort === 'manual'} /> : null}
+        defaultPresetId={defaultPresetId} manualSort={effectiveSort === 'manual'} viewCounts={viewCounts} /> : null}
+
+      {compatibleSeed && compatibleCriteria && compatible ? <CompatibleBanner seed={compatibleSeed} criteria={compatibleCriteria}
+        state={compatible} count={visible.length} onChange={setCompatible} onClear={() => setCompatible(null)} /> : null}
 
       <div className="flex min-h-0 flex-1 gap-4">
       <div ref={scrollRef} data-library-scroll className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-0.5"
+        onKeyDown={listShortcuts} onDragStart={dragOut}
         onScroll={event => {
           if (restoredScroll.current) useLibraryWorkspace.setState({ scrollTop: event.currentTarget.scrollTop })
         }}>
@@ -646,6 +787,9 @@ export function LibraryView(): ReactNode {
               <p className="mt-5 text-[12px] text-fg-subtle">WAV · FLAC · MP3 · M4A · OGG</p>
             </div>
           </div>
+        ) : activeScope === DUPLICATES_VIEW_ID ? (
+          <DuplicatesPanel groups={visibleGroups} byId={byId} onResolve={resolveDuplicates}
+            onInspect={id => setSelectedId(id)} onPlay={playOne} />
         ) : visible.length === 0 ? (
           <div className="studio-panel grid h-full min-h-[180px] place-items-center px-8 text-center text-[13.5px] text-fg-muted">
             {activeCollection?.type === 'manual' && activeCollection.beatIds.length === 0
@@ -654,7 +798,11 @@ export function LibraryView(): ReactNode {
                 ? 'No favorites yet. Open a beat and mark it as a favorite.'
                 : activeCollection?.type === 'smart'
                   ? 'No beats currently match this smart collection’s rules.'
-                  : 'No beats match those filters.'}
+                  : activeScope === RECENT_VIEW_ID && viewCounts[RECENT_VIEW_ID] === 0
+                    ? 'Nothing added in the last 14 days. New downloads and imports appear here first.'
+                    : activeScope === NEEDS_REVIEW_VIEW_ID && viewCounts[NEEDS_REVIEW_VIEW_ID] === 0
+                      ? 'Nothing to review. Every track has a BPM and key, and no source disagrees with its audio.'
+                      : 'No beats match those filters.'}
           </div>
         ) : (
           <LibraryResults visible={visible} layout={layout} selectedId={selectedId} selectedIds={selectedIds}
@@ -708,6 +856,7 @@ export function LibraryView(): ReactNode {
             )
             return <>
               {item('Play this beat', () => playOne(beat.id), beat.missing)}
+              {item('Find compatible tracks', () => findCompatible(beat), beat.bpm == null && !beat.key && !beat.camelot)}
               {beat.missing || beat.fileAccessError ? item('Locate file…', () => locateFile(beat.id), pickingRecovery) : null}
               {providerById(beat.sourceKind) && beat.sourceUrl ? <>
                 {item(providerById(beat.sourceKind)!.openLabel, async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid source link is saved for this beat.') })}
