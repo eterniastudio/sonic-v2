@@ -7,6 +7,7 @@ import { baseYtDlpArgs, summariseYtDlpError } from './probe'
 import { stagingDir } from './paths'
 import { settingsService } from './settings'
 import { isSoundCloudShareUrl, parseVideoUrl } from '@shared/url'
+import { assertPublicUrl, guardedYtDlpArgs } from '../lib/publicAddress'
 
 export interface AcquireProgress {
   percent: number | null
@@ -70,10 +71,12 @@ export async function acquireAudio(
   }
 ): Promise<AcquireResult> {
   options.signal.throwIfAborted()
-  const parsed = parseVideoUrl(url)
+  // The same gate as intake: a link from outside the registry needs "Allow other sites".
+  const parsed = parseVideoUrl(url, { allowOtherSites: settingsService?.get()?.allowOtherSites === true })
   if (!parsed.ok || !parsed.normalized || isSoundCloudShareUrl(parsed.normalized)) {
     throw new Error(parsed.reason ?? 'Inspect the SoundCloud share link before downloading.')
   }
+  if (parsed.provider === 'direct' || parsed.provider === 'generic') await assertPublicUrl(parsed.normalized)
   const ytdlp = await engineService.resolve('yt-dlp', false, options.signal)
   options.signal.throwIfAborted()
   if (!ytdlp.path) {
@@ -86,6 +89,7 @@ export async function acquireAudio(
   const outputTemplate = path.join(staging, `${jobId}.%(ext)s`)
   const args = [
     ...(await baseYtDlpArgs(options.signal)),
+    ...(await guardedYtDlpArgs(parsed.provider)),
     '--newline',
     '--progress',
     '--progress-template',

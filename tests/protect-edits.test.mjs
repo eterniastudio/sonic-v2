@@ -288,6 +288,7 @@ test('a record rejected without a pending revision rolls its files back', async 
 
 function loadAcquire(staging) {
   return loadSource('../src/main/services/acquire.ts', resolver({
+    '../lib/publicAddress': { assertPublicUrl: async () => {}, guardedYtDlpArgs: async () => [] },
     'node:fs/promises': fsp, 'node:path': path, '../lib/child': {}, '../lib/fsx': fsx, './engine': {}, './probe': {},
     './paths': { stagingDir: () => staging }, './settings': { settingsService: { get: () => ({}) } }
   }, 'acquire'))

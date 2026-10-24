@@ -325,6 +325,7 @@ test('playback identity hashes once per unchanged file and again after any chang
 
 function coverFixture(directory, download) {
   return loadSource('../src/main/services/cover.ts', {
+    '../lib/publicAddress': { assertPublicUrl: async () => {} },
     'node:path': path, 'node:crypto': require('node:crypto'), 'node:fs/promises': fsp,
     '../lib/net': { downloadToFile: download },
     '../lib/fsx': { ensureDir: target => fsp.mkdir(target, { recursive: true }), removeFile: target => fsp.unlink(target).catch(() => undefined) },

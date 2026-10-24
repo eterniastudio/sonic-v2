@@ -1,3 +1,6 @@
+import type { SourceKind } from './domain'
+import { isProviderId } from './providers'
+
 /** Producer-owned organization, separate from acoustic and source metadata. */
 export type LibrarySort = 'manual' | 'relevance' | 'newest' | 'oldest' | 'bpm-asc' | 'bpm-desc' | 'title' | 'producer'
 export const FAVORITES_COLLECTION_ID = 'favorites'
@@ -16,7 +19,7 @@ export interface SmartCollectionRule {
   bpmMin?: number
   bpmMax?: number
   key?: string
-  sourceKind?: 'youtube' | 'soundcloud' | 'local' | 'unknown'
+  sourceKind?: SourceKind
   fileOwnership?: 'external' | 'sonic-export'
   reviewState?: 'all' | 'incomplete' | 'disagreement'
   fileState?: 'all' | 'present' | 'missing'
@@ -57,6 +60,11 @@ const ids = (value: unknown): value is string[] => Array.isArray(value) && value
 const tags = (value: unknown): value is string[] => Array.isArray(value) && value.length <= 24 && value.every(tag => text(tag, 40) && tag.trim().length > 0)
 const name = (value: unknown): value is string => text(value, 80) && value.trim().length > 0
 
+/** Any registry provider id, plus the 'local' and 'unknown' kinds stored before the registry existed. */
+export function isSourceKind(value: unknown): value is SourceKind {
+  return value === 'local' || value === 'unknown' || isProviderId(value)
+}
+
 export function validateSmartCollectionRule(value: unknown): value is SmartCollectionRule {
   if (!object(value) || value.version !== 1 || !keysOnly(value, ['version', 'query', 'favorite', 'tags', 'bpmMin', 'bpmMax', 'key', 'sourceKind', 'fileOwnership', 'reviewState', 'fileState'])) return false
   if (value.query !== undefined && !text(value.query, 160)) return false
@@ -66,7 +74,7 @@ export function validateSmartCollectionRule(value: unknown): value is SmartColle
   if (value.bpmMax !== undefined && (typeof value.bpmMax !== 'number' || !Number.isFinite(value.bpmMax) || value.bpmMax < 20 || value.bpmMax > 400)) return false
   if (typeof value.bpmMin === 'number' && typeof value.bpmMax === 'number' && value.bpmMin > value.bpmMax) return false
   if (value.key !== undefined && (!text(value.key, 30) || value.key.trim().length === 0)) return false
-  if (value.sourceKind !== undefined && (typeof value.sourceKind !== 'string' || !['youtube', 'soundcloud', 'local', 'unknown'].includes(value.sourceKind))) return false
+  if (value.sourceKind !== undefined && !isSourceKind(value.sourceKind)) return false
   if (value.fileOwnership !== undefined && (typeof value.fileOwnership !== 'string' || !['external', 'sonic-export'].includes(value.fileOwnership))) return false
   if (value.reviewState !== undefined && (typeof value.reviewState !== 'string' || !['all', 'incomplete', 'disagreement'].includes(value.reviewState))) return false
   if (value.fileState !== undefined && (typeof value.fileState !== 'string' || !['all', 'present', 'missing'].includes(value.fileState))) return false

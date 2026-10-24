@@ -12,14 +12,14 @@ import type {
   QueueSnapshot,
   Settings
 } from '@shared/domain'
-import type { IpcEvents, JobPatch } from '@shared/ipc'
+import type { IpcEvents, JobPatch, LibraryDelta } from '@shared/ipc'
 
 /** Directly derived from the push channel, so the two can never drift apart. */
 export type AnalysisProgressEvent = IpcEvents['analysis:progress']
 import { DEFAULT_PRESET_ID } from '@shared/presets'
 import { DEFAULT_NAMING_TEMPLATE } from '@shared/template'
 import { ipc } from '../lib/ipc'
-import { reuseQueueSnapshot, reuseSnapshotItems } from './snapshots'
+import { applySnapshotDelta, reuseQueueSnapshot, reuseSnapshotItems } from './snapshots'
 
 export type ViewId = 'download' | 'library' | 'settings'
 
@@ -48,7 +48,9 @@ const FALLBACK_SETTINGS: Settings = {
   maxDurationSec: 3600,
   skipExisting: true,
   cookiesFromBrowser: 'none',
-  rescanIntervalMs: 120_000
+  allowOtherSites: false,
+  rescanIntervalMs: 120_000,
+  watchClipboard: false
 }
 
 interface AppState {
@@ -77,6 +79,8 @@ interface AppState {
   setLibraryFocus: (id: string | null) => void
   setQueueSnapshot: (queue: QueueSnapshot) => void
   setLibrarySnapshot: (library: LibraryBeat[]) => void
+  /** Applies a `library:delta` push; falls back to a full fetch if it cannot. */
+  applyLibraryDelta: (delta: LibraryDelta) => void
 
   patchSettings: (patch: Partial<Settings>) => Promise<void>
   chooseDownloadDir: () => Promise<void>
@@ -163,6 +167,14 @@ export const useApp = create<AppState>()((set, get) => ({
     const next = reuseSnapshotItems(state.library, library)
     return next === state.library ? state : { library: next }
   }),
+  applyLibraryDelta: (delta) => {
+    const next = applySnapshotDelta(get().library, delta.ids, delta.changed)
+    if (next) {
+      if (next !== get().library) set({ library: next })
+      return
+    }
+    void ipc.invoke('library:list').then(library => get().setLibrarySnapshot(library), () => undefined)
+  },
 
   async patchSettings(patch) {
     const settings = await ipc.invoke('settings:patch', patch)
@@ -253,13 +265,12 @@ export const useApp = create<AppState>()((set, get) => ({
   },
 
   async rescanLibrary() {
-    const library = await ipc.invoke('library:rescan')
-    get().setLibrarySnapshot(library)
+    // The refreshed list arrives through the library change push.
+    await ipc.invoke('library:rescan')
   },
 
   async updateBeatMetadata(id, patch, clearOverrides) {
-    const library = await ipc.invoke('library:updateMetadata', id, patch, clearOverrides)
-    get().setLibrarySnapshot(library)
+    await ipc.invoke('library:updateMetadata', id, patch, clearOverrides)
   },
 
   async analyzeBeat(id, force = false) {
@@ -285,8 +296,7 @@ export const useApp = create<AppState>()((set, get) => ({
   setAnalysisProgress: (analysisProgress) => set({ analysisProgress }),
 
   async removeBeat(id, deleteFiles, expected) {
-    const library = await ipc.invoke('library:remove', id, deleteFiles, expected)
-    get().setLibrarySnapshot(library)
+    await ipc.invoke('library:remove', id, deleteFiles, expected)
   },
 
   async reexportBeat(id, presetId) {

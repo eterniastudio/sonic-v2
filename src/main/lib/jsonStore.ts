@@ -7,8 +7,30 @@ import path from 'node:path'
 const instance = `${process.pid}-${randomUUID()}`
 export const storageEvents = new EventEmitter()
 /** `primaryValid`: the destination holds a validated, flushed commit, so it can become the backup by link. */
-type State = { cached: unknown; loaded: boolean; revision: number; persisted: number; pending?: unknown; error: string | null; retry?: () => void; writing?: boolean; prepareRetry?: () => Promise<void>; retryTask?: Promise<void>; primaryValid?: boolean }
+type State = { cached: unknown; loaded: boolean; revision: number; persisted: number; pending?: unknown; error: string | null; retry?: () => void; writing?: boolean; prepareRetry?: () => Promise<void>; retryTask?: Promise<void>; primaryValid?: boolean; records?: RecordCache }
+/** Records owned by an array store's snapshots, with their serialized JSON once known (null until first needed). */
+type RecordCache = WeakMap<object, string | null>
 const states = new Map<string, State>()
+
+function deepFreeze(value: object): void {
+  Object.freeze(value)
+  if (Array.isArray(value)) {
+    for (const child of value as unknown[]) if (typeof child === 'object' && child !== null && !Object.isFrozen(child)) deepFreeze(child)
+    return
+  }
+  for (const key in value) {
+    const child = (value as Record<string, unknown>)[key]
+    if (typeof child === 'object' && child !== null && !Object.isFrozen(child)) deepFreeze(child)
+  }
+}
+
+export interface JsonStoreOptions {
+  /** For array stores whose callers replace records instead of mutating them.
+   * Each committed record is frozen and its JSON is retained, so a commit
+   * serializes and copies only the records that changed. The bytes written are
+   * identical to `JSON.stringify` of the whole array. */
+  recordCache?: boolean
+}
 export function storageStatus(): { file: string; revision: number; persisted: number; error: string | null }[] {
   return [...states].map(([file, s]) => ({ file, revision: s.revision, persisted: s.persisted, error: s.error }))
 }
@@ -49,7 +71,7 @@ export class JsonStore<T> {
     }
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('Expected a JSON object')
     return { ...defaults, ...raw } as T
-  }) {
+  }, options: JsonStoreOptions = {}) {
     const key = path.resolve(file).toLowerCase()
     let state = states.get(key)
     if (!state) {
@@ -57,7 +79,50 @@ export class JsonStore<T> {
       state = { cached: null, loaded: false, revision: 0, persisted: 0, error: null }
       states.set(key, state)
     }
+    if (options.recordCache && Array.isArray(defaults)) state.records ??= new WeakMap()
     this.state = state
+  }
+  /** Serialize `value` and produce the store's own snapshot of it. With a record
+   * cache, unchanged (already owned, frozen) records are reused with their JSON;
+   * only new record objects are serialized and copied. */
+  private encode(value: T): { data: string; snapshot: T } {
+    const records = this.state.records
+    if (!records || !Array.isArray(value)) {
+      const data = JSON.stringify(value)
+      return { data, snapshot: JSON.parse(data) as T }
+    }
+    const parts: string[] = new Array(value.length)
+    const snapshot: unknown[] = new Array(value.length)
+    for (let index = 0; index < value.length; index++) {
+      const item: unknown = value[index]
+      if (typeof item !== 'object' || item === null) {
+        parts[index] = JSON.stringify(item) ?? 'null'
+        snapshot[index] = JSON.parse(parts[index])
+        continue
+      }
+      let part = records.get(item)
+      if (part !== undefined) {
+        if (part === null) { part = JSON.stringify(item); records.set(item, part) }
+        snapshot[index] = item
+      } else {
+        part = JSON.stringify(item)
+        const copy = JSON.parse(part) as object
+        deepFreeze(copy)
+        records.set(copy, part)
+        snapshot[index] = copy
+      }
+      parts[index] = part
+    }
+    return { data: `[${parts.join(',')}]`, snapshot: snapshot as T }
+  }
+  private adopt(value: T): void {
+    const records = this.state.records
+    if (!records || !Array.isArray(value)) return
+    for (const item of value as unknown[]) {
+      if (typeof item !== 'object' || item === null || records.has(item)) continue
+      deepFreeze(item)
+      records.set(item, null)
+    }
   }
   get path(): string { return this.file }
   read(): T {
@@ -78,6 +143,7 @@ export class JsonStore<T> {
       value = this.normalize(JSON.parse(readFileSync(`${this.file}.backup`, 'utf8')))
       storageDiagnostic(this.file, { operation: 'recovered-missing-destination' })
     }
+    this.adopt(value)
     this.state.cached = value
     this.state.loaded = true
     this.state.primaryValid = primaryValid
@@ -117,18 +183,17 @@ export class JsonStore<T> {
         } finally { try { unlinkSync(temporary) } catch { /* Renamed, or owned only by this operation. */ } }
       }
     }
-    this.replace(destination, JSON.stringify(s.cached))
+    this.replace(destination, this.encode(s.cached as T).data)
   }
   write(value: T, options: { replacePending?: boolean; prepareRetry?: () => Promise<void> } = {}): T {
     const start = performance.now()
     const s = this.state
     if (s.writing) throw new Error(`Reentrant write rejected for ${this.file}; retry after the active commit.`)
     // Compact JSON: indentation roughly doubles the bytes serialized, written and flushed per commit.
-    const data = JSON.stringify(value)
-    if (s.error && s.pending !== undefined && !options.replacePending && data !== JSON.stringify(s.pending)) {
+    const { data, snapshot } = this.encode(value)
+    if (s.error && s.pending !== undefined && !options.replacePending && data !== this.encode(s.pending as T).data) {
       throw new Error(`Unsaved revision ${s.revision} of ${this.file} must be retried before another change.`)
     }
-    const snapshot = JSON.parse(data) as T
     s.revision += 1
     s.pending = snapshot
     s.prepareRetry = options.prepareRetry

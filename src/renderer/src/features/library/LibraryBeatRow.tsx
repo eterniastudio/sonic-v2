@@ -14,7 +14,8 @@ interface LibraryBeatRowProps extends Pick<BeatCardProps, 'beat' | 'layout' | 's
 export const LibraryBeatRow = memo(function LibraryBeatRow({ beat, layout, selected, batchSelected,
   playbackState, onSelect, onPlay, onToggleSelection, onContextMenu, registerCard }: LibraryBeatRowProps): ReactNode {
   const attach = useCallback((node: HTMLDivElement | null) => registerCard(beat.id, node), [beat.id, registerCard])
-  return <div ref={attach}>
+  // Draggable so a row can be dropped into a DAW or Explorer; LibraryView starts the OS drag.
+  return <div ref={attach} draggable={!beat.missing}>
     <BeatCard beat={beat} layout={layout} selected={selected} batchSelected={batchSelected}
       playbackState={playbackState} onSelect={event => onSelect(event, beat)} onPlay={() => onPlay(beat.id)}
       onToggleSelection={() => onToggleSelection(beat.id)} onContextMenu={event => onContextMenu(event, beat)} />

@@ -14,7 +14,7 @@ function load(file, dependencies = {}) {
   }, module, module.exports)
   return module.exports
 }
-const urls = load('../src/shared/url.ts')
+const urls = load('../src/shared/url.ts', { './providers': load('../src/shared/providers.ts') })
 const playlist = 'https://www.youtube.com/playlist?list=PLtest123'
 const video = 'dQw4w9WgXcQ'
 function fixture(run = async () => ({ code: 0, stdout: JSON.stringify({ title: 'Beats', entries: [{ id: video, title: 'First beat' }] }) }), resolve = async () => ({ path: '/tool' })) {

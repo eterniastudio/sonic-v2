@@ -1,13 +1,17 @@
 /**
  * Sonic V2 — self-contained audio-analysis DSP.
  *
- * Estimates tempo and key from PCM only. Key detection uses interpolated
+ * Estimates tempo and key from PCM only. Tempo uses a half band-equalised
+ * spectral-flux onset envelope, metrical-consistency scoring of periodicity
+ * candidates and producer octave folding. Key detection uses interpolated
  * spectral peaks, tuning-corrected chroma and published Shaath profiles,
- * with complete-triad observations to corroborate relative-key decisions.
+ * restricted to keys whose scale fits the chroma, with complete-triad
+ * observations to corroborate relative-key decisions.
  *
  * Design constraints this file is written against:
  *  - Zero npm dependencies. The FFT below is our own radix-2 iterative
- *    Cooley–Tukey with precomputed twiddle factors.
+ *    Cooley–Tukey with precomputed twiddle factors; real frames are packed
+ *    into a half-size complex transform.
  *  - No Node and no DOM imports. This module is pure computation, so it can be
  *    imported from a worker thread, from the main process, and from a plain
  *    Node script. The only imports are `shared/` siblings, which are themselves
@@ -194,6 +198,49 @@ const TEMPO_DISAGREE_CONFIDENCE_SCALE = 0.6
 const TEMPO_DUPLE_SUPPORT_RATIO = 0.9
 
 /**
+ * Band equalisation of the onset envelope (sonic-dsp/5). The full-band flux is
+ * dominated by whichever band has the most bins changing — usually hats and
+ * noise above 2.5 kHz — so a kick-every-beat house groove with open off-beat
+ * hats read as 3:2 (81 BPM for 122). Half of the envelope is now the plain
+ * flux and half the three accent bands rescaled to equal mean onset energy;
+ * bands holding under 5% of the flux are left out of the equalised half so an
+ * empty band is not amplified into noise. Half, rather than full, equalisation
+ * keeps the triple-meter controls (3/4 at 180, 6/8 at 60) correct.
+ */
+const TEMPO_BAND_EQUALISATION = 0.5
+const TEMPO_BAND_EQUALISATION_MIN_SHARE = 0.05
+
+/**
+ * Metrical consistency (sonic-dsp/5). A beat repeats at its own period *and*
+ * at whole multiples of it (half bar, bar); a 3:2 or 4:3 cross-rhythm pulse,
+ * such as the dotted-eighth of a tresillo or an afrobeats 3+3+2 figure, does
+ * not. Candidates are scored by the mean fractional autocorrelation at 1–4
+ * periods (multiples kept within half the envelope), searched ±2% around the
+ * peak because peak positions are only frame-accurate, times the tempo prior.
+ * The 2× and ½× of every periodicity peak are candidates too: an afrobeats
+ * groove has no autocorrelation peak at its beat at all, only at its half bar.
+ */
+const TEMPO_METRIC_MULTIPLES = 4
+const TEMPO_METRIC_SEARCH = 0.02
+const TEMPO_OCTAVE_CANDIDATE_TOLERANCE = 0.01
+
+/**
+ * Producer octave folding (sonic-dsp/5). Trap and drill are labelled at the
+ * hi-hat-driven 130–165 BPM rate even though the snare lands once per bar,
+ * which the plain prior read as 65–82 BPM. A slow reading S is folded to 2S
+ * when 2S ≤ 165 BPM and either (a) some accent band repeats at a subdivision
+ * of 2S (half or third of its period, autocorrelation ≥ 0.15), or (b) S is
+ * below 83 BPM and some band pulses at 2S (autocorrelation ≥ 0.2). A lo-fi
+ * groove at 72 has no hat pulse at 144 (its band correlation there is
+ * negative) and stays at 72; boom bap at 85–95 doubles past 165 and stays.
+ * The other octave remains a reported alternative either way.
+ */
+const TEMPO_FOLD_MAX_BPM = 165
+const TEMPO_FOLD_SLOW_BELOW_BPM = 83
+const TEMPO_FOLD_SUBDIVISION_SUPPORT = 0.15
+const TEMPO_FOLD_PULSE_SUPPORT = 0.2
+
+/**
  * Evidence thresholds for `status: 'inconclusive'`.
  *
  *  - 6 s of audio: below this there are not enough beats to distinguish a
@@ -314,6 +361,28 @@ const KEY_MIN_CORRELATION = 0.35
  */
 const KEY_RELATIVE_SURFACE_MARGIN = 0.15
 
+/**
+ * Key-signature fit (sonic-dsp/5). Profile correlation alone let a loop that
+ * leans on its flat-seventh chord (Am–G–F–G) read as G major even though F♯,
+ * G major's leading tone, was absent and F♮ was strong. A key may now lead
+ * only if the chroma mass on its scale (natural or harmonic minor for minor
+ * keys) is within 0.04 of the best-fitting scale; otherwise the next eligible
+ * key leads and the excluded one stays visible as an alternative.
+ */
+const KEY_SCALE_FIT_MARGIN = 0.04
+const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11] as const
+const NATURAL_MINOR_SCALE = [0, 2, 3, 5, 7, 8, 10] as const
+const HARMONIC_MINOR_SCALE = [0, 2, 3, 5, 7, 8, 11] as const
+
+/**
+ * Scale residual gate (sonic-dsp/5). With the strongest pitch class removed,
+ * tonal material still concentrates on a 7-note scale; percussion whose only
+ * pitched content is a kick's pitch sweep is near the 7/11 ≈ 0.64 chance level
+ * (0.66 on the drums-only fixture). Below 0.68 the key is inconclusive. The
+ * lowest value on the 28 GuitarSet recordings was 0.70.
+ */
+const KEY_MIN_SCALE_RESIDUAL = 0.68
+
 /** How many alternatives each field reports at most. */
 const TEMPO_MAX_ALTERNATIVES = 4
 const KEY_MAX_ALTERNATIVES = 3
@@ -371,8 +440,8 @@ function roundToStep(value: number, step: number): number {
  * In-place forward FFT on interleaved-format-free split arrays.
  *
  * Layout mirrors a classic "two real arrays" FFT: callers pass `re` and `im`
- * separately, and `im` may be null for a real-only transform, in which case it
- * is treated as all zeros.
+ * separately. Real frames go through `RealFft` below, which packs them into a
+ * half-size complex transform.
  *
  * Twiddle factors are precomputed once per size and cached on the instance, so
  * repeatedly transforming frames of the same length costs no extra setup.
@@ -414,11 +483,10 @@ class Fft {
   }
 
   /**
-   * Forward transform. `re` holds the real input and is overwritten with the
-   * real output; `im` (optional) holds the imaginary input and is overwritten
-   * with the imaginary output. When `im` is null only the real output is kept.
+   * Forward transform. `re`/`im` hold the complex input and are overwritten
+   * with the complex output.
    */
-  forward(re: Float64Array, im: Float64Array | null): void {
+  forward(re: Float64Array, im: Float64Array): void {
     const n = this.size
     const rev = this.reverse
 
@@ -428,11 +496,9 @@ class Fft {
         const tr = re[i]
         re[i] = re[j]
         re[j] = tr
-        if (im) {
-          const ti = im[i]
-          im[i] = im[j]
-          im[j] = ti
-        }
+        const ti = im[i]
+        im[i] = im[j]
+        im[j] = ti
       }
     }
 
@@ -443,26 +509,103 @@ class Fft {
     // sub-transform boundaries then. Incrementing by 1 instead would run n-1
     // stages, read past the end of the arrays (typed-array reads yield
     // `undefined` → NaN) and turn a 10-stage transform into a 1023-stage one.
+    const cos = this.cosTable
+    const sin = this.sinTable
     for (let span = 2; span <= n; span *= 2) {
       const half = span >> 1
       const step = n / span
       for (let start = 0; start < n; start += span) {
-        for (let k = 0; k < half; k += 1) {
-          const tw = k * step
-          const wr = this.cosTable[tw]
-          const wi = this.sinTable[tw]
+        for (let k = 0, tw = 0; k < half; k += 1, tw += step) {
+          const wr = cos[tw]
+          const wi = sin[tw]
           const a = start + k
           const b = a + half
           const br = re[b]
-          const bi = im ? im[b] : 0
+          const bi = im[b]
           const tr = br * wr - bi * wi
           const ti = br * wi + bi * wr
           re[b] = re[a] - tr
-          if (im) im[b] = im[a] - ti
+          im[b] = im[a] - ti
           re[a] += tr
-          if (im) im[a] += ti
+          im[a] += ti
         }
       }
+    }
+  }
+}
+
+/**
+ * Magnitude spectrum of a real frame through a half-size complex FFT
+ * (sonic-dsp/5 performance change, numerically equivalent to a full-size
+ * transform up to floating-point rounding).
+ *
+ * The N real samples are packed as N/2 complex values z[n] = x[2n] + i·x[2n+1],
+ * transformed once, and split into even/odd spectra:
+ *
+ *   E[k] = (Z[k] + conj Z[M−k]) / 2,   O[k] = (Z[k] − conj Z[M−k]) / 2i,
+ *   X[k] = E[k] + e^{−2πik/N} · O[k],  M = N/2, Z[M] ≡ Z[0].
+ *
+ * Both analysers need only |X[k]|, so the transform costs about half of the
+ * previous full-size complex FFT of zero-imaginary input, with no allocation
+ * per frame.
+ */
+class RealFft {
+  readonly size: number
+  private readonly half: Fft
+  private readonly re: Float64Array
+  private readonly im: Float64Array
+  private readonly cos: Float64Array
+  private readonly sin: Float64Array
+
+  constructor(size: number) {
+    if (size < 4 || (size & (size - 1)) !== 0) {
+      throw new Error(`Real FFT size must be a power of two >= 4, got ${size}`)
+    }
+    this.size = size
+    const m = size >> 1
+    this.half = new Fft(m)
+    this.re = new Float64Array(m)
+    this.im = new Float64Array(m)
+    this.cos = new Float64Array(m + 1)
+    this.sin = new Float64Array(m + 1)
+    for (let k = 0; k <= m; k += 1) {
+      const angle = (2 * Math.PI * k) / size
+      this.cos[k] = Math.cos(angle)
+      this.sin[k] = Math.sin(angle)
+    }
+  }
+
+  /**
+   * Writes |X[k]| for k = 0..count−1 (count ≤ N/2 + 1) of `pcm[offset..]`
+   * multiplied by `window` into `out`.
+   */
+  magnitudes(pcm: Float32Array, offset: number, window: Float64Array, out: Float64Array, count: number): void {
+    const m = this.size >> 1
+    const re = this.re
+    const im = this.im
+    for (let n = 0, i = offset; n < m; n += 1, i += 2) {
+      re[n] = pcm[i] * window[2 * n]
+      im[n] = pcm[i + 1] * window[2 * n + 1]
+    }
+    this.half.forward(re, im)
+    const limit = Math.min(count, m + 1)
+    for (let k = 0; k < limit; k += 1) {
+      const a = k === m ? 0 : k
+      const b = k === 0 ? 0 : m - k
+      const zr = re[a]
+      const zi = im[a]
+      const cr = re[b]
+      const ci = -im[b]
+      const er = 0.5 * (zr + cr)
+      const ei = 0.5 * (zi + ci)
+      const or = 0.5 * (zi - ci)
+      const oi = -0.5 * (zr - cr)
+      // e^{−iθ} · O = (cos θ − i sin θ)(or + i oi)
+      const c = this.cos[k]
+      const sn = this.sin[k]
+      const xr = er + c * or + sn * oi
+      const xi = ei + c * oi - sn * or
+      out[k] = Math.sqrt(xr * xr + xi * xi)
     }
   }
 }
@@ -561,12 +704,14 @@ function normaliseToMax(curve: Float64Array): Float64Array {
  * Estimates tempo from the audio signal alone.
  *
  * Pipeline: Hann-windowed STFT → half-wave-rectified log-magnitude spectral
- * flux (onset strength) → moving-mean de-trending → Gaussian smoothing → two
- * periodicity views of the same envelope (Pearson autocorrelation and a
- * segmented Scheirer-style comb bank) → combined curve × log-normal tempo prior
- * → peak picking inside the 60–200 BPM decision band → 3:2 grouping and
- * octave-accent checks → fractional multi-period refinement → half/double
- * reporting with octave suppression.
+ * flux, half band-equalised (onset strength) → moving-mean de-trending →
+ * Gaussian smoothing → two periodicity views of the same envelope (Pearson
+ * autocorrelation and a segmented Scheirer-style comb bank) → peak picking on
+ * the combined curve, plus each peak's 2× and ½× → candidates scored by
+ * metrical consistency (mean correlation at 1–4 periods) × log-normal tempo
+ * prior → decision inside the 60–200 BPM band → 3:2 grouping and octave-accent
+ * checks → producer octave folding into ≤165 BPM → fractional multi-period
+ * refinement → half/double reporting with octave suppression.
  *
  * Never throws; returns `status: 'inconclusive'` with a `warning` whenever the
  * signal does not carry enough rhythmic evidence.
@@ -722,6 +867,16 @@ function estimateTempoInner(input: AnalysisInput): TempoAnalysis {
     }
     return accentlessOctave(accentBands, (framesPerSecond * 60) / bpm)
   }
+  const bandCorrelations = (lag: number): number[] => {
+    if (!accentBands) octaveIsAccentless(TEMPO_SEARCH_MIN_BPM)
+    return (accentBands ?? []).map((band) => fractionalAutocorrelation(band, band.length, lag))
+  }
+  const foldsToDouble = (slow: number, fast: number): boolean => {
+    const period = (framesPerSecond * 60) / fast
+    const subdivision = Math.max(-1, ...bandCorrelations(period / 2), ...bandCorrelations(period / 3))
+    if (subdivision >= TEMPO_FOLD_SUBDIVISION_SUPPORT) return true
+    return slow < TEMPO_FOLD_SLOW_BELOW_BPM && Math.max(-1, ...bandCorrelations(period)) >= TEMPO_FOLD_PULSE_SUPPORT
+  }
   // Each method is peak-picked independently first, because the agreement
   // cross-check must compare like with like: each view's own tempo under the
   // same decision rules as the primary (prior-weighted inside the 60–200 BPM
@@ -769,6 +924,46 @@ function estimateTempoInner(input: AnalysisInput): TempoAnalysis {
     })
   }
 
+  // ---- metrical consistency ---------------------------------------------
+  // See TEMPO_METRIC_MULTIPLES. Every candidate, including the 2× and ½× of
+  // each periodicity peak, is scored by how well its period repeats at its
+  // whole multiples, times the tempo prior.
+  const metricAt = (period: number): number => {
+    let total = 0
+    let count = 0
+    for (let k = 1; k <= TEMPO_METRIC_MULTIPLES; k += 1) {
+      if (k * period > frameCount / 2) break
+      total += fractionalAutocorrelation(detrended, frameCount, k * period)
+      count += 1
+    }
+    return count > 0 ? Math.max(0, total / count) : 0
+  }
+  const metricCache = new Map<number, number>()
+  const metricOf = (bpm: number): number => {
+    const cached = metricCache.get(bpm)
+    if (cached !== undefined) return cached
+    const period = (framesPerSecond * 60) / bpm
+    let best = 0
+    for (let k = -4; k <= 4; k += 1) best = Math.max(best, metricAt(period * (1 + (k * TEMPO_METRIC_SEARCH) / 4)))
+    metricCache.set(bpm, best)
+    return best
+  }
+  for (const peak of [...peaks]) {
+    for (const factor of [2, 0.5]) {
+      const bpm = peak.bpm * factor
+      if (!(bpm >= minBpm && bpm <= maxBpm)) continue
+      if (peaks.some((other) => Math.abs(other.bpm / bpm - 1) < TEMPO_OCTAVE_CANDIDATE_TOLERANCE)) continue
+      const lag = (framesPerSecond * 60) / bpm
+      peaks.push({
+        bpm,
+        strength: 0,
+        raw: Math.max(0, interpolateAt(combined, lag), metricOf(bpm)),
+        comb: Math.max(0, interpolateAt(combNorm, lag))
+      })
+    }
+  }
+  for (const peak of peaks) peak.strength = tempoPrior(peak.bpm) * metricOf(peak.bpm)
+
   peaks.sort((a, b) => b.strength - a.strength || a.bpm - b.bpm)
 
   // The primary decision is restricted to the 60–200 BPM band (see
@@ -783,15 +978,14 @@ function estimateTempoInner(input: AnalysisInput): TempoAnalysis {
   if (acBpm > 0 && Math.abs(acBpm / combBpm - 1) < TEMPO_AGREEMENT_TOLERANCE &&
       best && ![0.5, 1, 1.5, 2, 3, 4].some((ratio) => Math.abs(best.bpm / acBpm / ratio - 1) < 0.05)) {
     const corroborated = peaks.find((peak) => Math.abs(peak.bpm / acBpm - 1) < TEMPO_AGREEMENT_TOLERANCE)
-    if (corroborated && best && interpolateAt(autocorrelation, framesPerSecond * 60 / corroborated.bpm) >
-      interpolateAt(autocorrelation, framesPerSecond * 60 / best.bpm) * 1.4) best = corroborated
+    if (corroborated && best && metricOf(corroborated.bpm) > metricOf(best.bpm) * 1.4) best = corroborated
   }
   // Readings 3:2 apart are a choice of grouping, decided by periodicity rather
   // than by the tempo prior (see `resolveGrouping`).
   if (best && best.bpm >= decisionMin && best.bpm <= decisionMax) {
     const resolved = resolveGrouping(
       best.bpm,
-      (bpm) => interpolateAt(autocorrelation, framesPerSecond * 60 / bpm),
+      metricOf,
       (target) => inBand.find((peak) => Math.abs(peak.bpm / target - 1) < TEMPO_AGREEMENT_TOLERANCE)?.bpm ?? null
     )
     best = inBand.find((peak) => peak.bpm === resolved) ?? best
@@ -807,6 +1001,16 @@ function estimateTempoInner(input: AnalysisInput): TempoAnalysis {
     const pick = best
     const faster = inBand.find((peak) => Math.abs(peak.bpm / pick.bpm / 2 - 1) < TEMPO_AGREEMENT_TOLERANCE)
     if (faster && octaveIsAccentless(pick.bpm)) best = faster
+  }
+  // Producer octave folding (see TEMPO_FOLD_MAX_BPM).
+  if (best) {
+    const slow = best.bpm
+    const fast = slow * 2
+    if (slow >= decisionMin && fast <= TEMPO_FOLD_MAX_BPM && foldsToDouble(slow, fast)) {
+      const lag = (framesPerSecond * 60) / fast
+      best = peaks.find((peak) => Math.abs(peak.bpm / fast - 1) < TEMPO_AGREEMENT_TOLERANCE) ??
+        { bpm: fast, strength: 0, raw: Math.max(0, interpolateAt(combined, lag), metricOf(fast)), comb: 0 }
+    }
   }
 
   if (!best) {
@@ -880,14 +1084,26 @@ function estimateTempoInner(input: AnalysisInput): TempoAnalysis {
   }
 
   // ---- confidence ---------------------------------------------------------
-  const prominence = peakProminence(combined, lagMin, lagMax, framesPerSecond * 60, best)
+  // Prominence keeps its original scale: prior × combined periodicity at the
+  // chosen period against the local median of the combined curve.
+  const prominence = peakProminence(combined, lagMin, lagMax, framesPerSecond * 60, {
+    ...best,
+    strength: tempoPrior(best.bpm) * Math.max(0, interpolateAt(combined, (framesPerSecond * 60) / best.bpm))
+  })
   const confidence = agreement.corroborated
     ? prominence
     : clamp01(prominence * TEMPO_DISAGREE_CONFIDENCE_SCALE)
 
   // Evidence and metrical agreement are separate. A repeating syncopation can
   // support a pulse even if the methods choose different metrical levels.
-  const rhythmicSupport = interpolateAt(autocorrelation, framesPerSecond * 60 / bpmExact)
+  // A repeating figure supports the pulse through its multiples, and a beat
+  // that only shows up through its half bar (afrobeats, dembow) through the
+  // slower octave; noise has neither.
+  const rhythmicSupport = Math.max(
+    interpolateAt(autocorrelation, framesPerSecond * 60 / bpmExact),
+    metricOf(bpmExact),
+    metricOf(bpmExact / 2)
+  )
   if (!(prominence >= TEMPO_MIN_CONFIDENCE || rhythmicSupport >= 0.4)) {
     return inconclusiveTempo(
       'No clear rhythmic pulse stood out above the background, so no tempo was reported.'
@@ -1173,21 +1389,19 @@ function spectralFluxEnvelope(
   level: number,
   sampleRate: number
 ): { envelope: Float64Array; bands: Float64Array[] } {
-  const fft = new Fft(fftSize)
+  const fft = new RealFft(fftSize)
   const window = hannWindow(fftSize)
-  const re = new Float64Array(fftSize)
-  const im = new Float64Array(fftSize)
-  const current = new Float64Array(bins)
-  const previous = new Float64Array(bins)
+  const magnitudes = new Float64Array(bins)
+  let current = new Float64Array(bins)
+  let previous = new Float64Array(bins)
   const envelope = new Float64Array(frames)
   const bandCount = TEMPO_ACCENT_BAND_EDGES_HZ.length + 1
   const bands = Array.from({ length: bandCount }, () => new Float64Array(frames))
-  const bandOf = new Uint8Array(bins)
-  for (let bin = 0; bin < bins; bin += 1) {
-    const hz = (bin * sampleRate) / fftSize
-    let band = 0
-    while (band < TEMPO_ACCENT_BAND_EDGES_HZ.length && hz >= TEMPO_ACCENT_BAND_EDGES_HZ[band]) band += 1
-    bandOf[bin] = band
+  // Bands are contiguous bin ranges [bandStart[b], bandStart[b + 1]).
+  const bandStart = new Int32Array(bandCount + 1)
+  bandStart[bandCount] = bins
+  for (let band = 1; band < bandCount; band += 1) {
+    bandStart[band] = Math.min(bins, Math.ceil((TEMPO_ACCENT_BAND_EDGES_HZ[band - 1] * fftSize) / sampleRate))
   }
 
   // Log compression compresses the dynamic range of the flux, so a loud kick
@@ -1197,29 +1411,28 @@ function spectralFluxEnvelope(
   const LOG_FLOOR = Math.max(1e-9, level * fftSize * 0.01)
 
   for (let frame = 0; frame < frames; frame += 1) {
-    const offset = frame * hop
-    for (let i = 0; i < fftSize; i += 1) {
-      re[i] = pcm[offset + i] * window[i]
-      im[i] = 0
-    }
-    fft.forward(re, im)
+    fft.magnitudes(pcm, frame * hop, window, magnitudes, bins)
 
+    const inverseFloor = 1 / LOG_FLOOR
     let flux = 0
-    for (let bin = 0; bin < bins; bin += 1) {
-      const magnitude = Math.hypot(re[bin], im[bin])
-      const logMagnitude = Math.log1p(magnitude / LOG_FLOOR)
-      current[bin] = logMagnitude
-      if (frame > 0) {
-        const diff = logMagnitude - previous[bin]
+    for (let band = 0; band < bandCount; band += 1) {
+      let bandFlux = 0
+      for (let bin = bandStart[band], end = bandStart[band + 1]; bin < end; bin += 1) {
+        const logMagnitude = Math.log1p(magnitudes[bin] * inverseFloor)
+        current[bin] = logMagnitude
         // Half-wave rectification: only rising energy is an onset.
-        if (diff > 0) {
-          flux += diff
-          bands[bandOf[bin]][frame] += diff
-        }
+        const diff = logMagnitude - previous[bin]
+        if (diff > 0) bandFlux += diff
+      }
+      if (frame > 0) {
+        bands[band][frame] = bandFlux
+        flux += bandFlux
       }
     }
     envelope[frame] = flux
-    previous.set(current)
+    const swap = previous
+    previous = current
+    current = swap
   }
 
   // First frame has no predecessor; mirror the second so it neither adds a
@@ -1229,6 +1442,19 @@ function spectralFluxEnvelope(
     for (const band of bands) band[0] = band[1]
   }
 
+  // Band equalisation (see TEMPO_BAND_EQUALISATION). The mean onset energy is
+  // preserved, so the stationary-spectrum floor keeps its meaning.
+  const means = bands.map((band) => band.reduce((sum, value) => sum + value, 0) / Math.max(1, frames))
+  const total = means.reduce((sum, value) => sum + value, 0)
+  if (total > 0) {
+    for (let i = 0; i < frames; i += 1) envelope[i] *= 1 - TEMPO_BAND_EQUALISATION
+    for (let band = 0; band < bands.length; band += 1) {
+      if (!(means[band] > total * TEMPO_BAND_EQUALISATION_MIN_SHARE)) continue
+      const scale = TEMPO_BAND_EQUALISATION * (total / bands.length) / means[band]
+      const values = bands[band]
+      for (let i = 0; i < frames; i += 1) envelope[i] += values[i] * scale
+    }
+  }
   return { envelope, bands }
 }
 
@@ -1603,10 +1829,8 @@ function estimateKeyInner(input: AnalysisInput): KeyAnalysis {
   const fine = new Float64Array(TUNING_FINE_BINS)
   const frameFine = new Float64Array(TUNING_FINE_BINS)
   const chordVotes = new Float64Array(24)
-  const fft = new Fft(fftSize)
+  const fft = new RealFft(fftSize)
   const window = hannWindow(fftSize)
-  const re = new Float64Array(fftSize)
-  const im = new Float64Array(fftSize)
   const magnitudes = new Float64Array(bins)
 
   // Chroma runs over the register where fundamentals and the first strong
@@ -1623,15 +1847,8 @@ function estimateKeyInner(input: AnalysisInput): KeyAnalysis {
     // the chroma from turning into an average of the noise floor.
     if (!(frameLevel > level * 0.15)) continue
 
-    for (let i = 0; i < fftSize; i += 1) {
-      re[i] = pcm[offset + i] * window[i]
-      im[i] = 0
-    }
-    fft.forward(re, im)
     const magnitudeLimit = Math.min(bins - 1, maxPeakBin + KEY_PEAK_NEIGHBOUR_RADIUS)
-    for (let bin = 0; bin <= magnitudeLimit; bin += 1) {
-      magnitudes[bin] = Math.sqrt(re[bin] * re[bin] + im[bin] * im[bin])
-    }
+    fft.magnitudes(pcm, offset, window, magnitudes, magnitudeLimit + 1)
 
     frameFine.fill(0)
     accumulateChroma(magnitudes, binHz, minPeakBin, maxPeakBin, frameFine)
@@ -1680,7 +1897,16 @@ function estimateKeyInner(input: AnalysisInput): KeyAnalysis {
   }
 
   // ---- Krumhansl–Schmuckler ----------------------------------------------
-  const candidates = correlateKeyProfiles(chroma)
+  // ---- scale residual gate (see KEY_MIN_SCALE_RESIDUAL) -------------------
+  if (scaleResidual(chroma) < KEY_MIN_SCALE_RESIDUAL) {
+    return {
+      ...inconclusiveKey('Apart from its strongest pitch, the pitch content did not follow a scale; the material may be percussive or noisy.'),
+      tuningCents: roundToStep(tuningCents, 0.1)
+    }
+  }
+
+  // ---- Krumhansl–Schmuckler with key-signature eligibility ---------------
+  const candidates = rankByScaleFit(correlateKeyProfiles(chroma), chroma)
   const winner = candidates[0]
 
   const entropy = chromaEntropy(chroma)
@@ -1825,6 +2051,50 @@ function selectKeyAlternatives(candidates: KeyCandidate[], winner: KeyCandidate)
     camelot: candidate.camelot,
     correlation: finiteOr(candidate.correlation, 0)
   }))
+}
+
+/** Chroma mass on the scale `steps` above `root`, skipping `skip` (or -1). */
+function scaleMass(chroma: Float64Array, root: number, steps: readonly number[], skip = -1): number {
+  let mass = 0
+  for (const step of steps) {
+    const pitchClass = (root + step) % 12
+    if (pitchClass !== skip) mass += chroma[pitchClass]
+  }
+  return mass
+}
+
+/**
+ * Best 7-note (major-scale collection) fit of the chroma once its strongest
+ * pitch class is removed, as a share of the remaining mass. See
+ * `KEY_MIN_SCALE_RESIDUAL`.
+ */
+function scaleResidual(chroma: Float64Array): number {
+  let top = 0
+  let topIndex = 0
+  for (let i = 0; i < 12; i += 1) if (chroma[i] > top) { top = chroma[i]; topIndex = i }
+  const remaining = 1 - top
+  if (!(remaining > 1e-9)) return 0
+  let best = 0
+  for (let root = 0; root < 12; root += 1) best = Math.max(best, scaleMass(chroma, root, MAJOR_SCALE, topIndex) / remaining)
+  return best
+}
+
+/**
+ * Moves keys whose scale fits the chroma clearly worse than the best-fitting
+ * scale (see `KEY_SCALE_FIT_MARGIN`) behind the eligible ones, keeping each
+ * group in correlation order. Nothing is removed, so alternatives still show
+ * the excluded readings.
+ */
+function rankByScaleFit(candidates: KeyCandidate[], chroma: Float64Array): KeyCandidate[] {
+  const fitOf = (candidate: KeyCandidate): number => candidate.mode === 'major'
+    ? scaleMass(chroma, candidate.pitchClass, MAJOR_SCALE)
+    : Math.max(scaleMass(chroma, candidate.pitchClass, NATURAL_MINOR_SCALE), scaleMass(chroma, candidate.pitchClass, HARMONIC_MINOR_SCALE))
+  const fits = candidates.map(fitOf)
+  const threshold = Math.max(...fits) - KEY_SCALE_FIT_MARGIN
+  return [
+    ...candidates.filter((_, index) => fits[index] >= threshold),
+    ...candidates.filter((_, index) => fits[index] < threshold)
+  ]
 }
 
 /** `C major` → `A minor` and vice versa; null when the string is not canonical. */

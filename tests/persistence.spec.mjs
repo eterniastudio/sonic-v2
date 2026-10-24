@@ -116,7 +116,7 @@ test('injected invalid sidecar destination preserves analysis and correction, re
     await page.locator(`[data-beat-id="${beat.id}"]`).click()
     await page.getByRole('button', { name: 'Analyze audio', exact: true }).click()
     await expect.poll(async () => (await invoke('analysis:status')).running).toBeGreaterThan(0)
-    const corrected = (await invoke('library:updateMetadata', beat.id, { bpm: 137, key: 'F# minor' })).find(record => record.id === beat.id)
+    const corrected = await invoke('library:updateMetadata', beat.id, { bpm: 137, key: 'F# minor' })
     expect(corrected.bpm).toBe(137)
     expect(corrected.sidecarSync.status).toBe('error')
     await expect.poll(async () => (await invoke('analysis:status')).running, { timeout: 90000 }).toBe(0)

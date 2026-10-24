@@ -107,7 +107,7 @@ test('file import supports review, audition, correction, analysis, export, resta
   await page.getByRole('button', { name: 'Play this beat', exact: true }).click()
   await expect(page.locator('[data-playback-dock]')).toHaveAttribute('data-playback-state', 'playing')
 
-  const corrected = (await invoke('library:updateMetadata', record.id, { bpm: 136, key: 'F# minor' })).find(beat => beat.id === record.id)
+  const corrected = await invoke('library:updateMetadata', record.id, { bpm: 136, key: 'F# minor' })
   expect(corrected.bpm).toBe(136)
   expect(corrected.key).toBe('F# minor')
   expect(corrected.camelot).toBe('11A')

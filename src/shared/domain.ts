@@ -7,6 +7,7 @@
 
 import type { AnalysisStatus, AudioAnalysis, AudioEvidence } from './analysis'
 import type { ExportOwnershipEvidence, RecoveryInfo } from './recovery'
+import type { ProviderId } from './providers'
 
 export type ThemeMode = 'dark' | 'light' | 'system'
 
@@ -24,7 +25,12 @@ export type PresetId =
 
 export type ChannelMode = 'preserve' | 'stereo' | 'mono'
 
-export type SourceKind = 'youtube' | 'soundcloud' | 'local' | 'unknown'
+/**
+ * Where a library record came from: a download provider id from the registry,
+ * a local import, or unknown. Records written before the registry existed
+ * ('youtube' | 'soundcloud' | 'local' | 'unknown') are a subset and load unchanged.
+ */
+export type SourceKind = ProviderId | 'local' | 'unknown'
 
 /** Only Sonic-created exports may be renamed or removed from disk by library actions. */
 export type FileOwnership = 'sonic-export' | 'external'
@@ -448,9 +454,20 @@ export interface Settings {
   maxDurationSec: number
   skipExisting: boolean
   cookiesFromBrowser: 'none' | 'chrome' | 'edge' | 'firefox' | 'brave' | 'opera' | 'vivaldi'
+  /**
+   * Accept links from sites outside the provider registry and hand them to
+   * yt-dlp's generic extractor. Off by default.
+   */
+  allowOtherSites: boolean
 
   /** Library rescan cadence in ms; 0 disables the background rescan. */
   rescanIntervalMs: number
+
+  /**
+   * When Sonic gains focus, offer to queue a supported link found on the
+   * clipboard. Opt-in: off by default, and nothing is queued without a click.
+   */
+  watchClipboard: boolean
 }
 
 export interface QueueSnapshot {

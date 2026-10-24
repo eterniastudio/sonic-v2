@@ -1,5 +1,6 @@
 import type { ProbeResult } from '@shared/domain'
-import { isSoundCloudShareUrl, parseVideoUrl } from '@shared/url'
+import { artworkFor, describeProviderError, isSoundCloudShareUrl, parseVideoUrl, type ProviderId } from '@shared/url'
+import { assertPublicUrl, guardedYtDlpArgs } from '../lib/publicAddress'
 import { run } from '../lib/child'
 import { engineService } from './engine'
 import { settingsService } from './settings'
@@ -11,6 +12,7 @@ interface YtDlpInfo {
   uploader?: string
   channel?: string
   thumbnail?: string
+  thumbnails?: { url?: unknown }[]
   duration?: number
   is_live?: boolean
   live_status?: string
@@ -21,6 +23,14 @@ interface YtDlpInfo {
 
 export function preferredSourceChannel(info: Pick<YtDlpInfo, 'channel' | 'uploader'>): string | null {
   return info.channel?.trim() || info.uploader?.trim() || null
+}
+
+/**
+ * Whether links outside the provider registry may reach yt-dlp's generic
+ * extractor. Read lazily so a missing settings record simply means "no".
+ */
+export function allowOtherSites(): boolean {
+  return settingsService?.get()?.allowOtherSites === true
 }
 
 /** Builds the shared, non-interactive prefix every yt-dlp invocation uses. */
@@ -75,7 +85,7 @@ export async function resolveSoundCloudUrl(url: string, signal?: AbortSignal): P
 
 /** Reads a URL's metadata without downloading any media. */
 export async function probeUrl(url: string, signal?: AbortSignal): Promise<ProbeResult> {
-  const parsed = parseVideoUrl(url)
+  const parsed = parseVideoUrl(url, { allowOtherSites: allowOtherSites() })
   const empty: ProbeResult = {
     url,
     videoId: parsed.videoId,
@@ -90,6 +100,11 @@ export async function probeUrl(url: string, signal?: AbortSignal): Promise<Probe
 
   if (!parsed.ok || !parsed.normalized) {
     return { ...empty, error: parsed.reason ?? 'Unsupported URL' }
+  }
+
+  if (parsed.provider === 'direct' || parsed.provider === 'generic') {
+    try { await assertPublicUrl(parsed.normalized) }
+    catch (error) { return { ...empty, error: error instanceof Error && /private network/.test(error.message) ? error.message : "Could not resolve this link's host. Check the address and your connection." } }
   }
 
   if (signal?.aborted) return { ...empty, error: 'Cancelled' }
@@ -114,6 +129,7 @@ export async function probeUrl(url: string, signal?: AbortSignal): Promise<Probe
   }
   const args = [
     ...sharedArgs,
+    ...(await guardedYtDlpArgs(parsed.provider)),
     '--dump-single-json',
     '--skip-download',
     '--socket-timeout',
@@ -162,8 +178,16 @@ export async function probeUrl(url: string, signal?: AbortSignal): Promise<Probe
   const isLive = info.is_live === true || info.live_status === 'is_live'
 
   if (info._type === 'playlist' || info._type === 'multi_video' || info.entries != null) {
-    return { ...empty, error: 'Use a single track link. Playlists and profiles are not supported.' }
+    return {
+      ...empty,
+      error: parsed.provider === 'archive'
+        ? 'This Internet Archive item holds several files. Open the file you want on archive.org and paste its link.'
+        : 'Use a single track link. Playlists and profiles are not supported.'
+    }
   }
+
+  const reported = info.thumbnail ??
+    [...(info.thumbnails ?? [])].reverse().find(entry => typeof entry?.url === 'string')?.url as string | undefined
 
   return {
     url: parsed.normalized,
@@ -171,44 +195,14 @@ export async function probeUrl(url: string, signal?: AbortSignal): Promise<Probe
     title: info.title?.trim() ?? '',
     description: info.description ?? null,
     uploader: preferredSourceChannel(info),
-    thumbnail: info.thumbnail ?? null,
+    thumbnail: artworkFor(parsed.provider, info.id ?? parsed.videoId, reported),
     durationSec: typeof info.duration === 'number' ? info.duration : null,
     isLive,
     error: null
   }
 }
 
-/** Turns yt-dlp's noisy stderr into one actionable sentence. */
-export function summariseYtDlpError(stderr: string, provider: 'youtube' | 'soundcloud' | null = 'youtube'): string {
-  const lines = stderr
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^ERROR:\s*/i, '').trim())
-    .filter((line) => line.length > 0 && !line.startsWith('WARNING'))
-
-  const joined = lines.join(' ')
-  if (joined.length === 0) return 'yt-dlp could not read this link.'
-
-  if (provider === 'soundcloud') {
-    if (/private|not found|404/i.test(joined)) return 'This SoundCloud track is private or unavailable. Check the track link and access.'
-    if (/removed|deleted|unavailable/i.test(joined)) return 'This SoundCloud track is unavailable or has been removed.'
-    if (/geo|not available in your country/i.test(joined)) return 'This SoundCloud track is region-locked.'
-    if (/login|sign.in|registered|subscription|soundcloud go|403|401/i.test(joined)) return 'SoundCloud requires access to this track. Choose a browser for cookies in Settings if your account can play it.'
-    if (/timed out|timeout/i.test(joined)) return 'The connection to SoundCloud timed out.'
-    if (/urlopen error|unable to download|network/i.test(joined)) return 'Could not reach SoundCloud. Check your connection.'
-    return lines[lines.length - 1].slice(0, 240)
-  }
-
-  if (/private video/i.test(joined)) return 'This video is private.'
-  if (/video unavailable/i.test(joined)) return 'This video is unavailable.'
-  if (/age|sign in to confirm/i.test(joined)) {
-    return 'YouTube asked for a signed-in session. Set a browser for cookies in Settings, then retry.'
-  }
-  if (/removed|deleted|terminated/i.test(joined)) return 'This video has been removed.'
-  if (/not available in your country|geo/i.test(joined)) return 'This video is region-locked.'
-  if (/timed out|timeout/i.test(joined)) return 'The connection to YouTube timed out.'
-  if (/urlopen error|unable to download|network/i.test(joined)) {
-    return 'Could not reach YouTube. Check your connection.'
-  }
-
-  return lines[lines.length - 1].slice(0, 240)
+/** Turns yt-dlp's noisy stderr into one actionable sentence, worded for the provider. */
+export function summariseYtDlpError(stderr: string, provider: ProviderId | null = 'youtube'): string {
+  return describeProviderError(stderr, provider)
 }

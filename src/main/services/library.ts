@@ -253,7 +253,8 @@ async function exclusiveRename(from: string, to: string): Promise<void> {
 }
 
 class LibraryService extends EventEmitter {
-  private store = new JsonStore<LibraryBeat[]>(libraryFile(), [], normalizeLibrary)
+  // Records are replaced, never mutated, so a commit only serializes the records it changed.
+  private store = new JsonStore<LibraryBeat[]>(libraryFile(), [], normalizeLibrary, { recordCache: true })
   private rescanTimer: NodeJS.Timeout | null = null
   private stopped = false
   private readonly sidecarTasks = new Map<string, Promise<void>>()
@@ -348,10 +349,17 @@ class LibraryService extends EventEmitter {
   }
 
   list(): LibraryBeat[] {
+    return [...this.ordered()]
+  }
+
+  /** The newest-first records of the current revision. The same array is returned
+   * until the library changes, so callers can cache work derived from it; it must
+   * not be modified. */
+  ordered(): readonly LibraryBeat[] {
     const records = this.refreshViews()
-    // Sort once per committed revision; retain a fresh array for each caller.
+    // Sort once per committed revision.
     this.orderedRecords ??= [...records].sort((a, b) => b.addedAt - a.addedAt)
-    return [...this.orderedRecords]
+    return this.orderedRecords
   }
 
   get(id: string): LibraryBeat | null {

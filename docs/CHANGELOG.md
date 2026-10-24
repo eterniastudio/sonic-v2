@@ -6,6 +6,79 @@ Each entry describes what became useful in the app, with links to the original
 change and its verification notes. Historical test results describe that version;
 they are not a claim that every later version has been tested the same way.
 
+## October 24, 2026
+
+### Download from many more sites
+
+Besides YouTube and SoundCloud, the download box now accepts Bandcamp tracks, Vimeo,
+Mixcloud, Audiomack, Dailymotion, Twitch clips and past broadcasts, TikTok, public
+Instagram reels and posts, Reddit video posts, Streamable, X (Twitter) video posts,
+Internet Archive items, and direct links to audio or video files. Bandcamp album
+links open the same track review as YouTube playlists. Each link is checked against
+its site's rules when you paste it. Profiles and channels are rejected with a reason
+that names the site, and download errors are worded per site. YouTube artwork still
+comes from the video thumbnail. Other sites use the thumbnail yt-dlp reports. A new
+**Allow other sites** setting, off by default, passes any other public https page to
+yt-dlp's generic extractor. Links whose host resolves to your own computer or a private
+network are refused before inspection, download and cover fetch.
+In the library, **Open on …** names the beat's site, and smart collections can filter
+by every source. Existing library records, smart collections and settings load as before.
+
+### Library tools for working next to a DAW
+
+| What you can do | How |
+| --- | --- |
+| Drag tracks into a DAW or Explorer | Drag a library row; a multi-selection drags together, up to 100 files. Sonic's main process resolves the files from record ids, so the interface still never handles file paths. |
+| Find compatible tracks | Right-click a track and choose **Find compatible tracks**, or press **C** on a focused row. The list shows the same Camelot key, ±1 on the wheel, and the relative key, at ±4 BPM including half and double time. The banner shows the exact ranges and lets you change the tolerance. |
+| Favorite from the keyboard | Press **F** on a focused row, or on a selection, to toggle favorite. |
+| Recently added, Needs review, Duplicates | Built-in views beside Favorites. Needs review lists tracks with no BPM or key, or with a source-versus-audio disagreement on either. |
+| Clean up duplicates | Records that share a source link or identical audio are grouped. Keep one and the others leave the library. Their favorite, tags, notes and collection places move to the kept record. No audio file is deleted. |
+| Export a track list | **Export list** saves the displayed or selected tracks as CSV or JSON, with title, producer, BPM, key, Camelot, duration, source, file name and collections. Full paths are never written. |
+| Retry failed downloads at once | **Retry failed (n)** in the queue header and the command palette. |
+| Queue a copied link | An opt-in setting, off by default (**Settings → Advanced → Link intake**). When Sonic regains focus, it offers to queue a supported copied link that isn't already queued. |
+
+Saved settings and organization files from earlier versions load unchanged: the clipboard watch reads as off, and a saved built-in view reopens. Verified with new unit tests (`tests/library-tools.test.mjs`, plus handler checks in `tests/ipc-handlers.test.mjs`) and a hidden-window UI spec (`tests/library-tools.spec.mjs`). The drag test replaces Electron's `startDrag` to confirm which file is offered. It does not perform a real drop into a DAW.
+
+### Tempo and key detection that reads beats the way producers label them
+
+The analyser is now `sonic-dsp/5`. Tracks measured by the previous engine show up
+in the Library's **Analyze** count, and your manual corrections are untouched.
+
+- **Tempo** no longer lands on a cross-rhythm. House at 122 had read 81, and
+  afrobeats or dembow at 100 had read 133. Trap and drill now read at their labelled
+  130–165 BPM rate rather than half of it. The other octave is still offered as an
+  alternative.
+- **Key** no longer names the key a fifth away when a minor loop leans on its
+  flat-seventh chord. An Am–G–F–G loop had read G major. Ambiguous relative
+  major/minor material says so and lists both keys. Drum loops without harmony no
+  longer get a key.
+- **Analysis is about twice as fast.** Key analysis takes 14 ms instead of 30 ms
+  on the reference clip; a 150 s tempo window takes 221 ms instead of 362 ms.
+- **Titles:** the parser now reads `140 - 145 BPM` (as 140), `bpm 140/70`,
+  `@ 140`, a lone `[140]`, `C sharp minor`, `in the key of G`, `08A` and
+  `prod. @name`, and drops `Free for profit` from clean titles. Years, `808` and
+  phrases like "a minor setback" are still never read as tempo or key.
+
+Measured on 47 new generated producer-style beats: exact tempo went from 24 to 40
+of 43, and confidently wrong keys from 15 to 2. On 28 real guitar recordings,
+exact tempo went from 14 to 18 and wrong keys from 9 to 4. Existing
+regression suites are unchanged. These are generated fixtures and a small
+non-held-out guitar corpus, not a measurement on real beats. Details, limits
+and the ideas that were tried and dropped are in
+[DETECTION-2026-10-24.md](DETECTION-2026-10-24.md).
+
+### Large libraries stay responsive — [details](PERFORMANCE-2026-10-24.md)
+
+With 5,000 to 20,000 tracks, everyday library changes do much less work:
+
+- **Saving a change rewrites only what changed.** Sonic still saves the whole library file after each change, but it now re-encodes only the tracks that changed. Saving one analysis result took 685 ms at 20,000 tracks and now takes 134 ms, most of which is writing the file. At 5,000 tracks it went from 125 ms to 31 ms. The file format is unchanged.
+- **The window receives only what changed.** A one-track change sent all 47.6 MB of the library to the window. It now sends 296 KB. Delivering and applying it took 953 ms and now takes 18 ms.
+- **Search indexing waits until you search.** Filling in tempo and key no longer rebuilds the search index for every track analysed. It is built when you type a query, or once the library is quiet. Search results are unchanged.
+- **Import review no longer slows down as the library grows.** Checking each file against the library took 101 ms at 20,000 tracks and now takes under 1 ms.
+- Key filters are about ten times faster.
+
+Opening the library is 14–52 ms slower, because saved tracks are now protected against accidental in-place edits. The first search after a change costs what an index rebuild cost before.
+
 ## October 21, 2026
 
 ### White Label: a full visual redesign

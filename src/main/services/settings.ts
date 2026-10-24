@@ -41,8 +41,11 @@ export function defaultSettings(): Settings {
     maxDurationSec: 3600,
     skipExisting: true,
     cookiesFromBrowser: 'none',
+    allowOtherSites: false,
 
-    rescanIntervalMs: 120_000
+    rescanIntervalMs: 120_000,
+
+    watchClipboard: false
   }
 }
 
@@ -102,8 +105,14 @@ function normalizeSettings(raw: unknown): Settings {
     cookiesFromBrowser: BROWSERS.includes(source.cookiesFromBrowser as (typeof BROWSERS)[number])
       ? (source.cookiesFromBrowser as Settings['cookiesFromBrowser'])
       : 'none',
+    // Settings files written before this option existed have no field; they
+    // migrate to the safe default (registry sites only).
+    allowOtherSites: source.allowOtherSites === true,
 
-    rescanIntervalMs: clamp(Math.round(Number(source.rescanIntervalMs ?? base.rescanIntervalMs)) || 0, 0, 3_600_000)
+    rescanIntervalMs: clamp(Math.round(Number(source.rescanIntervalMs ?? base.rescanIntervalMs)) || 0, 0, 3_600_000),
+
+    // Older settings files have no value: the watch stays off until chosen.
+    watchClipboard: source.watchClipboard === true
   }
 }
 

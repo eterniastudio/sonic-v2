@@ -1,7 +1,7 @@
 # Sonic V2
 
-A local-first Windows desktop workstation for turning authorised YouTube and SoundCloud tracks
-into organised, tagged, producer-ready audio files.
+A local-first Windows desktop workstation for turning authorised tracks from YouTube,
+SoundCloud, Bandcamp and a dozen other sites into organised, tagged, producer-ready audio files.
 
 Built from the ground up as an Electron application — new architecture, new interface,
 no code or design language carried over from the original Tauri build.
@@ -14,7 +14,7 @@ current fixes, measurements, and verification limits; the
 
 > **Use responsibly.** Sonic is for media you own or are authorised to download. It does
 > not bypass DRM, authentication, private-video access, or geographic restrictions, and
-> it is not affiliated with or endorsed by YouTube or SoundCloud.
+> it is not affiliated with or endorsed by YouTube, SoundCloud or any other supported site.
 
 ---
 
@@ -28,12 +28,42 @@ current fixes, measurements, and verification limits; the
 | **Export** | Eight recipes, a naming template with live preview, embedded tags, cover art, a versioned sidecar, and no-clobber publication. |
 | **Library** | Import your own audio, audition a stable listening queue, save notes and collections, analyze or export a shortlist, and reconnect missing files. |
 
-Paste YouTube video links or SoundCloud track links into the same download box.
-YouTube playlist links open a review where you choose which tracks to queue.
-SoundCloud share links resolve before inspection; SoundCloud playlists and profiles
-are not supported. Both sources use the existing media engine, export formats,
-metadata review, and audio analysis. If an older share link has expired, paste the
-full `soundcloud.com/artist/track` URL instead.
+Paste single-track links from any supported site into the same download box:
+
+| Site | Accepted links |
+| --- | --- |
+| YouTube | Videos, Shorts and live replays; playlists open a track review |
+| SoundCloud | Tracks, including private `s-…` links and `on.soundcloud.com` share links |
+| Bandcamp | `artist.bandcamp.com/track/…`; album links open a track review |
+| Vimeo | Videos, including unlisted links with their hash and `player.vimeo.com` embeds |
+| Mixcloud | Shows (`mixcloud.com/user/show/`) |
+| Audiomack | Songs |
+| Dailymotion | Videos and `dai.ly` short links |
+| Twitch | Clips and past broadcasts (VODs); live channels are not supported |
+| TikTok | Videos and `vm.tiktok.com` short links |
+| Instagram | Public reels and posts |
+| Reddit | Posts with a video, and `v.redd.it` links |
+| Streamable | Videos |
+| X (Twitter) | Posts with a video |
+| Internet Archive | Item and file pages |
+| Direct files | Any https link ending in `.mp3`, `.wav`, `.flac`, `.m4a`, `.aac`, `.ogg`, `.opus`, `.mp4` or `.webm` |
+
+Profiles, channels and search pages are rejected when you paste them, with a reason.
+Only YouTube playlists and Bandcamp albums can be expanded into a review. Other
+collections are not supported. SoundCloud share links resolve before inspection. If
+an older share link has expired, paste the full `soundcloud.com/artist/track` URL
+instead. Every site goes through the same media engine, export formats, metadata
+review and audio analysis. YouTube artwork comes from the video's thumbnail. Other
+sites use the thumbnail yt-dlp reports.
+
+Links from other sites are refused by default. Turn on **Settings → Media engine → Allow
+other sites** to pass any other public https page to yt-dlp's generic extractor.
+Results vary by site. Direct-file and other-site links never reach your computer or a
+private network: yt-dlp runs through a local proxy that checks every connection,
+including redirects and media URLs found on the page, against the address actually
+connected to. Cover art downloads check every redirect the same way. Public
+content on the listed sites needs no cookies. If a site asks for a signed-in session,
+choose a browser under **Use cookies from a browser**.
 
 Use **Import audio** to add local files or folders without changing the originals.
 Your corrections, notes, tags, and collections stay in Sonic. Re-export a reviewed
@@ -48,6 +78,19 @@ changes its library record only; Sonic-owned exports also offer guarded file
 operations. Source links, channel names, and artwork URLs are stored in the local
 `library.json` record; the sidecar carries the same source provenance when enabled.
 User profiles, downloads, and test artifacts are excluded from the source repository.
+
+### Working the library next to a DAW
+
+| Task | How |
+| --- | --- |
+| Drag into your DAW or Explorer | Drag a library row. When the row is part of a multi-selection, the whole selection comes along (up to 100 files). Sonic's main process looks up the files by record id; the interface never handles file paths. Rows whose audio is missing are not draggable. |
+| Find compatible tracks | Right-click a track and choose **Find compatible tracks**, or focus a row and press **C**. The list narrows to the same Camelot position, one step either way round the wheel, and the relative major/minor, at the same tempo ±4 BPM including half and double time. The banner shows the exact keys and BPM ranges; change the tolerance (±2/4/8) or turn half/double time off there. A track with no key or no BPM is never matched on the value it lacks. **Show all tracks** ends the view. |
+| Favorite from the keyboard | Press **F** on a focused row to favorite it, or press it again to unfavorite. With tracks selected, F acts on the whole selection. |
+| Built-in views | Beside **Favorites**: **Recently added** (the last 14 days), **Needs review** (no BPM, no key, or the source disagrees with the audio on BPM or key), and **Duplicates**. Each tab shows its count. |
+| Resolve duplicates | **Duplicates** groups records that share a source link (watch, short and share links to one video count as one) or identical audio. Pick the record to keep, then **Remove N other records**. Favorites, tags, notes and collection places move to the kept record. The other records leave the library, and no audio file is deleted. |
+| Export a track list | **Export list** saves the displayed tracks, or the selection if there is one, as CSV or JSON. Choose the type in the save dialog. Columns: title, producer, BPM, key, Camelot, duration, source, source URL, file name and manual collections. Only file names are written, never full paths, and the CSV guards cells against spreadsheet formulas. |
+| Retry failed downloads | **Retry failed (n)** in the queue header, or the command palette, re-queues every failed job. Cancelled jobs stay cancelled. |
+| Clipboard link watch | Off by default. Turn it on in **Settings → Advanced → Link intake**. When Sonic regains focus with a supported link on the clipboard that isn't already queued, a small prompt offers **Add to queue**. Nothing is added without that click, and Sonic won't offer the same clipboard twice. |
 
 Export filenames include every known BPM and key even when a custom naming template omits those tokens. Later manual corrections and accepted analysis rename Sonic-owned audio safely, with collision suffixes and a matching sidecar. A rename leaves existing audio tags unchanged; **re-export** to rewrite tags. FL Studio can read specific WAV tempo-sync metadata, but a BPM printed in a filename does not by itself set the FL Studio project tempo. Check the BPM badge and set or confirm the project tempo when importing; Sonic's acoustic estimate can be inconclusive or wrong.
 
@@ -84,22 +127,30 @@ Sonic V2 is built to handle.
 - Decodes bounded excerpts through ffmpeg to **22050 Hz mono** float PCM, sharing
   overlapping tempo/key audio — no second download or upload. Analysis itself
   needs no Python, native module, WASM, or additional DSP dependency.
-- **Tempo:** spectral-flux onset envelope → autocorrelation *and* a comb filter, combined
-  with an Ellis-2007 log-Gaussian tempo prior, then octave-aware peak picking and
-  fractional-lag refinement over several beat periods. Half- and
+- **Tempo:** spectral-flux onset envelope, half of it equalised across low, mid and
+  high bands so hats cannot outvote the kick → autocorrelation *and* a comb filter →
+  candidates (each peak plus its half and double) scored by **metrical consistency**,
+  i.e. how well the period also repeats at 2, 3 and 4 beats, under an Ellis-2007
+  log-Gaussian tempo prior → **producer octave folding**: a 65–82 BPM reading with a
+  hat pulse or subdivision at its double reads as 130–165, as trap and drill are
+  labelled → fractional-lag refinement over several beat periods. Half- and
   double-time readings are reported as alternatives rather than collapsed away.
 - **Key:** interpolated spectral peaks → tuning-corrected pitch-class profiles →
-  correlation against all 24 published Shaath major/minor profiles. Complete
-  tonic-chord observations can support close relative-key decisions; unresolved
-  evidence remains inconclusive. Tuning and alternative keys stay available for
-  review. See the [algorithm, sources, and measured limits](docs/IMPROVEMENTS-2026-10-14.md).
+  correlation against all 24 published Shaath major/minor profiles, restricted to keys
+  whose **scale fits the chroma** (so an Am–G–F–G loop is not called G major). Pitch
+  content that does not follow a scale once its strongest note is removed, such as a
+  kick drum's pitch sweep, is inconclusive. Complete tonic-chord observations can
+  support close relative-key decisions; unresolved evidence remains inconclusive.
+  Tuning and alternative keys stay available for review. See the
+  [October 24 detection notes](docs/DETECTION-2026-10-24.md) and the earlier
+  [algorithm, sources, and measured limits](docs/IMPROVEMENTS-2026-10-14.md).
 - Runs on a **worker thread**, so a multi-second analysis never blocks the UI, with bounded
   concurrency, cancellation, timeouts and scratch-file cleanup.
 - Results are cached by **input hash + engine and pipeline version**, and the stage order is
   download → tags → **analyze** → cover → convert → tag readback → publish, so accepted
   estimates reach the file name, the embedded tags and the sidecar.
 
-The current analyzer is `sonic-dsp/4`. The Library's **Analyze** count includes
+The current analyzer is `sonic-dsp/5`. The Library's **Analyze** count includes
 missing results and tracks last measured by an older engine. Reanalysis preserves your manual
 corrections; use the inspector to review the new estimate or choose a suggested
 alternative. Confidence is an evidence indicator, not a probability of correctness.
@@ -108,15 +159,21 @@ alternative. Confidence is an evidence indicator, not a probability of correctne
 
 | Source text | Interpreted as |
 | --- | --- |
-| `144 BPM`, `BPM: 144`, `bpm 144` | `144` |
-| `72 / 144 BPM` | `144` with a `72` half-time alternate |
-| `F# minor`, `F#m`, `Key: F# minor` | `F# minor` / Camelot `11A` |
-| `11A`, `Camelot: 11A` | `F# minor` / Camelot `11A` |
+| `144 BPM`, `144bpm`, `BPM: 144`, `bpm 144`, `@ 144` | `144` |
+| `72 / 144 BPM`, `BPM 144/72`, `72 - 144 BPM` | `144` with a `72` half-time alternate |
+| `140 - 145 BPM` | `140` (the first number of a range) |
+| `[144]` | `144`, only when it is the one bracketed number and within 60–200 |
+| `F# minor`, `F#m`, `F#min`, `G♯m`, `F sharp minor`, `Key: F# minor`, `Key - F#m` | `F# minor` / Camelot `11A` |
+| `in the key of G` | `G major` (no mode written means major) |
+| `11A`, `08A`, `Camelot: 11A` | the matching key / Camelot code |
 | `detuned -18 cents`, `-0.25 st` | `-18 ¢` / `-25 ¢` |
 | `Tuning: A=432Hz` | `-31.8 ¢` |
-| `prod. by NAME`, `prod NAME`, `beat by NAME` | producer credit |
-| `"Quoted Beat Name" Type Beat` | clean title |
+| `prod. by NAME`, `prod NAME`, `prod. @NAME`, `(prod by A x B)`, `beat by NAME` | producer credit |
+| `"Quoted Beat Name" Type Beat`, `[FREE]`, `Free for profit` | clean title |
 | `Trap`, `Drill`, `Jersey Club`, … | genre hint |
+
+Years (`Type Beat 2026`), `808`, `[808]`, `(Part 2)`, `Track 12 - 140 BPM`'s `12`, and
+prose such as `a minor setback` or `key of a lifetime` are never read as tempo or key.
 
 ### Export recipes
 
@@ -199,6 +256,7 @@ missing on Windows, Sonic can fetch a static build for you.
 | `pnpm test:unit` | Run the complete isolated unit regression suite |
 | `pnpm test:key` | Check all 24 keys across tuning, voicing, and sample-rate fixtures |
 | `pnpm benchmark:analysis` | Measure decode/PCM-load time and scratch bytes on generated audio |
+| `node scripts/benchmark-producer-beats.mjs [--baseline-ref REF]` | Score tempo/key on 47 generated producer-style beats (trap, drill, house, afro, …) against an optional earlier engine |
 | `pnpm test:ui` | Build the current application and component harness, then run the Windows UI suite |
 | `pnpm test:ui:hidden` | Build and test the UI with Electron windows hidden; skip native window and OS pointer checks |
 | `pnpm smoke` | Headless boot self-check (DOM, theme, parser, templates) |

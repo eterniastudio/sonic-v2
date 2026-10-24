@@ -16,6 +16,7 @@ import { LibraryView } from '@/features/library/LibraryView'
 import { PlaybackDock } from '@/features/playback/PlaybackDock'
 import { PlaybackProvider } from '@/features/playback/playbackSession'
 import { SettingsView } from '@/features/settings/SettingsView'
+import { ClipboardOffer } from '@/features/intake/ClipboardOffer'
 
 /** First-paint splash while the main process answers the bootstrap calls. */
 function BootSplash({ error, onRetry }: { error: string | null; onRetry: () => void }): ReactNode {
@@ -46,6 +47,7 @@ function BootSplash({ error, onRetry }: { error: string | null; onRetry: () => v
 function useMainProcessBridge(): void {
   useIpcEvent('queue:changed', (queue) => useApp.getState().setQueueSnapshot(queue))
   useIpcEvent('library:changed', (library) => useApp.getState().setLibrarySnapshot(library))
+  useIpcEvent('library:delta', (delta) => useApp.getState().applyLibraryDelta(delta))
   useIpcEvent('settings:changed', (settings) => useApp.setState({ settings }))
   useIpcEvent('engine:status', (engine) => useApp.setState({ engine }))
   useIpcEvent('engine:progress', (engineProgress) => useApp.setState({ engineProgress }))
@@ -116,6 +118,7 @@ export function App(): ReactNode {
 
       {/* Ctrl+K is handled globally; this keeps the palette mounted for exits. */}
       <CommandPalette />
+      <ClipboardOffer />
       <Toaster />
     </div>
     </PlaybackProvider>
