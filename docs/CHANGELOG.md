@@ -6,6 +6,23 @@ Each entry describes what became useful in the app, with links to the original
 change and its verification notes. Historical test results describe that version;
 they are not a claim that every later version has been tested the same way.
 
+## October 24, 2026
+
+### Download from many more sites
+
+Besides YouTube and SoundCloud, the download box now accepts Bandcamp tracks, Vimeo,
+Mixcloud, Audiomack, Dailymotion, Twitch clips and past broadcasts, TikTok, public
+Instagram reels and posts, Reddit video posts, Streamable, X (Twitter) video posts,
+Internet Archive items, and direct links to audio or video files. Bandcamp album
+links open the same track review as YouTube playlists. Each link is checked against
+its site's rules when you paste it. Profiles and channels are rejected with a reason
+that names the site, and download errors are worded per site. YouTube artwork still
+comes from the video thumbnail. Other sites use the thumbnail yt-dlp reports. A new
+**Allow other sites** setting, off by default, passes any other public https page to
+yt-dlp's generic extractor. Local and private network addresses are always refused.
+In the library, **Open on …** names the beat's site, and smart collections can filter
+by every source. Existing library records, smart collections and settings load as before.
+
 ## October 21, 2026
 
 ### White Label: a full visual redesign

@@ -70,7 +70,8 @@ export async function acquireAudio(
   }
 ): Promise<AcquireResult> {
   options.signal.throwIfAborted()
-  const parsed = parseVideoUrl(url)
+  // The same gate as intake: a link from outside the registry needs "Allow other sites".
+  const parsed = parseVideoUrl(url, { allowOtherSites: settingsService?.get()?.allowOtherSites === true })
   if (!parsed.ok || !parsed.normalized || isSoundCloudShareUrl(parsed.normalized)) {
     throw new Error(parsed.reason ?? 'Inspect the SoundCloud share link before downloading.')
   }

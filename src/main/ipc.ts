@@ -416,7 +416,9 @@ export function registerIpcHandlers(): void {
   handle('library:openSource', async (id) => {
     const url = libraryService.get(id)?.sourceUrl
     if (!url) return false
-    const parsed = parseVideoUrl(url)
+    // A saved link was admitted at download time; reopening it is not gated by
+    // "Allow other sites", but it must still be a clean https URL.
+    const parsed = parseVideoUrl(url, { allowOtherSites: true })
     if (!parsed.ok || !parsed.normalized) return false
     await shell.openExternal(parsed.normalized)
     return true

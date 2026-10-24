@@ -48,6 +48,7 @@ const FALLBACK_SETTINGS: Settings = {
   maxDurationSec: 3600,
   skipExisting: true,
   cookiesFromBrowser: 'none',
+  allowOtherSites: false,
   rescanIntervalMs: 120_000
 }
 

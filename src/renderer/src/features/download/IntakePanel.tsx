@@ -33,7 +33,8 @@ export function IntakePanel(): ReactNode {
   const addUrls = useApp((state) => state.addUrls)
   const settings = useApp((state) => state.settings)
   const patchSettings = useApp((state) => state.patchSettings)
-  const parsed = useMemo(() => extractIntakeUrls(text), [text])
+  const allowOtherSites = settings.allowOtherSites === true
+  const parsed = useMemo(() => extractIntakeUrls(text, { allowOtherSites }), [text, allowOtherSites])
   const acceptedCount = parsed.tracks.length + parsed.playlists.length
   const preset = PRESETS.find((entry) => entry.id === settings.defaultPresetId) ?? PRESETS[0]
 
@@ -145,7 +146,7 @@ export function IntakePanel(): ReactNode {
             }}
             rows={2}
             spellCheck={false}
-            placeholder="Paste YouTube videos, YouTube playlists, or SoundCloud tracks."
+            placeholder="Paste links from YouTube, SoundCloud, Bandcamp, Vimeo, Mixcloud and more, or a direct audio file."
             className={cn(
               'min-h-[54px] rounded-none border-0 bg-transparent px-3 pt-3 pb-1 text-[13.5px] leading-relaxed focus:bg-transparent focus:shadow-none',
               shakeKey > 0 && acceptedCount === 0 && 't-input is-shaking is-error'

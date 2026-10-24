@@ -1,7 +1,7 @@
 # Sonic V2
 
-A local-first Windows desktop workstation for turning authorised YouTube and SoundCloud tracks
-into organised, tagged, producer-ready audio files.
+A local-first Windows desktop workstation for turning authorised tracks from YouTube,
+SoundCloud, Bandcamp and a dozen other sites into organised, tagged, producer-ready audio files.
 
 Built from the ground up as an Electron application — new architecture, new interface,
 no code or design language carried over from the original Tauri build.
@@ -14,7 +14,7 @@ current fixes, measurements, and verification limits; the
 
 > **Use responsibly.** Sonic is for media you own or are authorised to download. It does
 > not bypass DRM, authentication, private-video access, or geographic restrictions, and
-> it is not affiliated with or endorsed by YouTube or SoundCloud.
+> it is not affiliated with or endorsed by YouTube, SoundCloud or any other supported site.
 
 ---
 
@@ -28,12 +28,39 @@ current fixes, measurements, and verification limits; the
 | **Export** | Eight recipes, a naming template with live preview, embedded tags, cover art, a versioned sidecar, and no-clobber publication. |
 | **Library** | Import your own audio, audition a stable listening queue, save notes and collections, analyze or export a shortlist, and reconnect missing files. |
 
-Paste YouTube video links or SoundCloud track links into the same download box.
-YouTube playlist links open a review where you choose which tracks to queue.
-SoundCloud share links resolve before inspection; SoundCloud playlists and profiles
-are not supported. Both sources use the existing media engine, export formats,
-metadata review, and audio analysis. If an older share link has expired, paste the
-full `soundcloud.com/artist/track` URL instead.
+Paste single-track links from any supported site into the same download box:
+
+| Site | Accepted links |
+| --- | --- |
+| YouTube | Videos, Shorts and live replays; playlists open a track review |
+| SoundCloud | Tracks, including private `s-…` links and `on.soundcloud.com` share links |
+| Bandcamp | `artist.bandcamp.com/track/…`; album links open a track review |
+| Vimeo | Videos, including unlisted links with their hash and `player.vimeo.com` embeds |
+| Mixcloud | Shows (`mixcloud.com/user/show/`) |
+| Audiomack | Songs |
+| Dailymotion | Videos and `dai.ly` short links |
+| Twitch | Clips and past broadcasts (VODs); live channels are not supported |
+| TikTok | Videos and `vm.tiktok.com` short links |
+| Instagram | Public reels and posts |
+| Reddit | Posts with a video, and `v.redd.it` links |
+| Streamable | Videos |
+| X (Twitter) | Posts with a video |
+| Internet Archive | Item and file pages |
+| Direct files | Any https link ending in `.mp3`, `.wav`, `.flac`, `.m4a`, `.aac`, `.ogg`, `.opus`, `.mp4` or `.webm` |
+
+Profiles, channels and search pages are rejected when you paste them, with a reason.
+Only YouTube playlists and Bandcamp albums can be expanded into a review. Other
+collections are not supported. SoundCloud share links resolve before inspection. If
+an older share link has expired, paste the full `soundcloud.com/artist/track` URL
+instead. Every site goes through the same media engine, export formats, metadata
+review and audio analysis. YouTube artwork comes from the video's thumbnail. Other
+sites use the thumbnail yt-dlp reports.
+
+Links from other sites are refused by default. Turn on **Settings → Media engine → Allow
+other sites** to pass any other public https page to yt-dlp's generic extractor.
+Results vary by site. Local and private network addresses are always refused. Public
+content on the listed sites needs no cookies. If a site asks for a signed-in session,
+choose a browser under **Use cookies from a browser**.
 
 Use **Import audio** to add local files or folders without changing the originals.
 Your corrections, notes, tags, and collections stay in Sonic. Re-export a reviewed

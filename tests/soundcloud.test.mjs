@@ -17,7 +17,7 @@ function load(file, dependencies = {}) {
   }, module, module.exports)
   return module.exports
 }
-const urls = load('../src/shared/url.ts')
+const urls = load('../src/shared/url.ts', { './providers': load('../src/shared/providers.ts') })
 const track = 'https://soundcloud.com/producer/beat-140-bpm'
 
 test('SoundCloud tracks normalize mobile, trailing-slash and tracking variants', () => {
