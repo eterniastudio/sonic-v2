@@ -60,7 +60,8 @@ test('the yt-dlp proxy refuses private targets and unauthenticated clients', asy
     const port = target.address().port
     assert.match(await connectThrough(proxyUrl, `127.0.0.1:${port}`), /^HTTP\/1\.1 403/)
     assert.match(await connectThrough(proxyUrl, `[::1]:${port}`), /^HTTP\/1\.1 403/)
-    assert.match(await connectThrough(proxyUrl, `localhost:${port}`), /^HTTP\/1\.1 502/)
+    assert.match(await connectThrough(proxyUrl, `localhost:${port}`), /^HTTP\/1\.1 403/)
+    assert.match(await connectThrough(proxyUrl, 'no-such-host.invalid:443'), /^HTTP\/1\.1 502/)
     assert.match(await connectThrough(proxyUrl, `127.0.0.1:${port}`, false), /^HTTP\/1\.1 407/)
     assert.deepEqual(await modules.guardedYtDlpArgs('youtube'), [])
     assert.deepEqual(await modules.guardedYtDlpArgs('generic'), ['--proxy', proxyUrl, '--downloader', 'native'])
@@ -76,8 +77,9 @@ test('a refused proxy tunnel reads as a private-address error', async () => {
     const outfile = path.join(directory, 'providers.mjs')
     await build({ entryPoints: [path.join(root, 'src/shared/providers.ts')], outfile, bundle: true, format: 'esm', platform: 'node', target: 'node22', logLevel: 'silent' })
     const { describeProviderError } = await import(pathToFileURL(outfile).href)
-    const stderr = "ERROR: [generic] a: Unable to download webpage: ('Unable to connect to proxy', OSError('Tunnel connection failed: 502 Bad Gateway'))"
+    const stderr = "ERROR: [generic] a: Unable to download webpage: ('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden'))"
     assert.match(describeProviderError(stderr, 'generic'), /private network address/)
+    assert.doesNotMatch(describeProviderError(stderr.replace('403 Forbidden', '502 Bad Gateway'), 'generic'), /private network address/)
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

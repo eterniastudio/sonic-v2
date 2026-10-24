@@ -95,7 +95,8 @@ export function sourceIdentity(url: string | null | undefined): string | null {
   if (!url) return null
   const cached = identityCache.get(url)
   if (cached !== undefined) return cached
-  const parsed = parseVideoUrl(url)
+  // Stored links are judged as saved, whatever the current "Allow other sites" setting.
+  const parsed = parseVideoUrl(url, { allowOtherSites: true })
   const identity = !parsed.ok ? null
     : parsed.provider && parsed.videoId ? `${parsed.provider}:${parsed.videoId}`
       : parsed.normalized ? parsed.normalized.toLowerCase() : null

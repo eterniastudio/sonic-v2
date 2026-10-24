@@ -605,7 +605,7 @@ export function describeProviderError(stderr: string, provider: string | null = 
     .filter((line) => line.length > 0 && !line.startsWith('WARNING'))
   if (lines.length === 0) return 'yt-dlp could not read this link.'
   // The guarded proxy for direct and other-site links refuses private addresses.
-  if (lines.some(line => /Tunnel connection failed: (?:403|502)/.test(line))) {
+  if (lines.some(line => /Tunnel connection failed: 403/.test(line))) {
     return 'This link, or a page it leads to, points to a local or private network address, which Sonic does not download from.'
   }
   return (providerById(provider) ?? youtube).describeError(lines)

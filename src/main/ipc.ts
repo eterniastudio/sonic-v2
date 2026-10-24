@@ -481,7 +481,13 @@ export function registerIpcHandlers(): void {
   handle('library:rescan', async () => ({ count: (await libraryService.rescan()).length }))
   handle('library:startDrag', ids => startLibraryDrag(getMainWindow()!.webContents, ids))
   handle('library:exportList', ids => exportLibraryList(ids))
-  handle('library:resolveDuplicates', (keepId, removeIds) => resolveDuplicates(keepId, removeIds))
+  handle('library:resolveDuplicates', async (keepId, removeIds) => {
+    try { return await resolveDuplicates(keepId, removeIds) }
+    finally {
+      // As for a single removal: stop analysis of every record that actually left.
+      for (const id of removeIds) if (id !== keepId && !libraryService.get(id)) libraryAnalysis.cancel(id)
+    }
+  })
 
   handle('library:reexport', async (id, presetId) => reexportBeat(id, presetId))
 

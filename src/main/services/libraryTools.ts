@@ -58,8 +58,9 @@ export async function exportLibraryList(ids: string[]): Promise<{ saved: boolean
 
 /**
  * Keeps one record of a duplicate group and removes the others from the
- * library only. Audio files are never deleted. Annotations and collection
- * membership move to the kept record first.
+ * library only. Audio files are never deleted. Each record's annotations and
+ * collection membership move to the kept record only once that record has
+ * actually left the library, so a failed removal loses nothing.
  */
 export async function resolveDuplicates(keepId: string, removeIds: string[]): Promise<LibraryBeat[]> {
   const library = libraryService.list()
@@ -68,11 +69,14 @@ export async function resolveDuplicates(keepId: string, removeIds: string[]): Pr
   const removals = [...new Set(removeIds)].filter(id => id !== keepId)
   if (!removals.length) throw new Error('Choose at least one other record to remove.')
   if (removals.some(id => !group.beatIds.includes(id))) throw new Error('Only records in the same duplicate group can be removed.')
-  organizationService.mergeInto(keepId, removals)
+  libraryService.assertWritable()
   const failures: string[] = []
   for (const id of removals) {
-    const result = await libraryService.remove(id, false)
-    if (!result.ok && result.reason) failures.push(result.reason)
+    let result: Awaited<ReturnType<typeof libraryService.remove>>
+    try { result = await libraryService.remove(id, false) }
+    catch (error) { failures.push(error instanceof Error ? error.message : String(error)); continue }
+    if (result.ok) organizationService.mergeInto(keepId, [id])
+    else failures.push(result.reason ?? 'A duplicate record could not be removed.')
   }
   if (failures.length) throw new Error(failures[0])
   return libraryService.list()

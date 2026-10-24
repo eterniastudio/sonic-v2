@@ -117,7 +117,10 @@ function startProxy(): Promise<string> {
         res.writeHead(response.statusCode ?? 502, response.headers)
         response.pipe(res)
       })
-      upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end() })
+      upstream.on('error', error => {
+        if (!res.headersSent) res.writeHead((error as { code?: string }).code === 'ESONICPRIVATE' ? 403 : 502)
+        res.end()
+      })
       req.pipe(upstream)
     } catch {
       res.writeHead(403).end()
@@ -139,7 +142,10 @@ function startProxy(): Promise<string> {
       upstream.pipe(client)
       client.pipe(upstream)
     })
-    upstream.on('error', () => { if (client.writable) refuse('502 Bad Gateway'); else client.destroy() })
+    upstream.on('error', error => {
+      if (!client.writable) return client.destroy()
+      refuse((error as { code?: string }).code === 'ESONICPRIVATE' ? '403 Forbidden' : '502 Bad Gateway')
+    })
     client.on('close', () => upstream.destroy())
   })
 
