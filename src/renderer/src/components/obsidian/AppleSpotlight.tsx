@@ -121,7 +121,7 @@ export function AppleSpotlight({
             exit={{ opacity: 0 }}
             transition={{ duration: reduced ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
 
-            className="absolute inset-0 bg-overlay backdrop-blur-[6px]"
+            className="absolute inset-0 bg-overlay"
           />
 
           <motion.div
@@ -135,7 +135,7 @@ export function AppleSpotlight({
             role="dialog"
             aria-modal="true"
             aria-label="Command palette"
-            className="glass-strong relative w-full max-w-[620px] overflow-hidden rounded-[16px] border border-line shadow-pop"
+            className="glass-strong relative w-full max-w-[620px] overflow-hidden rounded-[2px] border border-line shadow-pop"
           >
             <div className="flex items-center gap-3 border-b border-line px-4">
               <Search className="size-4 shrink-0 text-fg-subtle" />
@@ -152,9 +152,9 @@ export function AppleSpotlight({
                 onChange={(event) => { setQuery(event.target.value); setActiveIndex(0) }}
                 placeholder={placeholder}
                 spellCheck={false}
-                className="h-13 w-full bg-transparent text-[14px] text-fg outline-none placeholder:text-fg-subtle"
+                className="h-13 w-full bg-transparent text-[13.5px] text-fg outline-none placeholder:text-fg-subtle"
               />
-              <kbd className="shrink-0 rounded-[5px] border border-line bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-fg-subtle">
+              <kbd className="shrink-0 rounded-[2px] border border-line bg-surface-2 px-1.5 py-0.5 text-[12px] font-medium text-fg-subtle">
                 ESC
               </kbd>
             </div>
@@ -162,7 +162,7 @@ export function AppleSpotlight({
             <p id={`${listId}-help`} className="sr-only">Use Up and Down to choose a result, Enter to open it, and Escape to close. Control Home and Control End jump to the first and last result.</p>
             <div id={listId} role="listbox" aria-label="Search results" ref={listRef} className="max-h-[46vh] overflow-y-auto p-2">
               {results.length === 0 ? (
-                <div className="px-3 py-10 text-center text-[13px] text-fg-subtle">{emptyLabel}</div>
+                <div className="px-3 py-10 text-center text-[13.5px] text-fg-subtle">{emptyLabel}</div>
               ) : (
                 results.map((item, index) => {
                   const showHeader = item.group !== lastGroup
@@ -172,7 +172,7 @@ export function AppleSpotlight({
                   return (
                     <div key={item.id} role="presentation">
                       {showHeader ? (
-                        <div aria-hidden="true" className="px-2.5 pt-2.5 pb-1 text-[10.5px] font-semibold tracking-[0.12em] text-fg-subtle uppercase">
+                        <div aria-hidden="true" className="px-2.5 pt-2.5 pb-1 text-[12px] font-bold text-fg-subtle">
                           {item.group}
                         </div>
                       ) : null}
@@ -190,7 +190,7 @@ export function AppleSpotlight({
                         onMouseDown={event => event.preventDefault()}
                         onClick={() => commit(item)}
                         className={cn(
-                          'flex w-full items-center gap-3 rounded-[9px] px-2.5 py-2 text-left',
+                          'flex w-full items-center gap-3 rounded-[2px] px-2.5 py-2 text-left',
                           'transition-colors duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
                           selected ? 'bg-accent-soft' : 'hover:bg-surface-2'
                         )}
@@ -198,7 +198,7 @@ export function AppleSpotlight({
                         {item.icon ? (
                           <span
                             className={cn(
-                              'grid size-4 shrink-0 place-items-center',
+                              'grid size-4 shrink-0 place-items-center [&>svg]:size-4 [&>svg]:stroke-[1.75]',
                               selected ? 'text-accent' : 'text-fg-subtle'
                             )}
                           >
@@ -208,7 +208,7 @@ export function AppleSpotlight({
 
                         <span
                           className={cn(
-                            'flex-1 truncate text-[13px]',
+                            'flex-1 truncate text-[13.5px]',
                             selected ? 'text-fg' : 'text-fg-muted'
                           )}
                         >
@@ -216,7 +216,7 @@ export function AppleSpotlight({
                         </span>
 
                         {item.hint ? (
-                          <span id={`${listId}-${index}-hint`} className="shrink-0 text-[11px] text-fg-subtle nums">{item.hint}</span>
+                          <span id={`${listId}-${index}-hint`} className="shrink-0 text-[12px] text-fg-subtle nums">{item.hint}</span>
                         ) : null}
 
                         {selected ? (
@@ -228,7 +228,7 @@ export function AppleSpotlight({
                 })
               )}
             </div>
-            <p role="status" aria-live="polite" aria-atomic="true" className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">
+            <p role="status" aria-live="polite" aria-atomic="true" className="border-t border-line px-4 py-2 text-[12px] text-fg-subtle">
               {matches.total > results.length ? `Showing ${results.length} of ${matches.total} matches. Keep typing to narrow your search.` : `${matches.total} result${matches.total === 1 ? '' : 's'}`}
             </p>
           </motion.div>

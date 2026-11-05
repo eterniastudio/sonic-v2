@@ -8,7 +8,7 @@ import { SAMPLE_METADATA } from '@shared/sample'
 import { renderTemplate } from '@shared/template'
 import { parseVideoUrl } from '@shared/url'
 import { broadcast } from './broadcast'
-import { fileExists } from './lib/fsx'
+import { directoryExists, fileExists } from './lib/fsx'
 import { libraryAnalysis } from './analysis/libraryAnalysis'
 import { engineService } from './services/engine'
 import { libraryService } from './services/library'
@@ -23,6 +23,7 @@ import { probeUrl } from './services/probe'
 import { inspectPlaylist, cancelPlaylist } from './services/playlist'
 import { queueService } from './services/queue'
 import { reexportBeat } from './services/reexport'
+import { exportLibraryList, MAX_DRAG_FILES, resolveDuplicates, startLibraryDrag } from './services/libraryTools'
 import { settingsService } from './services/settings'
 import {
   closeWindow,
@@ -108,7 +109,9 @@ function isSettingsPatch(value: unknown): boolean {
     if (SETTINGS_OPTIONS[key]) return typeof entry === 'string' && SETTINGS_OPTIONS[key].has(entry)
     if (['normalizeLufs', 'ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key) && entry === null) return true
     if (key === 'normalizeLufs') return typeof entry === 'number' && Number.isFinite(entry)
-    if (['ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key)) return typeof entry === 'string' && entry.length <= 4096
+    // Main executes these paths. Only the native engine:pickTool dialog may set
+    // one; the renderer can merely reset a tool to automatic discovery.
+    if (['ytdlpPath', 'ffmpegPath', 'ffprobePath'].includes(key)) return false
     const original = current[key]
     if (typeof entry !== typeof original) return false
     if (typeof entry === 'string') return entry.length <= 4096
@@ -125,7 +128,7 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
     case 'playback:get': case 'storage:status': case 'storage:retry': case 'app:readClipboard': case 'app:info':
     case 'window:minimize': case 'window:toggleMaximize': case 'window:close': case 'window:isMaximized':
     case 'engine:status': case 'engine:setup': case 'settings:get': case 'settings:chooseDir': case 'queue:snapshot':
-    case 'queue:clearFinished': case 'library:list': case 'library:rescan': case 'import:chooseFiles':
+    case 'queue:clearFinished': case 'queue:retryFailed': case 'library:list': case 'library:rescan': case 'import:chooseFiles':
     case 'organization:snapshot':
     case 'analysis:queueMissing': case 'analysis:clearCache': case 'analysis:status':
       valid = args.length === 0; break
@@ -136,6 +139,12 @@ function assertValidArguments(channel: IpcChannel, args: unknown[]): void {
     case 'import:status': case 'import:cancel': case 'batch:status': case 'batch:cancel': case 'batch:retry':
     case 'recovery:chooseFile': case 'recovery:status': case 'recovery:cancel': case 'playlist:cancel':
       valid = args.length === 1 && isId(a); break
+    case 'library:startDrag':
+      valid = args.length === 1 && isStringArray(a, MAX_DRAG_FILES) && a.length > 0; break
+    case 'library:exportList':
+      valid = args.length === 1 && isStringArray(a, 50_000) && a.length > 0; break
+    case 'library:resolveDuplicates':
+      valid = args.length === 2 && isId(a) && isStringArray(b, 1000) && b.length > 0; break
     case 'recovery:chooseFolder':
       valid = args.length === 1 && isStringArray(a, 10_000) && a.length > 0 && new Set(a).size === a.length; break
     case 'recovery:apply':
@@ -235,7 +244,7 @@ export function registerIpcHandlers(): void {
     const target = kind === 'userData' ? app.getPath('userData') :
       kind === 'engine' ? engineService.directory :
         settingsService.get().downloadDir || defaultDownloadDir()
-    if (!(await fileExists(target))) return false
+    if (!(await directoryExists(target))) return false
     const error = await shell.openPath(target)
     return error.length === 0
   })
@@ -351,14 +360,26 @@ export function registerIpcHandlers(): void {
   handle('queue:reorder', (ids) => queueService.reorder(ids))
   handle('queue:updateJob', (id, patch) => queueService.updateJob(id, patch))
   handle('queue:clearFinished', () => queueService.clearFinished())
+  handle('queue:retryFailed', () => {
+    for (const job of queueService.snapshot().jobs) {
+      if (job.stage === 'failed') queueService.retry(job.id)
+    }
+    return queueService.snapshot()
+  })
+  // A library rename or removal outdates the job's recorded path; the record is authoritative.
+  const jobOutput = (id: string): string | null => {
+    const job = queueService.getJob(id)
+    if (!job) return null
+    return (job.libraryId ? libraryService.get(job.libraryId)?.filePath : null) ?? job.outputPath
+  }
   handle('queue:revealOutput', async (id) => {
-    const target = queueService.getJob(id)?.outputPath
+    const target = jobOutput(id)
     if (!target || !(await fileExists(target))) return false
     shell.showItemInFolder(target)
     return true
   })
   handle('queue:openOutput', async (id) => {
-    const target = queueService.getJob(id)?.outputPath
+    const target = jobOutput(id)
     return target && await fileExists(target) ? (await shell.openPath(target)).length === 0 : false
   })
 
@@ -408,7 +429,9 @@ export function registerIpcHandlers(): void {
   handle('library:openSource', async (id) => {
     const url = libraryService.get(id)?.sourceUrl
     if (!url) return false
-    const parsed = parseVideoUrl(url)
+    // A saved link was admitted at download time; reopening it is not gated by
+    // "Allow other sites", but it must still be a clean https URL.
+    const parsed = parseVideoUrl(url, { allowOtherSites: true })
     if (!parsed.ok || !parsed.normalized) return false
     await shell.openExternal(parsed.normalized)
     return true
@@ -420,7 +443,7 @@ export function registerIpcHandlers(): void {
     if (result.error || !result.uploader) throw new Error(result.error || 'The source did not return a channel name.')
     libraryService.update(id, { sourceChannel: result.uploader, thumbnail: result.thumbnail })
     if (beat.sidecarPath) await libraryService.retrySidecar(id)
-    return libraryService.list()
+    return libraryService.get(id) ?? null
   })
   handle('library:revealFile', async (id) => {
     const target = libraryService.get(id)?.filePath
@@ -437,9 +460,12 @@ export function registerIpcHandlers(): void {
     return target && await fileExists(target) ? (await shell.openPath(target)).length === 0 : false
   })
 
-  handle('library:updateMetadata', (id, patch, clearOverrides) =>
-    libraryService.updateMetadata(id, patch, clearOverrides ?? [])
-  )
+  // Returning the whole library here cost about a second per edit at 20,000
+  // tracks; the window already receives the change as a delta.
+  handle('library:updateMetadata', async (id, patch, clearOverrides) => {
+    await libraryService.updateMetadata(id, patch, clearOverrides ?? [])
+    return libraryService.get(id) ?? null
+  })
 
   handle('library:remove', async (id, deleteFiles, expected) => {
     const current = libraryService.get(id)
@@ -449,10 +475,19 @@ export function registerIpcHandlers(): void {
     if (!result.ok && result.reason) {
       throw new Error(result.reason)
     }
-    return result.library
+    return { ok: true as const }
   })
 
-  handle('library:rescan', () => libraryService.rescan())
+  handle('library:rescan', async () => ({ count: (await libraryService.rescan()).length }))
+  handle('library:startDrag', ids => startLibraryDrag(getMainWindow()!.webContents, ids))
+  handle('library:exportList', ids => exportLibraryList(ids))
+  handle('library:resolveDuplicates', async (keepId, removeIds) => {
+    try { return await resolveDuplicates(keepId, removeIds) }
+    finally {
+      // As for a single removal: stop analysis of every record that actually left.
+      for (const id of removeIds) if (id !== keepId && !libraryService.get(id)) libraryAnalysis.cancel(id)
+    }
+  })
 
   handle('library:reexport', async (id, presetId) => reexportBeat(id, presetId))
 

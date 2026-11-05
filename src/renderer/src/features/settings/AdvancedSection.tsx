@@ -4,6 +4,7 @@ import { ipc } from '@/lib/ipc'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/Button'
 import { Field, Input } from '@/components/ui/Input'
+import { Switch } from '@/components/ui/Switch'
 import { toast } from '@/components/ui/Toaster'
 import { SettingsPanel } from './SettingsPanel'
 
@@ -120,6 +121,20 @@ export function AdvancedSection(): ReactNode {
           >
             Open export folder
           </Button>
+        </div>
+      </SettingsPanel>
+
+      <SettingsPanel title="Link intake" description="Off by default. Sonic reads the clipboard only when its window gains focus.">
+        <div className="flex items-start gap-3">
+          <Switch checked={settings.watchClipboard} onChange={(next) => void patchSettings({ watchClipboard: next })}
+            label="Offer links from the clipboard" />
+          <div className="min-w-0">
+            <p className="text-[13.5px] text-fg">Offer links from the clipboard</p>
+            <p className="mt-0.5 text-[12px] leading-relaxed text-fg-muted">
+              When you switch back to Sonic with a YouTube or SoundCloud link copied, a small prompt offers to add it to the
+              queue. Links already in the queue are skipped, and nothing is added until you choose Add to queue.
+            </p>
+          </div>
         </div>
       </SettingsPanel>
 

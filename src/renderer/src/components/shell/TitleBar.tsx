@@ -78,8 +78,8 @@ export function TitleBar(): ReactNode {
   useIpcEvent('window:maximized', setMaximized)
 
   return (
-    <header className="drag-region relative z-40 flex h-[52px] shrink-0 items-end bg-bg-deep">
-      <div className="flex h-11 min-w-0 flex-1 items-center px-5">
+    <header className="drag-region relative z-40 flex h-[48px] shrink-0 items-end border-b border-line bg-bg">
+      <div className="flex h-11 min-w-0 flex-1 items-center px-4">
         <Wordmark />
       </div>
 
@@ -91,7 +91,7 @@ export function TitleBar(): ReactNode {
           onClick={() => void cycleTheme()}
           title={`Theme: ${THEME_LABELS[themeMode]} — click to cycle`}
           aria-label={`Theme: ${THEME_LABELS[themeMode]}. Click to cycle.`}
-          className="grid size-8 self-center place-items-center rounded-[5px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
+          className="grid size-8 self-center place-items-center rounded-[2px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
         >
           <IconSwap
             swapped={theme === 'light'}
@@ -104,11 +104,11 @@ export function TitleBar(): ReactNode {
         <button
           type="button"
           onClick={() => setCommandOpen(true)}
-          className="flex h-7 self-center items-center gap-2 rounded-[5px] px-2 text-[11px] text-fg-subtle transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg"
+          className="flex h-7 self-center items-center gap-2 rounded-[2px] border border-line px-2 text-[12px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg"
         >
           <Command aria-hidden="true" className="size-3 text-fg-subtle" />
           <span>Commands</span>
-          <kbd className="ml-1 text-[10px] font-medium text-fg-subtle">
+          <kbd className="ml-1 font-sans text-[12px] font-semibold text-fg-subtle">
             Ctrl K
           </kbd>
         </button>

@@ -22,7 +22,7 @@ test('minimal workspace stays usable in both themes and compact desktop sizes', 
     page = await readyPage(app, root)
     page.on('pageerror', error => errors.push(error.message))
     await page.evaluate(() => document.fonts.ready)
-    expect(await page.evaluate(() => [...document.fonts].some(font => font.family.includes('Inter Variable') && font.status === 'loaded'))).toBe(true)
+    expect(await page.evaluate(() => [...document.fonts].some(font => font.family.includes('Archivo Variable') && font.status === 'loaded'))).toBe(true)
     await invoke('organization:command', { type: 'create-manual', name: 'Next release', beatIds: beats.slice(0, 6).map(beat => beat.id) })
     for (const theme of ['dark', 'light']) {
       await invoke('settings:patch', { theme })

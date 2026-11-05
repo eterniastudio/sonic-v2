@@ -56,7 +56,7 @@ export function Modal({
         aria-hidden
 
         className={cn(
-          'absolute inset-0 bg-overlay backdrop-blur-[5px]',
+          'absolute inset-0 bg-overlay',
           'transition-opacity duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
           phase === 'open' ? 'opacity-100' : 'opacity-0'
         )}
@@ -70,7 +70,7 @@ export function Modal({
         aria-describedby={description ? `${titleId}-description` : undefined}
         tabIndex={-1}
         className={cn(
-          't-modal relative max-h-[calc(100dvh-48px)] w-full overflow-y-auto rounded-[16px] border border-line-strong bg-surface shadow-pop outline-none',
+          't-modal relative max-h-[calc(100dvh-48px)] w-full overflow-y-auto rounded-[2px] border border-line-strong bg-surface shadow-pop outline-none',
           SIZES[size],
           phase === 'open' && 'is-open',
           phase === 'closing' && 'is-closing'
@@ -78,9 +78,9 @@ export function Modal({
       >
         <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
           <div className="min-w-0">
-            <h2 id={titleId} className="text-[17px] font-semibold tracking-tight text-fg">{title}</h2>
+            <h2 id={titleId} className="label-type text-[20px] leading-tight text-fg">{title}</h2>
             {description ? (
-              <p id={`${titleId}-description`} className="mt-1 text-[12.5px] leading-relaxed text-fg-muted">{description}</p>
+              <p id={`${titleId}-description`} className="mt-1 text-[13.5px] leading-relaxed text-fg-muted">{description}</p>
             ) : null}
           </div>
           <IconButton disabled={blocking} label="Close" size="icon-sm" onClick={onClose} className="-mt-0.5 -mr-1">
@@ -91,7 +91,7 @@ export function Modal({
         {children ? <div className="px-6 pb-5">{children}</div> : null}
 
         {footer ? (
-          <div className="flex items-center justify-end gap-2 rounded-b-[16px] border-t border-line bg-surface-2/50 px-6 py-4">
+          <div className="flex items-center justify-end gap-2 border-t border-line bg-surface-2/50 px-6 py-4">
             {footer}
           </div>
         ) : null}
@@ -149,7 +149,7 @@ export function ConfirmDialog({
             disabled={pending}
             data-autofocus
             onClick={() => { setError(''); onCancel() }}
-            className="h-9 rounded-[10px] border border-line px-4 text-[13.5px] text-fg transition-colors duration-[var(--duration-quick)] hover:bg-surface-2"
+            className="h-9 rounded-[2px] border border-line px-4 text-[13.5px] text-fg transition-colors duration-[var(--duration-quick)] hover:bg-surface-2"
           >
             {cancelLabel}
           </button>
@@ -158,7 +158,7 @@ export function ConfirmDialog({
             disabled={pending}
             onClick={() => void submit()}
             className={cn(
-              'h-9 rounded-[10px] px-4 text-[13.5px] font-medium text-white transition-colors duration-[var(--duration-quick)]',
+              'h-9 rounded-[2px] px-4 text-[13.5px] font-medium text-white transition-colors duration-[var(--duration-quick)]',
               tone === 'danger' ? 'bg-danger hover:opacity-90' : 'bg-accent text-accent-fg hover:bg-[var(--sonic-accent-hover)]'
             )}
           >

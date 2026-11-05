@@ -3,7 +3,7 @@ import { cn } from '@/lib/cn'
 
 const fieldSurface = [
   'w-full bg-transparent text-fg placeholder:text-fg-subtle',
-  'border border-line-strong/60 rounded-[6px]',
+  'border border-line-strong/60 rounded-[2px]',
   'transition-[border-color,background-color,box-shadow]',
   'duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
   'hover:border-line-strong',
@@ -70,7 +70,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       aria-invalid={invalid || undefined}
       className={cn(
         fieldSurface,
-        'resize-none px-3 py-2.5 text-[12.5px] leading-relaxed',
+        'resize-none px-3 py-2.5 text-[13.5px] leading-relaxed',
         invalid && 'border-danger/50',
         className
       )}
@@ -96,10 +96,10 @@ export function Field({ label, hint, note, htmlFor, children, className }: Field
         <label htmlFor={htmlFor} className="text-[12px] font-medium text-fg-muted">
           {label}
         </label>
-        {hint ? <span className="text-[11px] text-fg-subtle">{hint}</span> : null}
+        {hint ? <span className="text-[12px] text-fg-subtle">{hint}</span> : null}
       </div>
       {children}
-      {note ? <div className="text-[11.5px] leading-relaxed text-fg-subtle">{note}</div> : null}
+      {note ? <div className="text-[12px] leading-relaxed text-fg-subtle">{note}</div> : null}
     </div>
   )
 }

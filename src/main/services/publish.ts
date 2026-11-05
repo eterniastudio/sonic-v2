@@ -113,6 +113,8 @@ async function createOwned(file: string, owned: OwnedOutput[]): Promise<Awaited<
  * result in the library.
  */
 export async function publishExport(input: PublishInput): Promise<PublishResult> {
+  // An unsaved library revision would reject this record after the files exist.
+  libraryService.assertWritable()
   const settings = settingsService.get()
   const directory = settings.downloadDir
   await ensureDir(directory)
@@ -132,11 +134,13 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
 
   // Numbered suffixes instead of overwrites — a producer's existing file is
   // never replaced without an explicit decision.
-  const fileName = resolveCollision(`${stem || fallbackStem}.${extension}`, (candidate) =>
-    existsSync(path.join(directory, candidate)) || (settings.writeSidecar && existsSync(path.join(directory,
+  const claimed = new Set<string>()
+  const nextName = (): string => resolveCollision(`${stem || fallbackStem}.${extension}`, (candidate) =>
+    claimed.has(candidate.toLowerCase()) || existsSync(path.join(directory, candidate)) || (settings.writeSidecar && existsSync(path.join(directory,
       settings.sidecarInSubfolder ? SIDECAR_FOLDER : '', `${candidate}.sonic.json`)))
   )
-  const filePath = path.join(directory, fileName)
+  let fileName = nextName()
+  let filePath = path.join(directory, fileName)
 
   input.signal?.throwIfAborted()
   let sidecarPath: string | null = null
@@ -145,9 +149,17 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
   let libraryCommitAttempted = false
   let pendingBeatId: string | null = null
   try {
-  // Exclusive reservation closes the check/rename overwrite race. A concurrent
-  // winner is reported as a retryable publication failure; never overwritten.
-  const output = await createOwned(filePath, owned)
+  // Exclusive reservation closes the check/create overwrite race. A concurrent
+  // winner keeps its name; this export takes the next free one.
+  let output: Awaited<ReturnType<typeof open>>
+  for (let attempt = 1; ; attempt++) {
+    try { output = await createOwned(filePath, owned); break } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 50) throw error
+      claimed.add(fileName.toLowerCase())
+      fileName = nextName()
+      filePath = path.join(directory, fileName)
+    }
+  }
   try { await pipeline(createReadStream(input.stagedPath), output.createWriteStream(), { signal: input.signal }) }
   finally { await output.close() }
   input.signal?.throwIfAborted()
@@ -205,6 +217,8 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
   }
 
   input.signal?.throwIfAborted()
+  // Checked in the same turn as the commit: only a failed write leaves this record pending.
+  libraryService.assertWritable()
   libraryCommitAttempted = true
   pendingBeatId = beat.id
   libraryService.add(beat)
@@ -215,7 +229,8 @@ export async function publishExport(input: PublishInput): Promise<PublishResult>
 
   return { filePath, fileName, sidecarPath, beat }
   } catch (error) {
-    if (libraryCommitAttempted) {
+    // Files are preserved whenever the record is pending or already committed.
+    if (libraryCommitAttempted && (libraryService.pendingRevision() !== null || libraryService.get(pendingBeatId!))) {
       storageDiagnostic(libraryFile(), { operation: 'export-library-pending', filePath, sidecarPath, error: String(error) })
       throw new PendingPublicationError(filePath, pendingBeatId!, error)
     }

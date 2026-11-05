@@ -54,6 +54,16 @@ export function Dropdown({
     fallbackCloseMs: 150
   })
 
+  // The panel exists only while open or playing its exit, so a closed menu (one
+  // per queue row) costs no portal subtree. A freshly mounted panel paints its
+  // resting state once before `is-open`, which keeps the entrance transition.
+  const mounted = open || phase !== 'closed'
+  const [entered, setEntered] = useState(false)
+  useLayoutEffect(() => {
+    if (!open) { setEntered(false); return }
+    void panelRef.current?.getBoundingClientRect()
+    setEntered(true)
+  }, [open])
   const [position, setPosition] = useState({ left: 0, top: 0, width: 176, maxHeight: 400, side })
   const close = (): void => { setOpen(false); wrapperRef.current?.querySelector<HTMLButtonElement>('button')?.focus() }
   useOverlay([panelRef, wrapperRef], () => setOpen(false), open)
@@ -85,7 +95,8 @@ export function Dropdown({
     const button = wrapperRef.current?.querySelector('button')
     button?.setAttribute('aria-haspopup', 'menu')
     button?.setAttribute('aria-expanded', String(open))
-    button?.setAttribute('aria-controls', `${id}-panel`)
+    if (open) button?.setAttribute('aria-controls', `${id}-panel`)
+    else button?.removeAttribute('aria-controls')
     if (button) {
       button.disabled = Boolean(disabled)
       if (!button.id) button.id = `${id}-trigger`
@@ -105,7 +116,7 @@ export function Dropdown({
         }
       }}>
       {trigger({ open, toggle: () => !disabled && setOpen(value => !value), id })}
-      {createPortal(<div ref={panelRef} id={`${id}-panel`} role="menu" data-origin={originFor(position.side, align)}
+      {mounted ? createPortal(<div ref={panelRef} id={`${id}-panel`} role="menu" data-origin={originFor(position.side, align)}
         inert={!open} aria-hidden={!open}
         onClick={event => event.stopPropagation()}
         onKeyDown={event => {
@@ -127,10 +138,10 @@ export function Dropdown({
             ordered.find(item => item.textContent?.trim().toLocaleLowerCase().startsWith(prefix))?.focus()
           }
         }}
-        className={cn('t-dropdown fixed z-[410] rounded-[12px] border border-line bg-surface p-1 shadow-pop', open && 'is-open', !open && phase === 'closing' && 'is-closing', phase === 'closed' && 'invisible', panelClassName)}
+        className={cn('t-dropdown fixed z-[410] rounded-[2px] border border-line bg-surface p-1 shadow-pop', open && entered && 'is-open', !open && phase === 'closing' && 'is-closing', panelClassName)}
         style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight, overflowY: 'auto', pointerEvents: open ? 'auto' : 'none' }}>
         {typeof children === 'function' ? children(close) : children}
-      </div>, overlayRoot())}
+      </div>, overlayRoot()) : null}
     </div>
   )
 }
@@ -166,7 +177,7 @@ export function DropdownItem({
       disabled={disabled || busy}
       onClick={() => { if (pending.current) return; pending.current = true; setBusy(true); Promise.resolve().then(onSelect).catch(error => setError(String(error instanceof Error ? error.message : error))).finally(() => { pending.current = false; setBusy(false) }) }}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left text-[13px]',
+        'flex w-full items-center gap-2.5 rounded-[2px] px-2.5 py-2 text-left text-[13.5px]',
         'transition-colors duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
         'disabled:pointer-events-none disabled:opacity-40',
         tone === 'danger' ? 'text-danger hover:bg-danger/12' : 'text-fg hover:bg-surface-2',
@@ -175,14 +186,14 @@ export function DropdownItem({
     >
       {icon ? <span className="shrink-0 text-fg-subtle [&>svg]:size-3.5">{icon}</span> : null}
       <span className="flex-1">{children}{error ? <span role="alert" className="block text-danger">{error}</span> : null}</span>
-      {hint ? <span className="shrink-0 text-[11px] text-fg-subtle nums">{hint}</span> : null}
+      {hint ? <span className="shrink-0 text-[12px] text-fg-subtle nums">{hint}</span> : null}
     </button>
   )
 }
 
 export function DropdownLabel({ children }: { children: ReactNode }): ReactNode {
   return (
-    <div className="px-2.5 pt-2 pb-1 text-[10.5px] font-semibold tracking-[0.12em] text-fg-subtle uppercase">
+    <div className="px-2.5 pt-2 pb-1 text-[12px] font-bold text-fg-subtle">
       {children}
     </div>
   )

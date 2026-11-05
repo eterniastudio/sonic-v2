@@ -41,7 +41,7 @@ export function BentoCard({
   return (
     <div
       className={cn(
-        'group relative overflow-hidden rounded-[12px] border border-line bg-surface px-3.5 py-3',
+        'group relative overflow-hidden rounded-[2px] border border-line bg-surface px-3.5 py-3',
         'transition-[border-color] duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)]',
         'hover:border-line-strong',
         className
@@ -54,19 +54,19 @@ export function BentoCard({
       />
       <div className="relative flex items-center gap-1.5">
         {icon ? <span className="text-fg-subtle [&>svg]:size-3.5">{icon}</span> : null}
-        <span className="text-[10.5px] font-semibold tracking-[0.12em] text-fg-subtle uppercase">
+        <span className="text-[12px] font-bold text-fg-subtle">
           {label}
         </span>
       </div>
       <div
         className={cn(
-          'relative mt-1.5 text-[19px] font-semibold tracking-tight nums',
+          'relative mt-1.5 text-[20px] font-semibold tracking-tight nums',
           accent ? 'text-accent' : 'text-fg'
         )}
       >
         {value}
       </div>
-      {hint ? <div className="relative mt-0.5 text-[11px] text-fg-subtle">{hint}</div> : null}
+      {hint ? <div className="relative mt-0.5 text-[12px] text-fg-subtle">{hint}</div> : null}
     </div>
   )
 }

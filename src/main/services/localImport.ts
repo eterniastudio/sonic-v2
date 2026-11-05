@@ -22,6 +22,8 @@ const MAX_FILE_BYTES = 2 * 1024 ** 3
 const MAX_REVIEW_BYTES = 8 * 1024 ** 3
 const MAX_REVIEW_MS = 10 * 60_000
 const MAX_INSPECT_MS = 120_000
+const IMPORT_COMMIT_BATCH = 250
+const IMPORT_COMMIT_INTERVAL_MS = 2_000
 
 interface FileIdentity {
   path: string
@@ -57,6 +59,25 @@ function canonicalPath(filePath: string): string {
 
 function snapshot(review: LocalImportReview): LocalImportReview {
   return { ...review, items: review.items.map(item => ({ ...item })) }
+}
+
+type LibraryLookup = { byPath: Map<string, LibraryBeat>; byFingerprint: Map<string, LibraryBeat> }
+const lookups = new WeakMap<readonly LibraryBeat[], LibraryLookup>()
+/** First newest-first record per canonical path and per fingerprint, built once per
+ * library revision instead of scanning every record for every inspected file. */
+function libraryLookup(): LibraryLookup {
+  const records = libraryService.ordered()
+  let lookup = lookups.get(records)
+  if (!lookup) {
+    lookup = { byPath: new Map(), byFingerprint: new Map() }
+    for (const beat of records) {
+      const key = canonicalPath(beat.filePath)
+      if (!lookup.byPath.has(key)) lookup.byPath.set(key, beat)
+      if (!lookup.byFingerprint.has(beat.fingerprint)) lookup.byFingerprint.set(beat.fingerprint, beat)
+    }
+    lookups.set(records, lookup)
+  }
+  return lookup
 }
 
 async function fingerprint(filePath: string, signal: AbortSignal): Promise<string> {
@@ -292,8 +313,8 @@ export class LocalImportService {
       session.inspectedBytes += initial.size
       const identity = await identityOf(filePath, signal)
       candidate.identity = identity
-      const existing = libraryService.list()
-      const already = existing.find(beat => canonicalPath(beat.filePath) === identity.path)
+      const existing = libraryLookup()
+      const already = existing.byPath.get(identity.path)
       if (already) {
         item.status = 'already-indexed'; item.duplicateOf = already.id
         return candidate
@@ -309,7 +330,7 @@ export class LocalImportService {
       item.bpm = draft.final.bpm
       item.key = draft.final.key
       item.durationSec = media.durationSec
-      const duplicate = existing.find(beat => beat.fingerprint === identity.fingerprint)
+      const duplicate = existing.byFingerprint.get(identity.fingerprint)
       item.duplicateOf = duplicate?.id ?? null
     } catch (error) {
       if (session.controller.signal.aborted) throw error
@@ -330,6 +351,36 @@ export class LocalImportService {
       throw new Error('Import selection contains an unknown item.')
     }
     review.phase = 'importing'
+    // Validated records are committed together: one library revision per batch
+    // instead of one full library rewrite per file.
+    const staged: { item: LocalImportItem; beat: LibraryBeat; path: string }[] = []
+    let stagedSince = 0
+    const indexed = new Set(libraryService.list().map(beat => canonicalPath(beat.filePath)))
+    const commit = (): boolean => {
+      if (staged.length === 0) return true
+      const batch = staged.splice(0, staged.length)
+      // Another import may have indexed a path while this batch was validated.
+      const current = new Map(libraryService.list().map(beat => [canonicalPath(beat.filePath), beat.id]))
+      const fresh = batch.filter(entry => {
+        const already = current.get(entry.path)
+        if (already) { entry.item.status = 'already-indexed'; entry.item.duplicateOf = already }
+        return !already
+      })
+      try { libraryService.addMany(fresh.map(entry => entry.beat)) }
+      catch (error) {
+        const state = storageStatus().find(entry => canonicalPath(entry.file) === canonicalPath(libraryFile()))
+        session.failedSaveRevision = state?.error ? state.revision : null
+        const message = `${session.failedSaveRevision === null ? 'Library save failed' : 'Library save is pending'}: ${String(error)}`
+        for (const entry of fresh) { entry.item.status = 'failed'; entry.item.error = message }
+        review.error = message
+        return false
+      }
+      for (const entry of fresh) {
+        entry.item.status = 'imported'
+        session.importedIds.set(entry.item.id, entry.beat.id)
+      }
+      return true
+    }
     for (const candidate of session.candidates) {
       if (controller.signal.aborted) break
       const { item, identity, media } = candidate
@@ -342,8 +393,11 @@ export class LocalImportService {
         const current = await identityOf(item.filePath, controller.signal)
         if (current.path !== identity.path || current.size !== identity.size || current.modified !== identity.modified ||
           current.fingerprint !== identity.fingerprint) throw new Error('The file changed after review; inspect it again.')
-        const already = libraryService.list().find(beat => canonicalPath(beat.filePath) === identity.path)
-        if (already) { item.status = 'already-indexed'; item.duplicateOf = already.id; continue }
+        if (indexed.has(identity.path)) {
+          const already = libraryLookup().byPath.get(identity.path)
+          item.status = 'already-indexed'; item.duplicateOf = already?.id ?? null
+          continue
+        }
         const embedded = tagsToMetadata(media.tags)
         const parsed = parseDeclared({ filename: item.fileName })
         const draft = createDraft({ declared: parsed.values, embedded, sources: parsed.bySource, evidence: parsed.evidence })
@@ -361,22 +415,18 @@ export class LocalImportService {
           sources: parsed.bySource, embedded, verification: draft.verification
         }
         controller.signal.throwIfAborted()
-        try { libraryService.add(beat) }
-        catch (error) {
-          const state = storageStatus().find(entry => canonicalPath(entry.file) === canonicalPath(libraryFile()))
-          session.failedSaveRevision = state?.error ? state.revision : null
-          item.status = 'failed'
-          item.error = `${session.failedSaveRevision === null ? 'Library save failed' : 'Library save is pending'}: ${String(error)}`
-          review.error = item.error
-          break
-        }
-        item.status = 'imported'
-        session.importedIds.set(item.id, beat.id)
+        if (staged.length === 0) stagedSince = Date.now()
+        staged.push({ item, beat, path: identity.path })
+        indexed.add(identity.path)
+        // Bounded batches keep progress visible during a long re-verification.
+        if ((staged.length >= IMPORT_COMMIT_BATCH || Date.now() - stagedSince >= IMPORT_COMMIT_INTERVAL_MS) && !commit()) break
       } catch (error) {
         if (controller.signal.aborted) break
         item.status = 'failed'; item.error = String(error)
       }
     }
+    // A cancelled review saves nothing it had not already committed.
+    if (!controller.signal.aborted && !review.error) commit()
     if (!controller.signal.aborted && !review.error) {
       const needsAdmission = [...session.importedIds.entries()].filter(([itemId]) => !session.analysisAdmissionAttempted.has(itemId))
       if (needsAdmission.length) {

@@ -48,7 +48,7 @@ export function Switch({
         ['--toggle-track' as string]: 'var(--duration-fast)'
       }}
       className={cn(
-        't-toggle relative inline-flex h-[22px] w-[38px] shrink-0 items-center rounded-full p-[3px]',
+        't-toggle relative inline-flex h-[22px] w-[38px] shrink-0 items-center rounded-[2px] p-[3px]',
         'disabled:cursor-not-allowed disabled:opacity-45',
         checked ? 'bg-accent' : 'bg-surface-3',
         interacted && 'is-init',
@@ -57,7 +57,7 @@ export function Switch({
     >
       <span
         className={cn(
-          't-toggle-thumb size-4 rounded-full shadow-sm',
+          't-toggle-thumb size-4 rounded-[1px]',
           checked ? 'bg-accent-fg' : 'bg-fg-subtle'
         )}
       />
@@ -81,7 +81,7 @@ export function SwitchRow({
   return (
     <div className={cn('flex items-start justify-between gap-6 py-3', className)}>
       <div className="min-w-0">
-        <div className="text-[13px] font-medium text-fg">{title}</div>
+        <div className="text-[13.5px] font-medium text-fg">{title}</div>
         {description ? (
           <p className="mt-0.5 text-[12px] leading-relaxed text-fg-muted">{description}</p>
         ) : null}

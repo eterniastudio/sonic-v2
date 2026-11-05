@@ -26,11 +26,11 @@ export interface ProgressBarProps {
   /** 0..1, or null for an indeterminate sweep. */
   value: number | null
   className?: string
-  /** Draws a soft accent glow while work is in flight. */
+  /** Kept for callers; White Label draws no glow, so it has no visual effect. */
   active?: boolean
 }
 
-export function ProgressBar({ value, className, active }: ProgressBarProps): ReactNode {
+export function ProgressBar({ value, className }: ProgressBarProps): ReactNode {
   const indeterminate = value == null
 
   return (
@@ -39,21 +39,20 @@ export function ProgressBar({ value, className, active }: ProgressBarProps): Rea
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={indeterminate ? undefined : Math.round((value ?? 0) * 100)}
-      className={cn('relative h-1.5 w-full overflow-hidden rounded-full bg-surface-3', className)}
+      className={cn('relative h-1 w-full overflow-hidden bg-surface-3', className)}
     >
       {indeterminate ? (
         <span
-          className="absolute inset-y-0 w-1/3 rounded-full bg-accent"
+          className="absolute inset-y-0 w-1/3 bg-accent"
           style={{
             animation: 'sonic-indeterminate 1.1s var(--ease-smooth-out) infinite'
           }}
         />
       ) : (
         <span
-          className="absolute inset-y-0 left-0 rounded-full bg-accent transition-[width] duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)]"
+          className="absolute inset-y-0 left-0 bg-accent transition-[width] duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)]"
           style={{
-            width: `${Math.max(0, Math.min(1, value ?? 0)) * 100}%`,
-            boxShadow: active ? '0 0 12px var(--sonic-accent-ring)' : undefined
+            width: `${Math.max(0, Math.min(1, value ?? 0)) * 100}%`
           }}
         />
       )}

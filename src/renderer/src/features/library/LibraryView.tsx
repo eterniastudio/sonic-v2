@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ArrowDownUp,
+  FileSpreadsheet,
   LayoutGrid,
   List,
   Music4,
@@ -12,12 +13,13 @@ import {
   TriangleAlert,
   X
 } from 'lucide-react'
-import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { DragEvent as ReactDragEvent, FocusEvent as ReactFocusEvent, MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { LibraryBeat, PresetId } from '@shared/domain'
 import { needsAnalysisRefresh } from '@shared/analysis'
 import { FAVORITES_COLLECTION_ID, type OrganizationCommand, type OrganizationSnapshot } from '@shared/organization'
 import type { BatchSession } from '@shared/batch'
 import { PRESETS } from '@shared/presets'
+import { providerById } from '@shared/providers'
 import { cn } from '@/lib/cn'
 import { useReducedMotion } from '@/lib/theme'
 import { useApp } from '@/store/app'
@@ -39,7 +41,20 @@ import { RecoveryDialog } from './RecoveryDialog'
 import { createLibraryIndex, searchLibrary, searchSmartCollection, type LibraryIndex, type LibrarySort } from './librarySearch'
 import { CollectionWorkspace } from './CollectionWorkspace'
 import { AnnotationEditor } from './AnnotationEditor'
+import { DuplicatesPanel } from './DuplicatesPanel'
+import { CompatibleBanner, type CompatibleState } from './CompatibleBanner'
+import {
+  compatibilityCriteria,
+  DUPLICATES_VIEW_ID,
+  findDuplicateGroups,
+  isCompatible,
+  isRecentlyAdded,
+  needsReview,
+  NEEDS_REVIEW_VIEW_ID,
+  RECENT_VIEW_ID
+} from '@shared/libraryTools'
 import { usePlaybackActions, usePlaybackIdentity } from '@/features/playback/playbackSession'
+import { useVirtualRows, withPinned } from '@/lib/virtualRows'
 
 const SORTS: { key: LibrarySort; label: string }[] = [
   { key: 'manual', label: 'Collection order' },
@@ -52,6 +67,15 @@ const SORTS: { key: LibrarySort; label: string }[] = [
   { key: 'producer', label: 'Producer A → Z' }
 ]
 
+/** Below this many results every row is mounted; above it only the visible window is. */
+const VIRTUALIZE_AFTER = 150
+const LIST_ROW_PX = 52
+const GRID_CARD_PX = 112
+const GRID_GAP_PX = 8
+const GRID_MIN_COLUMN_PX = 210
+/** Remembered across remounts so a restored grid scroll position has its real height. */
+let lastResultsWidth = 0
+
 const TEMPO_BANDS: { id: string; label: string }[] = [
   { id: 'slow', label: '< 90' },
   { id: 'mid', label: '90–120' },
@@ -59,11 +83,21 @@ const TEMPO_BANDS: { id: string; label: string }[] = [
   { id: 'fast', label: '150+' }
 ]
 
+const BUILT_IN_VIEW_LABELS: Record<string, string> = {
+  [FAVORITES_COLLECTION_ID]: 'Favorites',
+  [RECENT_VIEW_ID]: 'Recently added',
+  [NEEDS_REVIEW_VIEW_ID]: 'Needs review',
+  [DUPLICATES_VIEW_ID]: 'Duplicates'
+}
+
+/** Typing in a field never triggers a list shortcut. */
+const isTextEntry = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+
 /** Searchable archive of imported audio and Sonic-created exports. */
 export function LibraryView(): ReactNode {
   const reducedMotion = useReducedMotion()
   const { playOne, playQueue } = usePlaybackActions()
-  const { beatId: playbackBeatId, status: playbackStatus } = usePlaybackIdentity()
   const library = useApp((state) => state.library)
   const rescanLibrary = useApp((state) => state.rescanLibrary)
   const removeBeat = useApp((state) => state.removeBeat)
@@ -85,6 +119,13 @@ export function LibraryView(): ReactNode {
   const [bpmTolerance, setBpmTolerance] = useWorkspaceField('bpmTolerance')
   const [includeHalfDouble, setIncludeHalfDouble] = useWorkspaceField('includeHalfDouble')
   const [keyFilter, setKeyFilter] = useWorkspaceField('keyFilter')
+  // Search runs against a deferred query so typing never waits on a full re-filter.
+  const searchQuery = useDeferredValue(query)
+  // Relevance applies only while a query exists and is never saved, so the
+  // collection's saved order returns once the search is cleared.
+  const [querySort, setQuerySort] = useState<LibrarySort>('relevance')
+  const hasQuery = query.trim().length > 0
+  const effectiveSort: LibrarySort = hasQuery && querySort === 'relevance' ? 'relevance' : sort
   const [selectedId, setSelectedId] = useWorkspaceField('selectedId')
   const [selectedIds, setSelectedIds] = useWorkspaceField('selectedIds')
   const [, setSelectionAnchor] = useWorkspaceField('selectionAnchor')
@@ -105,6 +146,8 @@ export function LibraryView(): ReactNode {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
+  const [compatible, setCompatible] = useState<CompatibleState | null>(null)
+  const [exportingList, setExportingList] = useState(false)
   const [recoveryPlanId, setRecoveryPlanId] = useState<string | null>(null)
   const [pickingRecovery, setPickingRecovery] = useState(false)
   const recoveryPicker = useRef(false)
@@ -158,27 +201,45 @@ export function LibraryView(): ReactNode {
 
   const activeCollection = organization?.collections.find(item => item.id === organization.view.activeCollectionId) ?? null
   const activeScope = organization?.view.activeCollectionId ?? 'all'
+  // A view change saves layout and sort together. Read the other setting from
+  // the latest request or the store, never from this render's closure, so two
+  // quick changes cannot save a stale value over each other.
+  const requestedView = useRef<{ layout: 'grid' | 'list'; sort: LibrarySort } | null>(null)
+  const currentView = (): { layout: 'grid' | 'list'; sort: LibrarySort } => {
+    const workspace = useLibraryWorkspace.getState()
+    return requestedView.current ?? { layout: workspace.layout, sort: workspace.sort }
+  }
+  const saveView = (activeCollectionId: string | null, view: { layout: 'grid' | 'list'; sort: LibrarySort }): Promise<OrganizationSnapshot> => {
+    requestedView.current = view
+    return executeOrganization({ type: 'set-view', activeCollectionId, ...view }).then(snapshot => {
+      setLayout(view.layout)
+      setSort(view.sort)
+      return snapshot
+    }).finally(() => { if (requestedView.current === view) requestedView.current = null })
+  }
+
   const changeScope = async (id: string | null): Promise<void> => {
     if (!organization || organization.view.activeCollectionId === id) return
+    const view = currentView()
     const nextSort = organization.collections.some(item => item.id === id && item.type === 'manual')
-      ? 'manual' : sort === 'manual' ? 'newest' : sort
-    await executeOrganization({ type: 'set-view', activeCollectionId: id, layout, sort: nextSort })
-    setSort(nextSort)
+      ? 'manual' : view.sort === 'manual' ? 'newest' : view.sort
+    await saveView(id, { layout: view.layout, sort: nextSort })
     setSelectedIds(new Set())
     setSelectionAnchor(null)
   }
 
   const changeLayout = (next: 'grid' | 'list'): void => {
     if (!organization) return
-    void executeOrganization({ type: 'set-view', activeCollectionId: organization.view.activeCollectionId, layout: next, sort })
-      .then(() => setLayout(next))
+    void saveView(organization.view.activeCollectionId, { ...currentView(), layout: next })
       .catch(error => toast({ kind: 'error', title: 'Layout was not saved', description: String(error) }))
   }
 
   const changeSort = (next: LibrarySort): void => {
     if (!organization) return
-    void executeOrganization({ type: 'set-view', activeCollectionId: organization.view.activeCollectionId, layout, sort: next })
-      .then(() => setSort(next))
+    // Relevance belongs to the current search, never to the saved view.
+    if (hasQuery) setQuerySort(next)
+    if (next === 'relevance') return
+    void saveView(organization.view.activeCollectionId, { ...currentView(), sort: next })
       .catch(error => toast({ kind: 'error', title: 'Sort was not saved', description: String(error) }))
   }
 
@@ -201,7 +262,7 @@ export function LibraryView(): ReactNode {
     event.stopPropagation()
     if (!useLibraryWorkspace.getState().selectedIds.has(beat.id)) { setSelectedIds(new Set([beat.id])); setSelectionAnchor(beat.id) }
     setMenu({ id: beat.id, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 216)) })
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 252)) })
   }, [setSelectedIds, setSelectionAnchor])
 
   const cardRefs = useRef(new Map<string, HTMLDivElement>())
@@ -222,26 +283,54 @@ export function LibraryView(): ReactNode {
     [library]
   )
 
+  const duplicateGroups = useMemo(() => findDuplicateGroups(library), [library])
+  // "Recently added" is relative to when the library last changed, not every render.
+  const recentSince = useMemo(() => Date.now(), [library])
+  const viewCounts = useMemo(() => ({
+    [RECENT_VIEW_ID]: library.filter(beat => isRecentlyAdded(beat, recentSince)).length,
+    [NEEDS_REVIEW_VIEW_ID]: library.filter(needsReview).length,
+    [DUPLICATES_VIEW_ID]: duplicateGroups.length
+  }), [library, recentSince, duplicateGroups])
+  const compatibleSeed = useMemo(() => compatible ? library.find(beat => beat.id === compatible.seedId) ?? null : null, [library, compatible])
+  const compatibleCriteria = useMemo(() => compatibleSeed && compatible
+    ? compatibilityCriteria(compatibleSeed, { bpmTolerance: compatible.bpmTolerance, includeHalfDouble: compatible.includeHalfDouble })
+    : null, [compatibleSeed, compatible])
+  // A seed that was deleted, or lost its BPM and key, ends the compatible view.
+  useEffect(() => { if (compatible && !compatibleCriteria) setCompatible(null) }, [compatible, compatibleCriteria])
+
   const visible = useMemo(() => {
     let scope = library
     if (activeCollection?.type === 'manual') {
       const byId = new Map(library.map(beat => [beat.id, beat]))
       scope = activeCollection.beatIds.flatMap(id => byId.get(id) ? [byId.get(id)!] : [])
     } else if (activeCollection?.type === 'smart' && organization) {
-      scope = searchSmartCollection(library, index, activeCollection.rules, organization.annotations, sort)
+      scope = searchSmartCollection(library, index, activeCollection.rules, organization.annotations, effectiveSort)
     } else if (activeScope === FAVORITES_COLLECTION_ID) {
       scope = library.filter(beat => organization && Object.prototype.hasOwnProperty.call(organization.annotations, beat.id) && organization.annotations[beat.id].favorite)
+    } else if (activeScope === RECENT_VIEW_ID) {
+      scope = library.filter(beat => isRecentlyAdded(beat, recentSince))
+    } else if (activeScope === NEEDS_REVIEW_VIEW_ID) {
+      scope = library.filter(needsReview)
+    } else if (activeScope === DUPLICATES_VIEW_ID) {
+      const members = new Set(duplicateGroups.flatMap(group => group.beatIds))
+      scope = library.filter(beat => members.has(beat.id))
     }
-    const rows = searchLibrary(scope, index, {
-      query, sort, bands, formats, fileFilter, reviewFilter, bpm: bpmFilter,
+    let rows = searchLibrary(scope, index, {
+      query: searchQuery, sort: effectiveSort, bands, formats, fileFilter, reviewFilter, bpm: bpmFilter,
       bpmTolerance, includeHalfDouble, key: keyFilter
     })
-    if (activeCollection?.type !== 'manual' || sort !== 'manual') return rows
-    const positions = new Map(activeCollection.beatIds.map((id, position) => [id, position]))
-    return rows.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity))
-  }, [library, index, organization, activeScope, activeCollection, query, sort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter])
+    if (activeCollection?.type === 'manual' && effectiveSort === 'manual') {
+      const positions = new Map(activeCollection.beatIds.map((id, position) => [id, position]))
+      rows.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity))
+    }
+    if (compatibleCriteria && compatibleSeed) {
+      // The seed always leads, even when a search or filter would hide it.
+      rows = [compatibleSeed, ...rows.filter(beat => beat.id !== compatibleSeed.id && isCompatible(beat, compatibleCriteria))]
+    }
+    return rows
+  }, [library, index, organization, activeScope, activeCollection, searchQuery, effectiveSort, bands, formats, fileFilter, reviewFilter, bpmFilter, bpmTolerance, includeHalfDouble, keyFilter, recentSince, duplicateGroups, compatibleCriteria, compatibleSeed])
 
-  const auditionLabel = activeCollection?.name ?? (activeScope === FAVORITES_COLLECTION_ID ? 'Favorites' : 'All audio')
+  const auditionLabel = compatibleSeed ? `Compatible with ${compatibleSeed.title}` : activeCollection?.name ?? BUILT_IN_VIEW_LABELS[activeScope] ?? 'All audio'
   const visibleRef = useRef(visible)
   useLayoutEffect(() => { visibleRef.current = visible }, [visible])
   const playDisplayed = (): void => {
@@ -253,7 +342,9 @@ export function LibraryView(): ReactNode {
     if (ids.length) playQueue(ids, ids[0], `${auditionLabel} shortlist`)
   }
 
-  const selectionScope = `${activeScope}\u0000${activeCollection?.type === 'smart' ? JSON.stringify(activeCollection.rules) : ''}\u0000${query}\u0000${[...bands].sort()}\u0000${[...formats].sort()}\u0000${fileFilter}\u0000${reviewFilter}\u0000${bpmFilter}\u0000${bpmTolerance}\u0000${includeHalfDouble}\u0000${keyFilter}`
+  // Keyed by the typed query, not the deferred one, so a search change clears the
+  // selection in the same commit as the keystroke rather than a render later.
+  const selectionScope = `${activeScope}\u0000${activeCollection?.type === 'smart' ? JSON.stringify(activeCollection.rules) : ''}\u0000${query}\u0000${[...bands].sort()}\u0000${[...formats].sort()}\u0000${fileFilter}\u0000${reviewFilter}\u0000${bpmFilter}\u0000${bpmTolerance}\u0000${includeHalfDouble}\u0000${keyFilter}\u0000${compatible ? `${compatible.seedId}:${compatible.bpmTolerance}:${compatible.includeHalfDouble}` : ''}`
   const scrollRef = useRef<HTMLDivElement>(null)
   const restoredScroll = useRef(false)
   useLayoutEffect(() => {
@@ -303,6 +394,8 @@ export function LibraryView(): ReactNode {
   )
 
   const revealingScope = useRef(false)
+  // A displayed row outside the rendered window is mounted on request, by index.
+  const [revealId, setRevealId] = useState<string | null>(null)
   // A global search result must become visible even when a retained collection
   // or filter excludes it. Consume the request only after its row is mounted.
   useEffect(() => {
@@ -314,6 +407,13 @@ export function LibraryView(): ReactNode {
       node.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'instant' : 'smooth' })
       node.querySelector<HTMLButtonElement>('button[aria-label^="Preview "]')?.focus({ preventScroll: true })
       setLibraryFocus(null)
+      setRevealId(null)
+      return
+    }
+    // The Duplicates view lists groups, not cards: reveal in All audio instead.
+    if (activeScope !== DUPLICATES_VIEW_ID && visible.some(beat => beat.id === focusId)) {
+      // Displayed but outside the rendered window: mount it, then this effect reruns.
+      if (revealId !== focusId) setRevealId(focusId)
       return
     }
     const workspace = useLibraryWorkspace.getState()
@@ -321,6 +421,7 @@ export function LibraryView(): ReactNode {
       useLibraryWorkspace.setState({ query: '', bands: new Set(), formats: new Set(), fileFilter: 'all',
         reviewFilter: 'all', bpmFilter: '', keyFilter: '', selectedIds: new Set(), selectionAnchor: null })
     }
+    setCompatible(null)
     if (organization.view.activeCollectionId !== null && !revealingScope.current) {
       revealingScope.current = true
       void changeScope(null).catch(error => {
@@ -328,7 +429,7 @@ export function LibraryView(): ReactNode {
         toast({ kind: 'error', title: 'Could not reveal this beat', description: String(error) })
       }).finally(() => { revealingScope.current = false })
     }
-  }, [focusId, setLibraryFocus, setSelectedId, organization, reducedMotion, visible, library])
+  }, [focusId, setLibraryFocus, setSelectedId, organization, reducedMotion, visible, library, revealId])
 
   const totals = useMemo(
     () => ({
@@ -357,6 +458,83 @@ export function LibraryView(): ReactNode {
     finally { recoveryPicker.current = false; setPickingRecovery(false) }
   }
 
+  const findCompatible = (beat: LibraryBeat): void => {
+    if (!compatibilityCriteria(beat, { bpmTolerance: 4, includeHalfDouble: true })) {
+      toast({ kind: 'info', title: 'Nothing to match yet', description: 'This track has no BPM or key. Analyze it or enter them first.' })
+      return
+    }
+    setCompatible({ seedId: beat.id, bpmTolerance: 4, includeHalfDouble: true })
+    setSelectedId(beat.id)
+  }
+
+  const toggleFavorite = (ids: string[]): void => {
+    if (!organization || !ids.length) return
+    const annotations = organization.annotations
+    const allFavorite = ids.every(id => Object.prototype.hasOwnProperty.call(annotations, id) && annotations[id].favorite)
+    const many = ids.length === 1 ? '' : `${ids.length} tracks `
+    void executeOrganization({ type: 'batch-annotation', beatIds: ids.slice(0, 5000), favorite: !allFavorite })
+      .then(() => toast({ kind: 'success', title: allFavorite ? `Removed ${many}from favorites` : `Added ${many}to favorites` }))
+      .catch(error => toast({ kind: 'error', title: 'Favorite was not saved', description: String(error) }))
+  }
+
+  /** The tracks a shortcut acts on: the batch selection, else the focused row, else the inspected one. */
+  const shortcutTargets = (target: EventTarget | null): string[] => {
+    const { selectedIds: batch, selectedId: inspected } = useLibraryWorkspace.getState()
+    if (batch.size) return [...batch]
+    const row = target instanceof HTMLElement ? target.closest<HTMLElement>('[data-beat-id]')?.dataset.beatId : undefined
+    return row ? [row] : inspected ? [inspected] : []
+  }
+  const listShortcuts = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.ctrlKey || event.metaKey || event.altKey || isTextEntry(event.target)) return
+    const key = event.key.toLowerCase()
+    if (key === 'f') {
+      const ids = shortcutTargets(event.target)
+      if (!ids.length) return
+      event.preventDefault()
+      toggleFavorite(ids)
+    } else if (key === 'c') {
+      const [id] = shortcutTargets(event.target)
+      const beat = id ? library.find(item => item.id === id) : undefined
+      if (!beat) return
+      event.preventDefault()
+      findCompatible(beat)
+    }
+  }
+
+  /** Drag rows out to a DAW or Explorer. Main resolves the files; the renderer only names records. */
+  const dragOut = (event: ReactDragEvent<HTMLDivElement>): void => {
+    const id = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-beat-id]')?.dataset.beatId
+    if (!id) return
+    event.preventDefault()
+    const batch = useLibraryWorkspace.getState().selectedIds
+    const ids = batch.has(id) ? [id, ...[...batch].filter(other => other !== id)].slice(0, 100) : [id]
+    void ipc.invoke('library:startDrag', ids).then(result => {
+      if (!result.started) toast({ kind: 'error', title: 'Nothing to drag', description: 'The audio file is missing or unavailable.' })
+    }).catch(error => toast({ kind: 'error', title: 'Could not start the drag', description: String(error) }))
+  }
+
+  const exportList = (): void => {
+    const ids = selectedIds.size ? visible.filter(beat => selectedIds.has(beat.id)).map(beat => beat.id) : visible.map(beat => beat.id)
+    if (!ids.length || exportingList) return
+    setExportingList(true)
+    void ipc.invoke('library:exportList', ids).then(result => {
+      if (result.saved) toast({ kind: 'success', title: `Exported ${result.count} track${result.count === 1 ? '' : 's'}`, description: result.fileName ?? undefined })
+    }).catch(error => toast({ kind: 'error', title: 'Track list was not exported', description: String(error) }))
+      .finally(() => setExportingList(false))
+  }
+
+  const resolveDuplicates = async (keepId: string, removeIds: string[]): Promise<void> => {
+    const next = await ipc.invoke('library:resolveDuplicates', keepId, removeIds)
+    useApp.getState().setLibrarySnapshot(next)
+    setSelectedId(current => current && removeIds.includes(current) ? keepId : current)
+    toast({ kind: 'success', title: `Removed ${removeIds.length} duplicate record${removeIds.length === 1 ? '' : 's'}`, description: 'Audio files were left on disk.' })
+  }
+  const visibleGroups = useMemo(() => {
+    const shown = new Set(visible.map(beat => beat.id))
+    return duplicateGroups.filter(group => group.beatIds.some(id => shown.has(id)))
+  }, [duplicateGroups, visible])
+  const byId = useMemo(() => new Map(library.map(beat => [beat.id, beat])), [library])
+
   return (
     <div className="workspace-page flex h-full min-h-0 flex-col gap-3">
       <header className="page-header flex shrink-0 items-center justify-between gap-4">
@@ -369,6 +547,10 @@ export function LibraryView(): ReactNode {
               void analyzeMissing().then(queued => toast({ kind: 'info', title: `Analyzing ${queued} track${queued === 1 ? '' : 's'}`,
                 description: 'Working from the files on disk — nothing is re-downloaded.' }))
             }}>Analyze <span className="ml-1 text-fg-subtle nums">{needsAnalysis}</span></Button> : null}
+          <Button variant="ghost" size="md" aria-label="Export track list" leading={<FileSpreadsheet />}
+            disabled={!visible.length || exportingList}
+            title={selectedIds.size ? `Save the ${selectedIds.size} selected tracks as CSV or JSON` : `Save the ${visible.length} displayed tracks as CSV or JSON`}
+            onClick={exportList}>Export list</Button>
           <ImportAudio />
         </div>
       </header>
@@ -379,7 +561,8 @@ export function LibraryView(): ReactNode {
             <Input
               value={query}
               onChange={(event) => {
-                if (!query.trim() && event.target.value.trim()) changeSort('relevance')
+                // A new search starts in relevance order; nothing is saved.
+                if (!query.trim() && event.target.value.trim()) setQuerySort('relevance')
                 setQuery(event.target.value)
               }}
               placeholder="Search title, producer, BPM, key…"
@@ -407,17 +590,18 @@ export function LibraryView(): ReactNode {
             align="end"
             trigger={({ toggle: open }) => (
               <Button variant="ghost" size="md" leading={<ArrowDownUp />} onClick={open}>
-                {SORTS.find((entry) => entry.key === sort)?.label ?? 'Sort'}
+                {SORTS.find((entry) => entry.key === effectiveSort)?.label ?? 'Sort'}
               </Button>
             )}
           >
             {(close) => (
               <>
                 <DropdownLabel>Sort by</DropdownLabel>
-                {SORTS.filter(entry => entry.key !== 'manual' || activeCollection?.type === 'manual').map((entry) => (
+                {SORTS.filter(entry => (entry.key !== 'manual' || activeCollection?.type === 'manual') &&
+                  (entry.key !== 'relevance' || hasQuery || sort === 'relevance')).map((entry) => (
                   <DropdownItem
                     key={entry.key}
-                    selected={entry.key === sort}
+                    selected={entry.key === effectiveSort}
                     onSelect={() => {
                       changeSort(entry.key)
                       close()
@@ -457,7 +641,7 @@ export function LibraryView(): ReactNode {
 
         {showFilters ? (
           <div className="flex max-h-[148px] flex-wrap items-center gap-x-5 gap-y-3 overflow-y-auto border-y border-line py-3">
-            <label className="flex items-center gap-1.5 text-[11px] font-medium text-fg-subtle">
+            <label className="flex items-center gap-1.5 text-[12px] font-medium text-fg-subtle">
               BPM
               <Input type="number" min="1" max="999" step="any" inputMode="decimal"
                 aria-label="Target BPM" value={bpmFilter} onChange={(event) => setBpmFilter(event.target.value)}
@@ -469,15 +653,15 @@ export function LibraryView(): ReactNode {
             </label>
             <div className="flex items-center gap-2">
               <Switch checked={includeHalfDouble} onChange={setIncludeHalfDouble} label="Include half and double time" />
-              <span className="text-[11px] text-fg-muted">Half/double time</span>
+              <span className="text-[12px] text-fg-muted">Half/double time</span>
             </div>
-            <label className="flex items-center gap-1.5 text-[11px] font-medium text-fg-subtle">
+            <label className="flex items-center gap-1.5 text-[12px] font-medium text-fg-subtle">
               Key / Camelot
               <Input aria-label="Key or Camelot" value={keyFilter} onChange={(event) => setKeyFilter(event.target.value)}
                 placeholder="e.g. 8A" className="w-[90px]" />
             </label>
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-fg-subtle">Tempo</span>
+              <span className="text-[12px] font-medium text-fg-subtle">Tempo</span>
               {TEMPO_BANDS.map((band) => (
                 <button
                   key={band.id}
@@ -485,7 +669,7 @@ export function LibraryView(): ReactNode {
                   onClick={() => toggle(bands, band.id, setBands)}
                   aria-pressed={bands.has(band.id)}
                   className={cn(
-                    'rounded-[6px] border px-2 py-1 text-[11px] transition-colors duration-[var(--duration-quick)]',
+                    'rounded-[2px] border px-2 py-1 text-[12px] transition-colors duration-[var(--duration-quick)]',
                     bands.has(band.id)
                       ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent'
                       : 'border-line text-fg-muted hover:border-line-strong hover:text-fg'
@@ -497,7 +681,7 @@ export function LibraryView(): ReactNode {
             </div>
 
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-fg-subtle">Format</span>
+              <span className="text-[12px] font-medium text-fg-subtle">Format</span>
               {availableFormats.map((format) => (
                 <button
                   key={format}
@@ -505,7 +689,7 @@ export function LibraryView(): ReactNode {
                   onClick={() => toggle(formats, format, setFormats)}
                   aria-pressed={formats.has(format)}
                   className={cn(
-                    'rounded-[6px] border px-2 py-1 text-[11px] uppercase transition-colors duration-[var(--duration-quick)]',
+                    'rounded-[2px] border px-2 py-1 text-[12px] uppercase transition-colors duration-[var(--duration-quick)]',
                     formats.has(format)
                       ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent'
                       : 'border-line text-fg-muted hover:border-line-strong hover:text-fg'
@@ -517,22 +701,22 @@ export function LibraryView(): ReactNode {
             </div>
 
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-fg-subtle">Files</span>
+              <span className="text-[12px] font-medium text-fg-subtle">Files</span>
               {(['all', 'present', 'missing'] as const).map((value) => (
                 <button key={value} type="button" onClick={() => setFileFilter(value)}
                   aria-pressed={fileFilter === value}
-                  className={cn('rounded-[6px] border px-2 py-1 text-[11px] capitalize transition-colors',
+                  className={cn('rounded-[2px] border px-2 py-1 text-[12px] capitalize transition-colors',
                     fileFilter === value ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent' : 'border-line text-fg-muted hover:border-line-strong hover:text-fg')}>
                   {value}
                 </button>
               ))}
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-fg-subtle">Review</span>
+              <span className="text-[12px] font-medium text-fg-subtle">Review</span>
               {(['all', 'incomplete', 'disagreement'] as const).map((value) => (
                 <button key={value} type="button" onClick={() => setReviewFilter(value)}
                   aria-pressed={reviewFilter === value}
-                  className={cn('rounded-[6px] border px-2 py-1 text-[11px] capitalize transition-colors',
+                  className={cn('rounded-[2px] border px-2 py-1 text-[12px] capitalize transition-colors',
                     reviewFilter === value ? 'border-[var(--sonic-accent-line)] bg-accent-soft text-accent' : 'border-line text-fg-muted hover:border-line-strong hover:text-fg')}>
                   {value}
                 </button>
@@ -576,10 +760,14 @@ export function LibraryView(): ReactNode {
         onPlayDisplayed={playDisplayed}
         onPlaySelected={playSelected}
         onScope={changeScope} command={executeOrganization} batch={batch} setBatch={setBatch}
-        defaultPresetId={defaultPresetId} manualSort={sort === 'manual'} /> : null}
+        defaultPresetId={defaultPresetId} manualSort={effectiveSort === 'manual'} viewCounts={viewCounts} /> : null}
+
+      {compatibleSeed && compatibleCriteria && compatible ? <CompatibleBanner seed={compatibleSeed} criteria={compatibleCriteria}
+        state={compatible} count={visible.length} onChange={setCompatible} onClear={() => setCompatible(null)} /> : null}
 
       <div className="flex min-h-0 flex-1 gap-4">
       <div ref={scrollRef} data-library-scroll className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-0.5"
+        onKeyDown={listShortcuts} onDragStart={dragOut}
         onScroll={event => {
           if (restoredScroll.current) useLibraryWorkspace.setState({ scrollTop: event.currentTarget.scrollTop })
         }}>
@@ -594,70 +782,37 @@ export function LibraryView(): ReactNode {
           <div className="studio-panel grid h-full min-h-[230px] place-items-center px-6 py-8">
             <div className="max-w-[360px] text-center">
               <Music4 className="mx-auto mb-4 size-6 text-fg-subtle" strokeWidth={1.4} />
-              <h2 className="text-[15px] font-medium text-fg">Your library is empty</h2>
+              <h2 className="label-type text-[20px] text-fg">Your library is empty</h2>
               <p className="mt-2 text-[12px] leading-relaxed text-fg-muted">Import audio from your computer, or add a link in Downloads.</p>
-              <p className="mt-5 text-[11px] text-fg-subtle">WAV · FLAC · MP3 · M4A · OGG</p>
+              <p className="mt-5 text-[12px] text-fg-subtle">WAV · FLAC · MP3 · M4A · OGG</p>
             </div>
           </div>
+        ) : activeScope === DUPLICATES_VIEW_ID ? (
+          <DuplicatesPanel groups={visibleGroups} byId={byId} onResolve={resolveDuplicates}
+            onInspect={id => setSelectedId(id)} onPlay={playOne} />
         ) : visible.length === 0 ? (
-          <div className="studio-panel grid h-full min-h-[180px] place-items-center px-8 text-center text-[13px] text-fg-muted">
+          <div className="studio-panel grid h-full min-h-[180px] place-items-center px-8 text-center text-[13.5px] text-fg-muted">
             {activeCollection?.type === 'manual' && activeCollection.beatIds.length === 0
               ? 'This collection is empty. Select beats and use Add to collection.'
               : activeScope === FAVORITES_COLLECTION_ID && !library.some(beat => organization && Object.prototype.hasOwnProperty.call(organization.annotations, beat.id) && organization.annotations[beat.id].favorite)
                 ? 'No favorites yet. Open a beat and mark it as a favorite.'
                 : activeCollection?.type === 'smart'
                   ? 'No beats currently match this smart collection’s rules.'
-                  : 'No beats match those filters.'}
-          </div>
-        ) : layout === 'grid' ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2 pb-1">
-            {visible.map((beat) => (
-                <LibraryBeatRow
-                  key={beat.id}
-                  beat={beat}
-                  layout="grid"
-                  playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
-                  selected={selectedId === beat.id}
-                  batchSelected={selectedIds.has(beat.id)}
-                  onToggleSelection={toggleSelectedId}
-                  onSelect={selectCard}
-                  onPlay={playOne}
-                  onContextMenu={openMenu}
-                  registerCard={registerCard}
-                />
-            ))}
+                  : activeScope === RECENT_VIEW_ID && viewCounts[RECENT_VIEW_ID] === 0
+                    ? 'Nothing added in the last 14 days. New downloads and imports appear here first.'
+                    : activeScope === NEEDS_REVIEW_VIEW_ID && viewCounts[NEEDS_REVIEW_VIEW_ID] === 0
+                      ? 'Nothing to review. Every track has a BPM and key, and no source disagrees with its audio.'
+                      : 'No beats match those filters.'}
           </div>
         ) : (
-          <div className="@container overflow-hidden">
-            <div aria-hidden="true" className="mb-1 flex h-8 items-center gap-3 border-b border-line px-2 text-[11px] text-fg-subtle">
-              <span className="w-[64px] shrink-0" />
-              <span className="min-w-0 flex-1">Track</span>
-              <span className="hidden w-14 shrink-0 text-right @min-[440px]:block">BPM</span>
-              <span className="hidden w-14 shrink-0 text-right @min-[480px]:block">Key</span>
-              <span className="w-11 shrink-0 text-right">Time</span>
-              <span className="hidden w-12 shrink-0 text-right @min-[620px]:block">Format</span>
-            </div>
-            {visible.map((beat) => (
-                <LibraryBeatRow
-                  key={beat.id}
-                  beat={beat}
-                  layout="list"
-                  playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
-                  selected={selectedId === beat.id}
-                  batchSelected={selectedIds.has(beat.id)}
-                  onToggleSelection={toggleSelectedId}
-                  onSelect={selectCard}
-                  onPlay={playOne}
-                  onContextMenu={openMenu}
-                  registerCard={registerCard}
-                />
-            ))}
-          </div>
+          <LibraryResults visible={visible} layout={layout} selectedId={selectedId} selectedIds={selectedIds}
+            revealId={revealId} scrollRef={scrollRef} onToggleSelection={toggleSelectedId} onSelect={selectCard}
+            onPlay={playOne} onContextMenu={openMenu} registerCard={registerCard} />
         )}
       </div>
 
       {selected ? (
-        <aside aria-label="Beat inspector" className="min-h-0 w-[300px] max-w-[39%] shrink-0 overflow-y-auto rounded-[10px] bg-surface">
+        <aside aria-label="Beat inspector" className="min-h-0 w-[300px] max-w-[39%] shrink-0 overflow-y-auto rounded-[2px] bg-surface">
           <PreviewTransport
           key={`preview-${selected.id}`}
           beat={selected}
@@ -680,7 +835,7 @@ export function LibraryView(): ReactNode {
 
       {menu && library.some(beat => beat.id === menu.id) ? createPortal(
         <div ref={menuRef} role="menu" aria-label="Beat actions" tabIndex={-1}
-          className="fixed z-[420] w-[208px] rounded-[12px] border border-line bg-surface p-1 shadow-pop"
+          className="fixed z-[420] w-[208px] rounded-[2px] border border-line bg-surface p-1 shadow-pop"
           style={{ left: menu.x, top: menu.y }}
           onKeyDown={event => {
             const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
@@ -694,17 +849,18 @@ export function LibraryView(): ReactNode {
             const beat = library.find(item => item.id === menu.id)!
             const item = (label: string, action: () => void | Promise<void>, disabled = false): ReactNode => (
               <button type="button" role="menuitem" disabled={disabled} key={label}
-                className="flex w-full rounded-[8px] px-2.5 py-2 text-left text-[12.5px] text-fg hover:bg-surface-2 focus:bg-surface-2 focus:outline-none disabled:opacity-40"
+                className="flex w-full rounded-[2px] px-2.5 py-2 text-left text-[13.5px] text-fg hover:bg-surface-2 focus:bg-surface-2 focus:outline-none disabled:opacity-40"
                 onClick={() => { setMenu(null); void Promise.resolve(action()).catch(error => toast({ kind: 'error', title: label, description: String(error) })) }}>
                 {label}
               </button>
             )
             return <>
               {item('Play this beat', () => playOne(beat.id), beat.missing)}
+              {item('Find compatible tracks', () => findCompatible(beat), beat.bpm == null && !beat.key && !beat.camelot)}
               {beat.missing || beat.fileAccessError ? item('Locate file…', () => locateFile(beat.id), pickingRecovery) : null}
-              {(beat.sourceKind === 'youtube' || beat.sourceKind === 'soundcloud') && beat.sourceUrl ? <>
-                {item(beat.sourceKind === 'soundcloud' ? 'Open on SoundCloud' : 'Open on YouTube', async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid source link is saved for this beat.') })}
-                {item('Refresh channel name', async () => { const refreshed = await ipc.invoke('library:refreshSource', beat.id); useApp.getState().setLibrarySnapshot(refreshed) })}
+              {providerById(beat.sourceKind) && beat.sourceUrl ? <>
+                {item(providerById(beat.sourceKind)!.openLabel, async () => { if (!await ipc.invoke('library:openSource', beat.id)) throw new Error('No valid source link is saved for this beat.') })}
+                {item('Refresh channel name', async () => { await ipc.invoke('library:refreshSource', beat.id) })}
               </> : null}
               {item(beat.fileOwnership === 'external' ? 'Rename in library…' : 'Rename beat and file…', () => { setRenameTarget(beat); setRenameTitle(beat.title); setRenameError('') })}
               {beat.fileOwnership === 'external' ? item('Export prepared copy…', () => {
@@ -762,7 +918,7 @@ export function LibraryView(): ReactNode {
         <label className="block text-[12px] font-medium text-fg-muted" htmlFor="local-export-preset">Audio format</label>
         <select id="local-export-preset" value={exportPresetId}
           onChange={event => setExportPresetId(event.target.value as PresetId)}
-          className="mt-1.5 h-9 w-full rounded-[9px] border border-line bg-surface-2 px-2.5 text-[13px] text-fg">
+          className="mt-1.5 h-9 w-full rounded-[2px] border border-line bg-surface-2 px-2.5 text-[13.5px] text-fg">
           {PRESETS.filter(preset => preset.id !== 'original').map(preset =>
             <option key={preset.id} value={preset.id}>{preset.label}</option>)}
         </select>
@@ -791,15 +947,118 @@ export function LibraryView(): ReactNode {
           setDeleteTarget(null)
         }}
       >
-        {deleteTarget?.fileOwnership !== 'external' ? <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
+        {deleteTarget?.fileOwnership !== 'external' ? <div className="flex items-center gap-2.5 rounded-[2px] border border-line bg-surface-2 px-3 py-2.5">
           <Switch checked={alsoDeleteFiles} onChange={setAlsoDeleteFiles} label="Also delete the files" />
-          <span className="text-[12.5px] text-fg-muted">Also delete the audio and sidecar</span>
+          <span className="text-[13.5px] text-fg-muted">Also delete the audio and sidecar</span>
         </div> : null}
         {deleteTarget ? (
-          <p className="mt-2 font-mono text-[10.5px] break-all text-fg-subtle">{deleteTarget.fileName}</p>
+          <p className="mt-2 font-mono text-[12px] break-all text-fg-subtle">{deleteTarget.fileName}</p>
         ) : null}
       </ConfirmDialog>
       {recoveryPlanId ? <RecoveryDialog planId={recoveryPlanId} onClose={() => setRecoveryPlanId(null)} /> : null}
     </div>
   )
 }
+
+interface LibraryResultsProps {
+  visible: LibraryBeat[]
+  layout: 'grid' | 'list'
+  selectedId: string | null
+  selectedIds: Set<string>
+  /** A displayed row to keep mounted even outside the rendered window. */
+  revealId: string | null
+  scrollRef: RefObject<HTMLDivElement | null>
+  onToggleSelection: (id: string) => void
+  onSelect: (event: ReactMouseEvent | ReactKeyboardEvent, beat: LibraryBeat) => void
+  onPlay: (id: string) => void
+  onContextMenu: (event: ReactMouseEvent, beat: LibraryBeat) => void
+  registerCard: (id: string, node: HTMLDivElement | null) => void
+}
+
+/**
+ * The result rows. Only this subtree follows playback status, so a status change
+ * renders the rows instead of the whole Library page. Large result sets are
+ * windowed: only rows in view, plus the row holding keyboard focus or a requested
+ * reveal, are mounted, each positioned by its index.
+ */
+const LibraryResults = memo(function LibraryResults({ visible, layout, selectedId, selectedIds, revealId, scrollRef,
+  onToggleSelection, onSelect, onPlay, onContextMenu, registerCard }: LibraryResultsProps): ReactNode {
+  const { beatId: playbackBeatId, status: playbackStatus } = usePlaybackIdentity()
+  const virtual = visible.length > VIRTUALIZE_AFTER
+  const grid = layout === 'grid'
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  // The CSS row height is the default; a mounted row's real height wins (zoom, fonts).
+  const [measured, setMeasured] = useState<{ layout: string; height: number } | null>(null)
+  const rowHeight = measured?.layout === layout ? measured.height : grid ? GRID_CARD_PX : LIST_ROW_PX
+  const pitch = rowHeight + (grid ? GRID_GAP_PX : 0)
+  useLayoutEffect(() => {
+    if (!virtual) return
+    const height = contentRef.current?.firstElementChild?.getBoundingClientRect().height ?? 0
+    if (height > 0 && Math.abs(height - rowHeight) > 0.5) setMeasured({ layout, height })
+  })
+  const windowed = useVirtualRows({ scrollRef, contentRef, items: visible.length, rowHeight: pitch,
+    minColumnWidth: grid ? GRID_MIN_COLUMN_PX : 0, gap: grid ? GRID_GAP_PX : 0, initialWidth: lastResultsWidth, enabled: virtual })
+  useEffect(() => { if (virtual && windowed.width > 0) lastResultsWidth = windowed.width }, [virtual, windowed.width])
+
+  const row = (beat: LibraryBeat): ReactNode => (
+    <LibraryBeatRow
+      key={beat.id}
+      beat={beat}
+      layout={layout}
+      playbackState={playbackBeatId === beat.id ? playbackStatus : undefined}
+      selected={selectedId === beat.id}
+      batchSelected={selectedIds.has(beat.id)}
+      onToggleSelection={onToggleSelection}
+      onSelect={onSelect}
+      onPlay={onPlay}
+      onContextMenu={onContextMenu}
+      registerCard={registerCard}
+    />
+  )
+  const header = (
+    <div aria-hidden="true" className="mb-1 flex h-8 items-center gap-3 border-b border-line px-2 text-[12px] text-fg-subtle">
+      <span className="w-[64px] shrink-0" />
+      <span className="min-w-0 flex-1">Track</span>
+      <span className="hidden w-14 shrink-0 text-right @min-[340px]:block">BPM</span>
+      <span className="hidden w-14 shrink-0 text-right @min-[380px]:block">Key</span>
+      <span className="hidden w-11 shrink-0 text-right @min-[480px]:block">Time</span>
+      <span className="hidden w-12 shrink-0 text-right @min-[620px]:block">Format</span>
+    </div>
+  )
+
+  if (!virtual) {
+    return grid ? (
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-2 pb-1">{visible.map(row)}</div>
+    ) : (
+      <div className="@container overflow-hidden">{header}{visible.map(row)}</div>
+    )
+  }
+
+  const { columns } = windowed
+  const pinned = [focusedId, revealId].flatMap(id => {
+    const index = id ? visible.findIndex(beat => beat.id === id) : -1
+    return index >= 0 ? [Math.floor(index / columns)] : []
+  })
+  const trackFocus = (event: ReactFocusEvent<HTMLDivElement>): void => {
+    const id = (event.target as HTMLElement).closest<HTMLElement>('[data-beat-id]')?.dataset.beatId ?? null
+    if (id !== focusedId) setFocusedId(id)
+  }
+  const releaseFocus = (event: ReactFocusEvent<HTMLDivElement>): void => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusedId(null)
+  }
+  const body = (
+    <div ref={contentRef} data-virtual-rows={visible.length} onFocus={trackFocus} onBlur={releaseFocus}
+      className="relative" style={{ height: Math.max(0, windowed.rows * pitch - (grid ? GRID_GAP_PX : 0)) }}>
+      {withPinned(windowed, pinned, windowed.rows).map(index => grid ? (
+        <div key={`row-${index}`} className="absolute inset-x-0 grid gap-2"
+          style={{ top: index * pitch, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+          {visible.slice(index * columns, index * columns + columns).map(row)}
+        </div>
+      ) : (
+        <div key={visible[index].id} className="absolute inset-x-0" style={{ top: index * pitch }}>{row(visible[index])}</div>
+      ))}
+    </div>
+  )
+  return grid ? <div className="pb-1">{body}</div> : <div className="@container overflow-hidden">{header}{body}</div>
+})

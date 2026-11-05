@@ -27,7 +27,8 @@ export function DownloadHarness() {
       editMode: 'success',
       releaseQueue: () => {},
       releaseEdit: () => {},
-      revise: (values: { bpm?: number; key?: string }) => setJob(current => ({ ...current, metadata: { ...current.metadata, final: { ...current.metadata.final, ...values } } }))
+      revise: (values: { bpm?: number; key?: string }) => setJob(current => ({ ...current, metadata: { ...current.metadata, final: { ...current.metadata.final, ...values } } })),
+      setStage: (stage: Job['stage']) => setJob(current => ({ ...current, stage }))
     }
     ;(window as unknown as { download: typeof controls }).download = controls
     useApp.setState({
@@ -35,6 +36,8 @@ export function DownloadHarness() {
         controls.queued.push(urls)
         if (controls.queueMode === 'barrier') await new Promise<void>(resolve => { controls.releaseQueue = resolve })
         if (controls.queueMode === 'failure') throw new Error('Queue write failed')
+        useApp.setState(state => ({ queue: { ...state.queue, jobs: [...state.queue.jobs,
+          ...urls.map(url => ({ ...fixture(), id: `queued-${state.queue.jobs.length}-${url}`, url }))] } }))
       },
       updateJob: async (_id, patch) => {
         controls.edits.push(patch)

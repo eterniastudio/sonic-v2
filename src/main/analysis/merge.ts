@@ -1,12 +1,13 @@
 import type { AudioAnalysis, KeyAnalysis, TempoAnalysis } from '@shared/analysis'
-import { ANALYSIS_ENGINE, deriveAnalysisStatus } from '@shared/analysis'
+import { ANALYSIS_ENGINE, ANALYSIS_PIPELINE, deriveAnalysisStatus } from '@shared/analysis'
 import type { AnalyzedValues } from '@shared/analysis'
 
 /**
  * Combining rules for multi-window analysis.
  *
  * Kept separate from the DSP so the merge policy is testable on its own and the
- * DSP stays a pure signal→estimate function.
+ * DSP stays a pure signal→estimate function. A rule change here changes stored
+ * results: bump `ANALYSIS_PIPELINE` (shared/analysis) with it.
  */
 
 /** Two key estimates are considered to agree when they name the same key. */
@@ -131,6 +132,7 @@ export function assembleAnalysis(input: AssembleInput): AudioAnalysis {
 
   return {
     engine: ANALYSIS_ENGINE,
+    pipeline: ANALYSIS_PIPELINE,
     inputId: input.inputId,
     inputName: input.inputName,
     analyzedAt: input.analyzedAt,

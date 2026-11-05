@@ -40,7 +40,7 @@ export function StepPipeline({
           <div key={step} className="flex items-center gap-1">
             <div
               className={cn(
-                'flex items-center gap-1.5 rounded-full px-2 py-1 text-[10.5px] font-medium transition-colors',
+                'flex items-center gap-1.5 rounded-full px-2 py-1 text-[12px] font-medium transition-colors',
                 'duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)]',
                 done && 'text-success',
                 active && !failed && 'bg-accent-soft text-accent',
@@ -96,7 +96,7 @@ export function MultiStepLoader({
   return (
     <div className="w-full">
       {title ? (
-        <div className="mb-4 text-[13px] font-medium tracking-tight text-fg">{title}</div>
+        <div className="mb-4 text-[13.5px] font-medium tracking-tight text-fg">{title}</div>
       ) : null}
 
       <ol className="space-y-1">
@@ -115,7 +115,7 @@ export function MultiStepLoader({
                 }}
                 transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
                 className={cn(
-                  'flex items-start gap-3 rounded-[10px] px-3 py-2.5',
+                  'flex items-start gap-3 rounded-[2px] px-3 py-2.5',
                   failed && 'bg-danger/10'
                 )}
               >
@@ -140,14 +140,14 @@ export function MultiStepLoader({
                 <span className="min-w-0">
                   <span
                     className={cn(
-                      'block text-[13px] font-medium',
+                      'block text-[13.5px] font-medium',
                       failed ? 'text-danger' : done || active ? 'text-fg' : 'text-fg-muted'
                     )}
                   >
                     {step.label}
                   </span>
                   {step.description ? (
-                    <span className="mt-0.5 block text-[11.5px] leading-relaxed text-fg-subtle">
+                    <span className="mt-0.5 block text-[12px] leading-relaxed text-fg-subtle">
                       {step.description}
                     </span>
                   ) : null}

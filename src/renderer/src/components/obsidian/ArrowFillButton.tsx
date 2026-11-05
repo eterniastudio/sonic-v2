@@ -24,7 +24,7 @@ export function ArrowFillButton({
       type="button"
       {...props}
       className={cn(
-        'group relative inline-flex h-9.5 select-none items-center gap-2 overflow-hidden rounded-[10px]',
+        'group relative inline-flex h-9.5 select-none items-center gap-2 overflow-hidden rounded-[2px]',
         'border border-line bg-surface-2 px-4 text-[13.5px] font-medium text-fg',
         'no-drag transition-colors duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)]',
         'hover:border-transparent hover:text-accent-fg active:scale-[0.985]',

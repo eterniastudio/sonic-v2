@@ -3,6 +3,7 @@ import { EventEmitter, once } from 'node:events'
 import * as fs from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import * as https from 'node:https'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
@@ -39,6 +40,8 @@ async function downloadFixture(t, respond, overrides = {}) {
     await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
   })
   const { downloadToFile, fetchText } = load('../src/main/lib/net.ts', {
+    './publicAddress': { publicLookup: () => {}, refuseLiteral: () => {} },
+    'node:https': https,
     'node:fs': overrides.fs ?? fs,
     'node:stream': streams,
     'node:stream/promises': streamPromises,
@@ -64,6 +67,33 @@ test('downloads stream exact bytes and report completion after closing the outpu
   assert.deepEqual(await readFile(f.destination), bytes)
   assert.deepEqual(progress.at(-1), [bytes.length, bytes.length])
   await unlink(f.destination) // A Windows handle left open would fail this operation.
+})
+
+test('a declared size over the caller limit is rejected before the destination is opened', async t => {
+  const f = await downloadFixture(t, (_request, response) => {
+    response.writeHead(200, { 'content-length': 50_000 })
+    response.end(Buffer.alloc(50_000))
+  })
+  await writeFile(f.destination, 'keep')
+  await assert.rejects(f.downloadToFile(f.url, f.destination, { maxBytes: 1024 }), /byte limit/)
+  assert.equal(await readFile(f.destination, 'utf8'), 'keep')
+})
+
+test('a stream that grows past the caller limit is cancelled and its partial file is removed', async t => {
+  const f = await downloadFixture(t, (_request, response) => {
+    response.writeHead(200)
+    response.end(Buffer.alloc(100, 1))
+  })
+  await assert.rejects(f.downloadToFile(f.url, f.destination, { maxBytes: 32 }), /byte limit/)
+  assert.equal(fs.existsSync(f.destination), false)
+})
+
+test('public-only downloads refuse non-https links and links with credentials or custom ports', async t => {
+  const f = await downloadFixture(t, (_request, response) => response.end('nope'))
+  await assert.rejects(f.downloadToFile(f.url, f.destination, { publicOnly: true }), /non-https/)
+  await assert.rejects(f.downloadToFile('https://user:pass@cdn.example.com/a.jpg', f.destination, { publicOnly: true }), /credentials or a custom port/)
+  await assert.rejects(f.downloadToFile('https://cdn.example.com:8443/a.jpg', f.destination, { publicOnly: true }), /credentials or a custom port/)
+  assert.equal(fs.existsSync(f.destination), false)
 })
 
 test('an already cancelled download makes no request and leaves the destination untouched', async t => {
@@ -167,7 +197,7 @@ function engineFixture(overrides = {}) {
       readdirSync: () => ['ffmpeg.exe', 'ffprobe.exe'], statSync: () => ({ isFile: () => true, isDirectory: () => false }) },
     'node:path': path,
     '../lib/net': {
-      fetchText: overrides.fetchText ?? (async () => `${checksum}  yt-dlp.exe`),
+      fetchText: overrides.fetchText ?? (async () => `${checksum}  yt-dlp.exe\n${checksum}  ffmpeg-master-latest-win64-gpl.zip`),
       downloadToFile: async (...args) => { downloads.push(args) }
     },
     '../lib/child': { run: async (...args) => { runs.push(args); return overrides.run ? overrides.run(...args) : result } },

@@ -33,7 +33,7 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-const sourceUrls = load('../src/shared/url.ts', {})
+const sourceUrls = load('../src/shared/url.ts', { './providers': load('../src/shared/providers.ts', {}) })
 
 async function until(predicate) {
   for (let turn = 0; turn < 100; turn += 1) {
@@ -144,15 +144,15 @@ function queueFixture(t, jobs = [job('a')], overrides = {}) {
     },
     '@shared/analysis': { analyzedValuesFrom: () => ({}) }, '../analysis/service': { analysisService: analyzer },
     '@shared/url': sourceUrls,
-    '../lib/jsonStore': { JsonStore: class { read() { return { version: 1, paused: false, concurrency: 2, jobs } } write() {} } },
+    '../lib/jsonStore': { JsonStore: class { read() { return { version: 1, paused: false, concurrency: 2, jobs } } write() {} }, storageEvents: { on() {} } },
     '../lib/id': { createId: () => 'new-job' }, '../lib/fsx': { sha256File: async () => 'fingerprint' },
     './acquire': {
       async acquireAudio(id, url, options) {
         downloads.push({ id, url, signal: options.signal })
         return overrides.acquire ? overrides.acquire(id, options.signal) : { filePath: '/isolated/input.wav', extension: 'wav' }
-      }, cleanStaging: async () => {}
+      }, cleanStaging: async () => {}, sweepStaging: async () => {}
     },
-    './cover': { fetchCover: async () => null },
+    './cover': { fetchCover: async () => null, forgetCover: async () => undefined, pruneCovers: async () => 0 },
     './engine': { engineService: { resolve: async () => ({ version: 'test' }) } },
     './ffprobe': {
       async readEmbeddedMetadata(filePath, signal) {
@@ -164,13 +164,13 @@ function queueFixture(t, jobs = [job('a')], overrides = {}) {
         return overrides.readOutput ? overrides.readOutput(signal) : { tags: {}, durationSec: 12, sizeBytes: 20, container: 'mp3', audio: null }
       }, tagsToMetadata: () => ({})
     },
-    './library': { libraryService: { scheduleRescan() {}, list: () => overrides.library ?? [] } },
+    './library': { libraryService: { scheduleRescan() {}, on() {}, assertWritable() {}, pendingRevision: () => null, get: () => null, list: () => overrides.library ?? [] } },
     './paths': { queueFile: () => '/isolated/queue.json', stagingDir: () => '/isolated/staging' },
     './probe': { async probeUrl(url, signal) {
       probes.push({ url, signal })
       return overrides.probe ? overrides.probe(signal) : { title: 'Source', error: null, durationSec: 12 }
     } },
-    './publish': { buildTagContext: () => ({}), async publishExport(options) { publications.push(options); return { filePath: '/isolated/out.mp3', beat: { id: 'saved' }, fileName: 'out.mp3' } } },
+    './publish': { buildTagContext: () => ({}), PendingPublicationError: class extends Error {}, async publishExport(options) { publications.push(options); return { filePath: '/isolated/out.mp3', beat: { id: 'saved' }, fileName: 'out.mp3' } } },
     './settings': { settingsService: { get: () => settings } },
     './transcode': { sourceExtensionFor: () => 'mp3', transcode: async () => {} }
   })
@@ -323,6 +323,7 @@ for (const target of ['acquire', 'transcode', 'probe']) {
     let result
     if (target === 'acquire') {
       const service = load('../src/main/services/acquire.ts', {
+        '../lib/publicAddress': { assertPublicUrl: async () => {}, guardedYtDlpArgs: async () => [] },
         ...common, 'node:fs/promises': {}, 'node:path': path, '../lib/fsx': {},
         './probe': {}, './paths': {}, './settings': {}, '@shared/url': sourceUrls
       })
@@ -334,6 +335,7 @@ for (const target of ['acquire', 'transcode', 'probe']) {
       result = service.transcode({ signal: controller.signal })
     } else {
       const service = load('../src/main/services/probe.ts', {
+    '../lib/publicAddress': { assertPublicUrl: async () => {}, guardedYtDlpArgs: async () => [] },
         ...common, '@shared/url': { parseVideoUrl: () => ({ ok: true, normalized: 'https://example.invalid', videoId: 'a' }) }, './settings': {}
       })
       result = service.probeUrl('https://example.invalid', controller.signal)
@@ -349,6 +351,7 @@ test('URL probe preserves its cancelled outcome during shared ffmpeg resolution'
   const controller = new AbortController()
   const resolutions = []
   const service = load('../src/main/services/probe.ts', {
+    '../lib/publicAddress': { assertPublicUrl: async () => {}, guardedYtDlpArgs: async () => [] },
     '@shared/url': { parseVideoUrl: () => ({ ok: true, normalized: 'https://example.invalid', videoId: 'a' }) },
     './settings': { settingsService: { get: () => ({ cookiesFromBrowser: 'none' }) } },
     './engine': { engineService: { async resolve(name, force, signal) {
@@ -366,6 +369,7 @@ test('URL probe preserves its cancelled outcome during shared ffmpeg resolution'
 test('queue shutdown during probe ffmpeg resolution leaves the interrupted job ready for retry', async t => {
   let resolvingFfmpeg = false
   const probeService = load('../src/main/services/probe.ts', {
+    '../lib/publicAddress': { assertPublicUrl: async () => {}, guardedYtDlpArgs: async () => [] },
     '@shared/url': { parseVideoUrl: () => ({ ok: true, normalized: 'https://example.invalid', videoId: 'a' }) },
     './settings': { settingsService: { get: () => ({ cookiesFromBrowser: 'none' }) } },
     './engine': { engineService: { async resolve(name, force, signal) {
@@ -410,7 +414,7 @@ for (const phase of ['source', 'readback']) {
         }
         return { durationSec: 12 }
       }, tagsToMetadata: () => ({}) },
-      './library': { libraryService: { get: () => ({ id: 'a', filePath: '/isolated/source.wav', fingerprint: 'saved' }) } },
+      './library': { libraryService: { pendingRevision: () => null, get: () => ({ id: 'a', filePath: '/isolated/source.wav', fingerprint: 'saved' }) } },
       './paths': { stagingDir: () => '/isolated/staging', libraryFile: () => '/isolated/library.json' },
       './publish': { buildTagContext: () => ({}), PendingPublicationError: class extends Error {}, publishExport: () => assert.fail('Cancelled re-export published output') },
       './settings': { settingsService: { get: () => ({}) } },

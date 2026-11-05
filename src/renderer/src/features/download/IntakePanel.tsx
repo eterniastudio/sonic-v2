@@ -14,6 +14,8 @@ import { Switch } from '@/components/ui/Switch'
 import { Dropdown, DropdownItem, DropdownLabel } from '@/components/ui/Dropdown'
 import { toast } from '@/components/ui/Toaster'
 
+const QUEUE_ADD_LIMIT = 1000
+
 /** Link composer with a single queue action and persistent export defaults. */
 export function IntakePanel(): ReactNode {
   const [text, setText] = useState('')
@@ -31,7 +33,8 @@ export function IntakePanel(): ReactNode {
   const addUrls = useApp((state) => state.addUrls)
   const settings = useApp((state) => state.settings)
   const patchSettings = useApp((state) => state.patchSettings)
-  const parsed = useMemo(() => extractIntakeUrls(text), [text])
+  const allowOtherSites = settings.allowOtherSites === true
+  const parsed = useMemo(() => extractIntakeUrls(text, { allowOtherSites }), [text, allowOtherSites])
   const acceptedCount = parsed.tracks.length + parsed.playlists.length
   const preset = PRESETS.find((entry) => entry.id === settings.defaultPresetId) ?? PRESETS[0]
 
@@ -64,13 +67,19 @@ export function IntakePanel(): ReactNode {
         setReview({ tracks: [...tracks.values()], summary: summaries.join(' · '), text: submittedText })
         return
       }
-      await addUrls([submittedText])
+      // Send the parsed links, never the raw paste: main caps each entry at 4,096
+      // characters and each call at 1,000 entries.
+      const urls = parsed.tracks.flatMap(track => track.normalized ? [track.normalized] : [])
+      const before = new Set(useApp.getState().queue.jobs.map(job => job.id))
+      for (let index = 0; index < urls.length; index += QUEUE_ADD_LIMIT) await addUrls(urls.slice(index, index + QUEUE_ADD_LIMIT))
+      const added = useApp.getState().queue.jobs.filter(job => !before.has(job.id)).length
+      const skipped = urls.length - added
       toast({
-        kind: 'success',
-        title: `Queued ${acceptedCount} link${acceptedCount === 1 ? '' : 's'}`,
-        description: autoStart
+        kind: added ? 'success' : 'info',
+        title: added ? `Queued ${added} link${added === 1 ? '' : 's'}` : 'Already in the queue',
+        description: `${skipped > 0 ? `${skipped} link${skipped === 1 ? ' was' : 's were'} already queued. ` : ''}${added === 0 ? '' : autoStart
           ? 'Inspecting and downloading now.'
-          : 'Review the metadata, then start the download.'
+          : 'Review the metadata, then start the download.'}`.trim()
       })
       // A slow queue request must not discard the user's next batch of links.
       setText((current) => current === submittedText ? '' : current)
@@ -120,7 +129,7 @@ export function IntakePanel(): ReactNode {
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
           className={cn(
-            'relative rounded-[8px] border border-line bg-surface transition-colors focus-within:border-line-strong',
+            'relative rounded-[2px] border border-line bg-surface transition-colors focus-within:border-line-strong',
             dragging && 'border-line-strong bg-surface-2'
           )}
         >
@@ -137,9 +146,9 @@ export function IntakePanel(): ReactNode {
             }}
             rows={2}
             spellCheck={false}
-            placeholder="Paste YouTube videos, YouTube playlists, or SoundCloud tracks."
+            placeholder="Paste links from YouTube, SoundCloud, Bandcamp, Vimeo, Mixcloud and more, or a direct audio file."
             className={cn(
-              'min-h-[54px] rounded-none border-0 bg-transparent px-3 pt-3 pb-1 text-[13px] leading-relaxed focus:bg-transparent focus:shadow-none',
+              'min-h-[54px] rounded-none border-0 bg-transparent px-3 pt-3 pb-1 text-[13.5px] leading-relaxed focus:bg-transparent focus:shadow-none',
               shakeKey > 0 && acceptedCount === 0 && 't-input is-shaking is-error'
             )}
           />
@@ -156,7 +165,7 @@ export function IntakePanel(): ReactNode {
               <Button variant="ghost" size="xs" leading={<X />} onClick={() => setText('')}>Clear</Button>
             ) : null}
             <span className="flex-1" />
-            <span className="mr-2 hidden text-[11px] text-fg-subtle min-[1350px]:block" aria-hidden>
+            <span className="mr-2 hidden text-[12px] text-fg-subtle min-[1350px]:block" aria-hidden>
               <kbd className="font-sans">Ctrl</kbd> + <kbd className="font-sans">Enter</kbd>
             </span>
             <StatefulButton
@@ -166,24 +175,24 @@ export function IntakePanel(): ReactNode {
               loadingLabel={parsed.playlists.length ? 'Reading playlists…' : 'Queueing…'}
               successLabel={parsed.playlists.length ? 'Ready to review' : 'Queued'}
               size="sm"
-              className="h-7 rounded-[4px] px-2.5 text-[11.5px] shadow-none"
+              className="h-7 rounded-[2px] px-2.5 text-[12px] shadow-none"
             >
               {parsed.playlists.length ? 'Review playlists' : 'Add to queue'}
             </StatefulButton>
           </div>
           {dragging ? (
-            <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[8px] bg-surface/95 text-[13px] font-medium text-fg">Drop links here</div>
+            <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[2px] bg-surface/95 text-[13.5px] font-medium text-fg">Drop links here</div>
           ) : null}
         </div>
 
         {parsed.rejected.length > 0 ? (
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5" role="status">
             <TriangleAlert className="size-3.5 shrink-0 text-warning" />
-            <span className="text-[11.5px] text-fg-muted">Skipped:</span>
+            <span className="text-[12px] text-fg-muted">Skipped:</span>
             {parsed.rejected.slice(0, 4).map((token) => (
-              <span key={token} className="max-w-[190px] truncate rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[10.5px] text-fg-subtle" title={token}>{token}</span>
+              <span key={token} className="max-w-[190px] truncate rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[12px] text-fg-subtle" title={token}>{token}</span>
             ))}
-            {parsed.rejected.length > 4 ? <span className="text-[11px] text-fg-subtle">+{parsed.rejected.length - 4} more</span> : null}
+            {parsed.rejected.length > 4 ? <span className="text-[12px] text-fg-subtle">+{parsed.rejected.length - 4} more</span> : null}
           </div>
         ) : null}
       </div>
@@ -200,11 +209,11 @@ export function IntakePanel(): ReactNode {
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5">
         <div className="flex items-center gap-1">
-          <span className="text-[11.5px] text-fg-subtle">Export as</span>
+          <span className="text-[12px] text-fg-subtle">Export as</span>
           <Dropdown
             align="start"
             trigger={({ toggle }) => (
-              <Button variant="ghost" size="xs" onClick={toggle} title="Default export format" trailing={<ChevronDown />} className="h-6 px-1.5 text-[11.5px] text-fg-muted">
+              <Button variant="ghost" size="xs" onClick={toggle} title="Default export format" trailing={<ChevronDown />} className="h-6 px-1.5 text-[12px] text-fg-muted">
                 {preset.label}
               </Button>
             )}
@@ -227,9 +236,9 @@ export function IntakePanel(): ReactNode {
             )}
           </Dropdown>
         </div>
-        {acceptedCount > 0 ? <span className="text-[11.5px] text-fg-subtle" role="status">{acceptedCount} ready</span> : null}
+        {acceptedCount > 0 ? <span className="text-[12px] text-fg-subtle" role="status">{acceptedCount} ready</span> : null}
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[11.5px] text-fg-subtle">Auto-start</span>
+          <span className="text-[12px] text-fg-subtle">Auto-start</span>
           <Switch checked={settings.autoStart} onChange={(next) => void patchSettings({ autoStart: next })} label="Start downloads automatically" />
         </div>
       </div>

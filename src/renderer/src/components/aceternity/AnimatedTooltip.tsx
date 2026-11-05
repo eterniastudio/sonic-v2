@@ -63,7 +63,7 @@ export function AnimatedTooltip({
               pointerEvents: 'none'
             }}
             className={cn(
-              'z-[150] w-[268px] overflow-hidden rounded-[12px] border border-line bg-surface shadow-pop',
+              'z-[150] w-[268px] overflow-hidden rounded-[2px] border border-line bg-surface shadow-pop',
               contentClassName
             )}
           >

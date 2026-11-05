@@ -20,7 +20,8 @@ import { formatBitrate, formatBpm, formatBytes, formatChannelCount, formatDurati
 import { ipc } from '@/lib/ipc'
 import { useIpcEvent, useNow } from '@/lib/hooks'
 import { useApp } from '@/store/app'
-import { TrackArtwork } from '@/components/audio/TrackArtwork'
+import { ProvenanceValue } from '@/components/audio/Provenance'
+import { LabelDisc } from '@/components/audio/LabelDisc'
 import { Badge } from '@/components/ui/Badge'
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/Dropdown'
 import { Button, IconButton } from '@/components/ui/Button'
@@ -93,35 +94,35 @@ export function PreviewTransport({
         <IconButton label="Close preview" size="icon-xs" onClick={onClose}><X /></IconButton>
       </div>
       <div className="[@media(max-height:760px)]:flex [@media(max-height:760px)]:items-start [@media(max-height:760px)]:gap-3">
-        <TrackArtwork thumbnail={beat.thumbnail} sourceUrl={beat.sourceUrl} title={beat.title} className="mb-3.5 h-[140px] w-full rounded-[5px] [@media(max-height:760px)]:mb-0 [@media(max-height:760px)]:size-[72px]" iconClassName="size-7" />
+        <LabelDisc beat={beat} origins={{ bpm: bpmDecision.origin, key: keyDecision.origin }} className="mx-auto mb-4 w-[176px] [@media(max-height:760px)]:mx-0 [@media(max-height:760px)]:mb-0 [@media(max-height:760px)]:w-[76px] [@media(max-height:760px)]:shrink-0" />
         <div className="min-w-0">
-          <h2 title={beat.title} className="text-[17px] leading-[1.35] font-semibold tracking-[-0.02em] break-words text-fg [@media(max-height:760px)]:line-clamp-3 [@media(max-height:760px)]:text-[15px] [@media(max-height:760px)]:leading-[1.3]">{beat.title}</h2>
-          <p className="mt-1.5 text-[12.5px] leading-snug text-fg-muted [@media(max-height:760px)]:mt-1 [@media(max-height:760px)]:truncate [@media(max-height:760px)]:text-[12px]">{beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')}</p>
+          <h2 title={beat.title} className="text-[20px] leading-[1.2] font-bold [font-stretch:85%] break-words text-fg [@media(max-height:760px)]:line-clamp-3 [@media(max-height:760px)]:text-[16px] [@media(max-height:760px)]:leading-[1.3]">{beat.title}</h2>
+          <p className="mt-1.5 text-[13.5px] leading-snug text-fg-muted [@media(max-height:760px)]:mt-1 [@media(max-height:760px)]:truncate [@media(max-height:760px)]:text-[12px]">{beat.producer || beat.sourceChannel || (beat.sourceKind === 'local' ? 'Local audio' : 'Unknown channel')}</p>
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-subtle nums">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12px] text-fg-subtle nums">
         <span>{beat.format.toUpperCase()}</span><span>·</span><span>{formatDuration(beat.durationSec)}</span><span>·</span><span>{formatBytes(beat.sizeBytes)}</span>
       </div>
       {beat.missing || beat.fileAccessError ? <div className="mt-3 space-y-2">
-        <p className="text-[11px] leading-relaxed text-warning">{beat.fileAccessError ? `Audio file is unavailable: ${beat.fileAccessError}` : 'Audio file is missing. Locate the same file to keep this library entry and its metadata.'}</p>
-        <p className="select-text break-all font-mono text-[10px] text-fg-subtle" title={beat.filePath}>{beat.filePath}</p>
+        <p className="text-[12px] leading-relaxed text-warning">{beat.fileAccessError ? `Audio file is unavailable: ${beat.fileAccessError}` : 'Audio file is missing. Locate the same file to keep this library entry and its metadata.'}</p>
+        <p className="select-text break-all font-mono text-[12px] text-fg-subtle" title={beat.filePath}>{beat.filePath}</p>
         {onLocateFile ? <Button size="sm" variant="secondary" onClick={onLocateFile}>Locate file…</Button> : null}
       </div> : null}
-      {beat.recoveryInfo ? <div className="mt-3 space-y-1 text-[11px] text-fg-muted">
+      {beat.recoveryInfo ? <div className="mt-3 space-y-1 text-[12px] text-fg-muted">
         <p>{beat.recoveryInfo.sidecar === 'unresolved' ? 'Audio reconnected; sidecar unresolved.' : 'Audio reconnected.'}</p>
-        <p className="select-text break-all font-mono text-[10px]" title={beat.filePath}>{beat.filePath}</p>
+        <p className="select-text break-all font-mono text-[12px]" title={beat.filePath}>{beat.filePath}</p>
         {beat.recoveryInfo.ownership === 'read-only' ? <p>This file remains read-only. Metadata changes stay in your library; export a prepared copy when needed.</p> : null}
       </div> : null}
 
       <dl className="my-4 grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-x-5 border-y border-line py-3.5 [@media(max-height:760px)]:my-2 [@media(max-height:760px)]:gap-x-4 [@media(max-height:760px)]:py-2">
         <div className="min-w-0 [@media(max-height:760px)]:grid [@media(max-height:760px)]:grid-cols-[auto_minmax(0,1fr)]">
-          <dt className="text-[11px] text-fg-subtle">Tempo</dt>
-          <dd className="mt-1 text-[21px] leading-tight font-medium tracking-[-0.025em] text-fg nums [@media(max-height:760px)]:col-span-2">{beat.bpm != null ? formatBpm(beat.bpm) : '—'}<span className="ml-1.5 text-[11px] font-normal tracking-normal text-fg-muted">BPM</span></dd>
+          <dt className="text-[12px] text-fg-subtle">Tempo</dt>
+          <dd className="mt-1 text-[28px] leading-tight text-fg [@media(max-height:760px)]:col-span-2"><ProvenanceValue value={beat.bpm != null ? formatBpm(beat.bpm) : null} origin={bpmDecision.origin} confidence={bpmDecision.origin === 'audio' ? beat.analysis?.tempo.confidence : null} /><span className="ml-1.5 text-[12px] font-normal tracking-normal text-fg-muted">BPM</span></dd>
           {beat.bpm != null ? <dd className="mt-1 [@media(max-height:760px)]:col-start-2 [@media(max-height:760px)]:row-start-1 [@media(max-height:760px)]:mt-0 [@media(max-height:760px)]:justify-self-end"><OriginMark origin={bpmDecision.origin} /></dd> : null}
         </div>
         <div className="min-w-0 [@media(max-height:760px)]:grid [@media(max-height:760px)]:grid-cols-[auto_minmax(0,1fr)]">
-          <dt className="text-[11px] text-fg-subtle">Key</dt>
-          <dd className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[16px] leading-tight font-medium tracking-[-0.015em] text-fg [@media(max-height:760px)]:col-span-2 [@media(max-height:760px)]:mt-1">{beat.key || '—'}{beat.camelot ? <span className="text-[11px] font-normal tracking-normal text-fg-muted">{beat.camelot}</span> : null}</dd>
+          <dt className="text-[12px] text-fg-subtle">Key</dt>
+          <dd className="mt-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[20px] leading-tight text-fg [@media(max-height:760px)]:col-span-2 [@media(max-height:760px)]:mt-1"><ProvenanceValue value={beat.key || null} origin={keyDecision.origin} confidence={keyDecision.origin === 'audio' ? beat.analysis?.key.confidence : null} />{beat.camelot ? <span className="text-[12px] font-normal tracking-normal text-fg-muted">{beat.camelot}</span> : null}</dd>
           {beat.key ? <dd className="mt-1.5 [@media(max-height:760px)]:col-start-2 [@media(max-height:760px)]:row-start-1 [@media(max-height:760px)]:mt-0 [@media(max-height:760px)]:justify-self-end"><OriginMark origin={keyDecision.origin} /></dd> : null}
         </div>
       </dl>
@@ -144,11 +145,11 @@ export function PreviewTransport({
         </Dropdown>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1">
-        <Tooltip label="Tap along to set the tempo"><button type="button" onClick={tap} className="flex h-8 items-center gap-1.5 rounded-[7px] px-2 text-[11px] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"><Timer className="size-3.5" />Tap tempo</button></Tooltip>
-        {tapBpm != null ? <button type="button" onClick={() => applyBpm(tapBpm)} className="h-7 rounded-[6px] bg-accent-soft px-2 text-[11px] font-medium text-accent" title="Apply the tapped tempo to this beat">Use {tapBpm}</button> : null}
+        <Tooltip label="Tap along to set the tempo"><button type="button" onClick={tap} className="flex h-8 items-center gap-1.5 rounded-[2px] px-2 text-[12px] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"><Timer className="size-3.5" />Tap tempo</button></Tooltip>
+        {tapBpm != null ? <button type="button" onClick={() => applyBpm(tapBpm)} className="h-7 rounded-[2px] bg-accent-soft px-2 text-[12px] font-medium text-accent" title="Apply the tapped tempo to this beat">Use {tapBpm}</button> : null}
         <span className="flex-1" />
-        <Tooltip label="Halve the tempo"><IconButton label="Halve the tempo" size="icon-sm" disabled={beat.bpm == null || beat.bpm / 2 < MIN_BPM} onClick={() => applyBpm((beat.bpm ?? 0) / 2)}><span className="text-[11px] font-medium">½</span></IconButton></Tooltip>
-        <Tooltip label="Double the tempo"><IconButton label="Double the tempo" size="icon-sm" disabled={beat.bpm == null || beat.bpm * 2 > MAX_BPM} onClick={() => applyBpm((beat.bpm ?? 0) * 2)}><span className="text-[11px] font-medium">2×</span></IconButton></Tooltip>
+        <Tooltip label="Halve the tempo"><IconButton label="Halve the tempo" size="icon-sm" disabled={beat.bpm == null || beat.bpm / 2 < MIN_BPM} onClick={() => applyBpm((beat.bpm ?? 0) / 2)}><span className="text-[12px] font-medium">½</span></IconButton></Tooltip>
+        <Tooltip label="Double the tempo"><IconButton label="Double the tempo" size="icon-sm" disabled={beat.bpm == null || beat.bpm * 2 > MAX_BPM} onClick={() => applyBpm((beat.bpm ?? 0) * 2)}><span className="text-[12px] font-medium">2×</span></IconButton></Tooltip>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
@@ -157,10 +158,10 @@ export function PreviewTransport({
         <AnalyzeButton beat={beat} />
       </div>
       <MetadataCorrection key={beat.id} beat={beat} />
-      {libraryStorage?.error ? <p role="alert" className="mt-3 text-[11px] leading-relaxed text-danger">Library changes could not be saved. {libraryStorage.error}</p> : null}
-      <details className="mt-3 border-t border-line pt-3 text-[11px] text-fg-muted">
+      {libraryStorage?.error ? <p role="alert" className="mt-3 text-[12px] leading-relaxed text-danger">Library changes could not be saved. {libraryStorage.error}</p> : null}
+      <details className="mt-3 border-t border-line pt-3 text-[12px] text-fg-muted">
         <summary className="cursor-pointer font-medium text-fg-muted marker:text-fg-subtle">File &amp; metadata</summary>
-        <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-[11px]">
+        <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-[12px]">
           <dt className="text-fg-subtle">Added</dt><dd className="text-right">{formatRelativeTime(beat.addedAt, now)}</dd>
           {beat.sampleRate ? <><dt className="text-fg-subtle">Sample rate</dt><dd className="text-right nums">{formatSampleRate(beat.sampleRate)}</dd></> : null}
           {beat.bitrateKbps ? <><dt className="text-fg-subtle">Bitrate</dt><dd className="text-right nums">{formatBitrate(beat.bitrateKbps)}</dd></> : null}
@@ -168,7 +169,7 @@ export function PreviewTransport({
           <dt className="text-fg-subtle">Preset</dt><dd className="text-right break-words">{beat.presetId}</dd>
           {beat.detune != null && beat.detune !== 0 ? <><dt className="text-fg-subtle">Detune</dt><dd className="text-right nums">{beat.detune > 0 ? '+' : ''}{beat.detune} ¢</dd></> : null}
         </dl>
-        <p className="mt-3 break-all font-mono text-[10px] text-fg-subtle">{beat.fileName}</p>
+        <p className="mt-3 break-all font-mono text-[12px] text-fg-subtle">{beat.fileName}</p>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {beat.fileOwnership === 'external' ? <Badge size="sm" tone="outline">{beat.recoveryInfo ? 'read-only file' : 'local original'}</Badge> : null}
           {beat.overrides.length > 0 ? <Badge size="sm" tone="accent">{beat.overrides.length} manual</Badge> : null}
@@ -177,7 +178,7 @@ export function PreviewTransport({
           <Badge size="sm" tone={tags === 'current' ? 'success' : tags === 'unknown' ? 'neutral' : 'warning'}>{tags === 'current' ? 'audio tags match' : tags === 'absent' ? 'audio tags absent' : tags === 'out-of-sync' ? 'audio tags need re-export' : 'audio tags unverified'}</Badge>
         </div>
       </details>
-      {beat.analysis && beat.analysis.warnings.length > 0 ? <ul className="mt-3 space-y-1">{beat.analysis.warnings.map(warning => <li key={warning} className="flex gap-1.5 text-[11px] leading-relaxed text-warning"><TriangleAlert className="mt-0.5 size-3 shrink-0" /><span className="min-w-0">{warning}</span></li>)}</ul> : null}
+      {beat.analysis && beat.analysis.warnings.length > 0 ? <ul className="mt-3 space-y-1">{beat.analysis.warnings.map(warning => <li key={warning} className="flex gap-1.5 text-[12px] leading-relaxed text-warning"><TriangleAlert className="mt-0.5 size-3 shrink-0" /><span className="min-w-0">{warning}</span></li>)}</ul> : null}
     </div>
   )
 }
@@ -187,7 +188,7 @@ function OriginMark({ origin }: { origin: FieldOrigin }): ReactNode {
   return (
     <span
       title={origin === 'legacy' ? 'Origin was not saved for this older record' : `Source: ${label}`}
-      className="inline-block text-[10.5px] leading-none text-fg-subtle capitalize"
+      className="inline-block text-[12px] leading-none text-fg-subtle capitalize"
     >
       {label}
     </span>
@@ -232,7 +233,7 @@ function AnalyzeButton({ beat }: { beat: LibraryBeat }): ReactNode {
       <button
         type="button"
         onClick={() => void cancelAnalysis(beat.id)}
-        className="h-7 rounded-[8px] border border-line bg-surface-2 px-2.5 text-[11.5px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg"
+        className="h-7 rounded-[2px] border border-line bg-surface-2 px-2.5 text-[12px] text-fg-muted transition-colors duration-[var(--duration-quick)] hover:border-line-strong hover:text-fg"
       >
         Cancel analysis
       </button>
@@ -255,11 +256,32 @@ function AnalyzeButton({ beat }: { beat: LibraryBeat }): ReactNode {
           }
         }).catch(error => toast({ kind: 'error', title: 'Analysis could not start', description: String(error) }))
       }}
-      className="h-7 rounded-[6px] px-2 text-[11px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+      className="h-7 rounded-[2px] px-2 text-[12px] font-medium text-fg-muted transition-colors duration-[var(--duration-quick)] hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
     >
       {reanalyze ? 'Re-analyze' : 'Analyze audio'}
     </button>
   )
+}
+
+type CorrectionDraft = { bpm: string | null; key: string | null }
+
+/** Validates a typed draft into the patch the library accepts. */
+function correctionPatch(draft: CorrectionDraft): { patch: { bpm?: number | null; key?: string | null } } | { field: 'bpm' | 'key'; error: string } {
+  const patch: { bpm?: number | null; key?: string | null } = {}
+  if (draft.bpm !== null) {
+    const value = draft.bpm.trim()
+    if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < MIN_BPM || Number(value) > MAX_BPM)) {
+      return { field: 'bpm', error: `Tempo must be ${MIN_BPM}–${MAX_BPM} BPM.` }
+    }
+    patch.bpm = value === '' ? null : Number(value)
+  }
+  if (draft.key !== null) {
+    const value = draft.key.trim()
+    const parsed = parseKeyString(value)
+    if (value !== '' && !parsed) return { field: 'key', error: 'Enter a key with its mode (for example F# minor) or a Camelot code (11A).' }
+    patch.key = parsed?.key ?? null
+  }
+  return { patch }
 }
 
 export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
@@ -274,7 +296,7 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
   // null means untouched; an empty string is an intentional manual clearing.
   // Read untouched values directly from the latest record so an analysis update
   // cannot freeze the other field or accidentally turn it into an override.
-  const [draft, setDraft] = useState<{ bpm: string | null; key: string | null }>({ bpm: null, key: null })
+  const [draft, setDraft] = useState<CorrectionDraft>({ bpm: null, key: null })
   const bpm = draft.bpm ?? (beat.bpm == null ? '' : String(beat.bpm))
   const key = draft.key ?? beat.key ?? ''
   const dirty = draft.bpm !== null || draft.key !== null
@@ -286,28 +308,36 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
   const analysis = beat.analysis?.key
   const candidates = [...new Set([analysis?.key, ...(analysis?.alternatives.map(candidate => candidate.key) ?? [])]
     .filter((candidate): candidate is string => Boolean(candidate)))].slice(0, 4)
-  const save = async (action?: { kind: 'reset' | 'measured'; field: 'bpm' | 'key' }): Promise<void> => {
+  const mounted = useRef(true)
+  const latest = useRef({ draft, update })
+  useEffect(() => { latest.current = { draft, update } })
+  useEffect(() => {
+    mounted.current = true
+    const beatId = beat.id
+    // Selecting another track or closing the inspector saves a valid draft; an
+    // in-flight save already carries it, and an invalid one is reported.
+    return () => {
+      mounted.current = false
+      const { draft: unsaved, update: commit } = latest.current
+      if (pendingRef.current || (unsaved.bpm === null && unsaved.key === null)) return
+      latest.current = { ...latest.current, draft: { bpm: null, key: null } }
+      const result = correctionPatch(unsaved)
+      if ('error' in result) { toast({ kind: 'error', title: 'BPM / key correction was not saved', description: result.error }); return }
+      void commit(beatId, result.patch).catch(failure => toast({ kind: 'error', title: 'BPM / key correction was not saved', description: String(failure) }))
+    }
+  }, [beat.id])
+  const save = async (action?: { kind: 'reset' | 'measured'; field: 'bpm' | 'key' }, quiet = false): Promise<void> => {
     if (pendingRef.current) return
     setInvalidField(null); setFeedback('')
-    const patch: { bpm?: number | null; key?: string | null } = {}
-    if (!action && draft.bpm !== null) {
-      const value = draft.bpm.trim()
-      if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < MIN_BPM || Number(value) > MAX_BPM)) {
-        setError(`Tempo must be ${MIN_BPM}–${MAX_BPM} BPM.`)
-        setInvalidField('bpm'); bpmRef.current?.focus()
+    let patch: { bpm?: number | null; key?: string | null } = {}
+    if (!action) {
+      const result = correctionPatch(draft)
+      if ('error' in result) {
+        setError(result.error); setInvalidField(result.field)
+        if (!quiet) (result.field === 'bpm' ? bpmRef : keyRef).current?.focus()
         return
       }
-      patch.bpm = value === '' ? null : Number(value)
-    }
-    if (!action && draft.key !== null) {
-      const value = draft.key.trim()
-      const parsed = parseKeyString(value)
-      if (value !== '' && !parsed) {
-        setError('Enter a key with its mode (for example F# minor) or a Camelot code (11A).')
-        setInvalidField('key'); keyRef.current?.focus()
-        return
-      }
-      patch.key = parsed?.key ?? null
+      patch = result.patch
     }
     if (action?.kind === 'measured') {
       const measured = action.field === 'bpm' ? bpmDecision.measuredValue : keyDecision.measuredValue
@@ -325,19 +355,22 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
       // A rejected operation can still have committed the library before an
       // optional output failed. Keep the submitted draft and explain the error;
       // do not infer success from a coincidentally matching incoming value.
-      setError(String(failure))
+      if (mounted.current) setError(String(failure))
+      else toast({ kind: 'error', title: 'BPM / key correction was not saved', description: String(failure) })
     } finally { pendingRef.current = false; setPending(false) }
   }
-  return <details className="mt-3 border-t border-line pt-3 text-[11px] text-fg-muted"><summary className="cursor-pointer font-medium marker:text-fg-subtle">Correct BPM / key</summary>
-    <fieldset disabled={pending} aria-busy={pending || undefined} onKeyDown={event => {
+  return <details className="mt-3 border-t border-line pt-3 text-[12px] text-fg-muted"><summary className="cursor-pointer font-medium marker:text-fg-subtle">Correct BPM / key</summary>
+    <fieldset disabled={pending} aria-busy={pending || undefined} onBlur={event => {
+      if (dirty && !event.currentTarget.contains(event.relatedTarget as Node | null)) void save(undefined, true)
+    }} onKeyDown={event => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && dirty) { event.preventDefault(); void save() }
-    }} className="mt-3 grid grid-cols-2 gap-2 [&_button]:rounded-[6px] [&_button]:px-2 [&_button]:py-1.5 [&_button]:text-[10px] [&_button]:transition-colors [&_button:disabled]:opacity-40">
-      <label className="text-[10px] text-fg-subtle">BPM<input ref={bpmRef} inputMode="decimal" aria-label="Manual BPM" aria-invalid={invalidField === 'bpm' || undefined} aria-describedby={invalidField === 'bpm' ? `${editorId}-error` : undefined} className="mt-1 h-8 w-full rounded-[6px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={bpm} onChange={event => { setDraft(current => ({ ...current, bpm: event.target.value })); setFeedback(''); setInvalidField(null); setError('') }} /></label>
-      <label className="text-[10px] text-fg-subtle">Key<input ref={keyRef} aria-label="Manual key" aria-invalid={invalidField === 'key' || undefined} aria-describedby={`${editorId}-key-help${invalidField === 'key' ? ` ${editorId}-error` : ''}`} className="mt-1 h-8 w-full rounded-[6px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={key} onChange={event => { setDraft(current => ({ ...current, key: event.target.value })); setFeedback(''); setInvalidField(null); setError('') }} /></label>
-      <p id={`${editorId}-key-help`} className="col-span-2 text-[10px] leading-relaxed text-fg-subtle">Enter a key and mode (F# minor), or a Camelot code (11A). Ctrl+Enter saves your corrections.</p>
-      {candidates.length ? <section aria-label="Detected key candidates" className="col-span-2 space-y-2 rounded-[6px] border border-line p-2">
-        <p className="text-[11px] text-fg">{analysis?.status === 'estimated' ? `Audio suggests ${analysis.key}` : 'Key needs a listening check'}</p>
-        <p className="text-[10px] leading-relaxed text-fg-subtle">Choose a candidate to try, then save. Related keys can share notes; these are suggestions, not certainty.</p>
+    }} className="mt-3 grid grid-cols-2 gap-2 [&_button]:rounded-[2px] [&_button]:px-2 [&_button]:py-1.5 [&_button]:text-[12px] [&_button]:transition-colors [&_button:disabled]:opacity-40">
+      <label className="text-[12px] text-fg-subtle">BPM<input ref={bpmRef} inputMode="decimal" aria-label="Manual BPM" aria-invalid={invalidField === 'bpm' || undefined} aria-describedby={invalidField === 'bpm' ? `${editorId}-error` : undefined} className="mt-1 h-8 w-full rounded-[2px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={bpm} onChange={event => { setDraft(current => ({ ...current, bpm: event.target.value })); setFeedback(''); setInvalidField(null); setError('') }} /></label>
+      <label className="text-[12px] text-fg-subtle">Key<input ref={keyRef} aria-label="Manual key" aria-invalid={invalidField === 'key' || undefined} aria-describedby={`${editorId}-key-help${invalidField === 'key' ? ` ${editorId}-error` : ''}`} className="mt-1 h-8 w-full rounded-[2px] border border-line bg-surface-2 px-2 text-[12px] text-fg" value={key} onChange={event => { setDraft(current => ({ ...current, key: event.target.value })); setFeedback(''); setInvalidField(null); setError('') }} /></label>
+      <p id={`${editorId}-key-help`} className="col-span-2 text-[12px] leading-relaxed text-fg-subtle">Enter a key and mode (F# minor), or a Camelot code (11A). Ctrl+Enter saves; leaving this editor or the track also saves.</p>
+      {candidates.length ? <section aria-label="Detected key candidates" className="col-span-2 space-y-2 rounded-[2px] border border-line p-2">
+        <p className="text-[12px] text-fg">{analysis?.status === 'estimated' ? `Audio suggests ${analysis.key}` : 'Key needs a listening check'}</p>
+        <p className="text-[12px] leading-relaxed text-fg-subtle">Choose a candidate to try, then save. Related keys can share notes; these are suggestions, not certainty.</p>
         <div className="flex flex-wrap gap-1">
           {candidates.map(candidate => {
             const parsed = parseKeyString(candidate)
@@ -360,6 +393,6 @@ export function MetadataCorrection({ beat }: { beat: LibraryBeat }): ReactNode {
       <button type="button" disabled={bpmDecision.measuredValue == null} className="hover:bg-surface-2" onClick={() => void save({ kind: 'measured', field: 'bpm' })} title="Choose the audio estimate as a manual correction">Use measured BPM</button>
       <button type="button" disabled={keyDecision.measuredValue == null} className="hover:bg-surface-2" onClick={() => void save({ kind: 'measured', field: 'key' })} title="Choose the audio estimate as a manual correction">Use measured key</button>
     </fieldset>{error ? <p id={`${editorId}-error`} role="alert" className="mt-1 text-danger">{error}</p> : null}
-    <p role="status" aria-live="polite" className="mt-1 text-[10px] text-fg-muted">{feedback}</p>
+    <p role="status" aria-live="polite" className="mt-1 text-[12px] text-fg-muted">{feedback}</p>
   </details>
 }

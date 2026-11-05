@@ -10,6 +10,7 @@ import { Button, IconButton } from '@/components/ui/Button'
 import { Dropdown, DropdownItem, DropdownLabel } from '@/components/ui/Dropdown'
 import { Field, Input } from '@/components/ui/Input'
 import { ProgressBar } from '@/components/ui/Progress'
+import { SwitchRow } from '@/components/ui/Switch'
 import { MultiStepLoader } from '@/components/aceternity/MultiStepLoader'
 import { SettingsPanel } from './SettingsPanel'
 
@@ -213,6 +214,14 @@ export function EngineSection(): ReactNode {
             />
           </div>
         </Field>
+
+        <SwitchRow
+          title="Allow other sites"
+          description="Accept links from sites that are not on the supported list and let yt-dlp try them. Results vary from site to site. Local network addresses are always refused."
+          checked={settings.allowOtherSites}
+          onChange={(next) => void patchSettings({ allowOtherSites: next })}
+          className="border-t border-line pt-3 pb-0"
+        />
       </SettingsPanel>
     </div>
   )

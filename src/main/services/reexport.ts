@@ -61,6 +61,9 @@ async function reexportLocked(beatId: string, presetId: PresetId): Promise<Reexp
   if (!(await fileExists(beat.filePath))) {
     return { ok: false, outputPath: null, error: 'The source file for this beat is missing.' }
   }
+  if (libraryService.pendingRevision() !== null) {
+    return { ok: false, outputPath: null, error: 'A library save is pending. Retry saving before exporting; no files were written.' }
+  }
 
   const settings = settingsService.get()
   const preset = getPreset(presetId)

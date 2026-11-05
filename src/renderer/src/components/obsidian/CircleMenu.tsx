@@ -165,7 +165,7 @@ export function CircleMenu({
                     itemClassName
                   )}
                 >
-                  <span className="pointer-events-none absolute top-full mt-1 w-20 rounded bg-surface px-1 text-center text-[10px] text-fg">{item.label}</span>
+                  <span className="pointer-events-none absolute top-full mt-1 w-20 rounded bg-surface px-1 text-center text-[12px] text-fg">{item.label}</span>
                   <span className="grid place-items-center [&>svg]:size-3.5">{item.icon}</span>
                 </motion.button>
               )
