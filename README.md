@@ -51,7 +51,7 @@ The app version is the `version` field in [`package.json`](package.json) (also r
 
 The analyser, library performance work, and the White Label theme are written up in the [changelog](docs/CHANGELOG.md) and the notes linked at the bottom.
 
----
+## Your first track
 
 ## Screenshots
 
@@ -93,7 +93,7 @@ Only YouTube playlists and Bandcamp albums expand into a review. Every accepted 
 
 Links from other sites are refused unless **Settings → Media engine → Allow other sites** is on. That setting passes any other public `https` page to `yt-dlp`'s generic extractor. Results vary by site. Direct-file and other-site links are not fetched when the host is your own computer or a private network, including shorthand loopback spellings. Cover downloads follow redirects and apply the same check. Public content on the sites above needs no cookies. If a site asks for a signed-in session, choose a browser under **Use cookies from a browser**.
 
----
+## Tempo and key you can inspect
 
 ## Installation
 
@@ -108,7 +108,13 @@ Releases are unsigned unless the repository owner has configured code signing. W
 
 Requires Windows 10 or Windows 11, 64-bit.
 
----
+| Recipes | Output | Useful for |
+| --- | --- | --- |
+| **MP3 320 · MP3 V0** | Constant 320 kbps or high-quality variable-bitrate MP3 | Sharing and broad player compatibility |
+| **M4A AAC 256 · Opus 192** | AAC at 256 kbps or Opus at 192 kbps | Compact listening copies |
+| **FLAC** | Lossless compression | Keeping decoded audio without another lossy encode |
+| **WAV 44.1 / 24 · WAV 48 / 24** | 24-bit PCM at 44.1 or 48 kHz | DAW sessions and editing |
+| **Original stream** | Acquired audio without re-encoding | Preserving the downloaded stream |
 
 ## Usage
 
@@ -147,7 +153,13 @@ The queue is saved on a short debounce. An interrupted job returns to the queue 
 
 Network access happens when you inspect or download a link, when the media engine is installed, or when a thumbnail is fetched.
 
----
+| Files or folders | Contents |
+| --- | --- |
+| `settings.json` · `playback-session.json` | Preferences, last track, volume, and saved listening positions |
+| `library.json` · `organization.json` | Track records, source links, artwork URLs, notes, tags, and collections |
+| `queue.json` · `analysis-cache.json` | Saved queue and audio analysis cached by file content and analyzer version |
+| `engine\` · `covers\` | Managed media tools and cached artwork |
+| `staging\` · `analysis\` | Temporary downloads, conversions, and decoded analysis audio |
 
 ## Building from source
 
@@ -200,7 +212,7 @@ There is no macOS build, so Apple notarization secrets are not used.
 
 The workflow's `GITHUB_TOKEN` is enough to push the version tag and create the Release. In the repository settings, **Actions → General → Workflow permissions** must be **Read and write permissions**. If `main` is protected, `github-actions[bot]` has to be allowed to push the `chore: release vX.Y.Z` commit. Without that, the tag and the Release can still be created, and the job fails when it cannot update `main`.
 
----
+</details>
 
 ## Contributing
 
