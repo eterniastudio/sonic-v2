@@ -22,6 +22,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.LOCALAPPDATA }}/electron/Cache
+            ${{ env.LOCALAPPDATA }}/electron-builder/Cache
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test:unit
