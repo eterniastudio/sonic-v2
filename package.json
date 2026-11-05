@@ -1,7 +1,7 @@
 {
   "name": "sonic-v2",
   "productName": "Sonic V2",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Sonic V2 - a YouTube and SoundCloud beat downloader and audio library for music producers.",
   "author": "Eternia Studios",
