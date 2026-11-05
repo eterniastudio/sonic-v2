@@ -40,11 +40,68 @@ function privateError(): Error {
   return Object.assign(new Error(PRIVATE_MESSAGE), { code: 'ESONICPRIVATE' })
 }
 
+/** How long a guarded lookup may wait. Matches the yt-dlp socket timeout. */
+const RESOLVE_TIMEOUT_MS = 20_000
+
+/**
+ * Folds the address spellings the URL parser accepts (`127.1`, `0177.0.0.1`,
+ * `0x7f000001`, `2130706433`) into a normal IP. System resolvers disagree
+ * about these, and a socket never calls `lookup` for a value `isIP` already
+ * accepts, so the guard has to fold the name itself before either step.
+ * Ordinary hostnames come back unchanged.
+ */
+export function normalizeEndpointHost(host: string): string {
+  const trimmed = host.trim().replace(/^\[|\]$/g, '')
+  if (!trimmed) return trimmed
+  const formatted = trimmed.includes(':') ? `[${trimmed}]` : trimmed
+  try {
+    const hostname = new URL(`http://${formatted}`).hostname
+    return hostname.startsWith('[') ? hostname.slice(1, -1) : hostname
+  } catch {
+    return trimmed
+  }
+}
+
+/** IP literals are replaced by their folded form; names are only de-bracketed. */
+function endpointHost(host: string): string {
+  const normalized = normalizeEndpointHost(host)
+  return isIP(normalized) ? normalized : host.trim().replace(/^\[|\]$/g, '')
+}
+
 /** Throws unless every address the URL's host resolves to is public. A fast pre-check for clear errors only. */
-export async function assertPublicUrl(input: string): Promise<void> {
-  const host = new URL(input).hostname.replace(/^\[|\]$/g, '')
-  const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true, verbatim: true })
+export async function assertPublicUrl(input: string, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
+  const host = endpointHost(new URL(input).hostname)
+  const addresses = isIP(host) ? [{ address: host }] : await resolveHost(host, signal)
   if (addresses.length === 0 || addresses.some(entry => isPrivateAddress(entry.address))) throw privateError()
+}
+
+function resolveHost(host: string, signal?: AbortSignal): Promise<{ address: string }[]> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (error: Error | null, value?: { address: string }[]): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      if (error) reject(error)
+      else resolve(value ?? [])
+    }
+    const onAbort = (): void => {
+      const reason = signal?.reason
+      finish(reason instanceof Error ? reason : new Error('Cancelled'))
+    }
+    const timer = setTimeout(() => {
+      finish(new Error("Could not resolve this link's host. Check the address and your connection."))
+    }, RESOLVE_TIMEOUT_MS)
+    timer.unref()
+    if (signal?.aborted) return onAbort()
+    signal?.addEventListener('abort', onAbort, { once: true })
+    lookup(host, { all: true, verbatim: true }).then(
+      addresses => finish(null, addresses),
+      error => finish(error instanceof Error ? error : new Error(String(error)))
+    )
+  })
 }
 
 /**
@@ -52,13 +109,30 @@ export async function assertPublicUrl(input: string): Promise<void> {
  * connects to the address this returns, so the check and the connection use
  * the same resolution and a rebinding DNS answer cannot slip in between.
  * Sockets skip `lookup` for IP literals; callers check those with
- * `refuseLiteral` first.
+ * `refuseLiteral` first. Folded spellings of a literal are refused here too,
+ * because the socket would otherwise connect to them without calling `lookup`.
  */
 export const publicLookup: LookupFunction = (hostname, options, callback) => {
-  dnsLookup(hostname, { ...options, all: true, verbatim: true }, (error, addresses) => {
-    const done = callback as (...args: unknown[]) => void
+  let settled = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const done = (...args: unknown[]): void => {
+    if (settled) return
+    settled = true
+    if (timer) clearTimeout(timer)
+    ;(callback as (...args: unknown[]) => void)(...args)
+  }
+  const host = endpointHost(hostname)
+  const literal = isIP(host)
+  if (literal) {
+    if (isPrivateAddress(host)) return done(privateError())
+    if (options.all) return done(null, [{ address: host, family: literal }])
+    return done(null, host, literal)
+  }
+  timer = setTimeout(() => done(Object.assign(new Error('Timed out resolving the host.'), { code: 'ETIMEDOUT' })), RESOLVE_TIMEOUT_MS)
+  timer.unref()
+  dnsLookup(host, { ...options, all: true, verbatim: true }, (error, addresses) => {
     if (error) return done(error)
-    if (addresses.length === 0 || addresses.some(entry => isPrivateAddress(entry.address))) return done(privateError())
+    if (!Array.isArray(addresses) || addresses.length === 0 || addresses.some(entry => isPrivateAddress(entry.address))) return done(privateError())
     if (options.all) return done(null, addresses)
     done(null, addresses[0].address, addresses[0].family)
   })
@@ -66,7 +140,7 @@ export const publicLookup: LookupFunction = (hostname, options, callback) => {
 
 /** Refuses a private IP-literal host up front, since sockets never call `lookup` for one. */
 export function refuseLiteral(host: string): void {
-  const bare = host.replace(/^\[|\]$/g, '')
+  const bare = endpointHost(host)
   if (isIP(bare) && isPrivateAddress(bare)) throw privateError()
 }
 
@@ -102,21 +176,26 @@ function startProxy(): Promise<string> {
       if (!authorised(req)) { res.writeHead(407, { 'proxy-authenticate': 'Basic realm="sonic"' }).end(); return }
       const target = new URL(req.url ?? '')
       if (target.protocol !== 'http:') throw new Error('Unsupported proxy scheme.')
-      refuseLiteral(target.hostname)
+      const host = endpointHost(target.hostname)
+      refuseLiteral(host)
       const headers = { ...req.headers }
       delete headers['proxy-authorization']
       delete headers['proxy-connection']
       const upstream = httpRequest({
-        host: target.hostname.replace(/^\[|\]$/g, ''),
+        host,
         port: target.port || 80,
         path: `${target.pathname}${target.search}`,
         method: req.method,
         headers,
         lookup: publicLookup
       }, response => {
+        response.on('error', () => { upstream.destroy(); if (!res.destroyed) res.destroy() })
         res.writeHead(response.statusCode ?? 502, response.headers)
         response.pipe(res)
       })
+      const drop = (): void => { upstream.destroy() }
+      req.on('error', drop)
+      res.on('error', drop)
       upstream.on('error', error => {
         if (!res.headersSent) res.writeHead((error as { code?: string }).code === 'ESONICPRIVATE' ? 403 : 502)
         res.end()
@@ -129,24 +208,27 @@ function startProxy(): Promise<string> {
 
   server.on('connect', (req: IncomingMessage, client: Socket, head: Buffer) => {
     const refuse = (status: string): void => { client.end(`HTTP/1.1 ${status}\r\n\r\n`) }
-    client.on('error', () => client.destroy())
+    let upstream: Socket | undefined
+    client.on('error', () => { client.destroy(); upstream?.destroy() })
+    client.on('close', () => upstream?.destroy())
     if (!authorised(req)) return refuse('407 Proxy Authentication Required')
     let target: { host: string; port: number }
     try {
       target = splitHostPort(req.url ?? '', 443)
+      target.host = endpointHost(target.host)
       refuseLiteral(target.host)
     } catch { return refuse('403 Forbidden') }
-    const upstream = connect({ host: target.host, port: target.port, lookup: publicLookup }, () => {
+    const socket = connect({ host: target.host, port: target.port, lookup: publicLookup }, () => {
       client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
-      if (head.length) upstream.write(head)
-      upstream.pipe(client)
-      client.pipe(upstream)
+      if (head.length) socket.write(head)
+      socket.pipe(client)
+      client.pipe(socket)
     })
-    upstream.on('error', error => {
+    upstream = socket
+    socket.on('error', error => {
       if (!client.writable) return client.destroy()
       refuse((error as { code?: string }).code === 'ESONICPRIVATE' ? '403 Forbidden' : '502 Bad Gateway')
     })
-    client.on('close', () => upstream.destroy())
   })
 
   return new Promise((resolve, reject) => {

@@ -355,6 +355,32 @@ test('covers are published atomically and a truncated cached JPEG is fetched aga
   assert.equal(await fetchCover(null, 'job-2'), null)
 })
 
+test('a non-image thumbnail is discarded and a complete WebP or PNG is kept', async t => {
+  const directory = await temporaryDirectory(t, 'sonic-covers-kind-')
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from('padding!!'),
+    Buffer.from([0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82])
+  ])
+  const webp = Buffer.alloc(12)
+  webp.write('RIFF')
+  webp.writeUInt32LE(4, 4)
+  webp.write('WEBP', 8)
+  const bodies = ['<html>not an image</html>', webp, png]
+  let call = 0
+  const { fetchCover } = coverFixture(directory, async (_url, destination) => {
+    await fsp.writeFile(destination, bodies[call++])
+  })
+  assert.equal(await fetchCover('https://cdn.example.com/cover.jpg', 'job-html'), null)
+  assert.deepEqual(await fsp.readdir(directory), [])
+  const webpPath = await fetchCover('https://cdn.example.com/cover.webp', 'job-webp')
+  assert.equal(webpPath, path.join(directory, 'job-webp.jpg'))
+  assert.deepEqual(await fsp.readFile(webpPath), webp)
+  const pngPath = await fetchCover('https://cdn.example.com/cover.png', 'job-png')
+  assert.equal(pngPath, path.join(directory, 'job-png.jpg'))
+  assert.deepEqual(await fsp.readFile(pngPath), png)
+})
+
 test('pruning keeps live jobs and fresh partials and removes everything else', async t => {
   const directory = await temporaryDirectory(t, 'sonic-covers-prune-')
   const { pruneCovers } = coverFixture(directory, async () => assert.fail('Unexpected download'))

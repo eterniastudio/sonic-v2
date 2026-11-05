@@ -305,6 +305,32 @@ test('a resumed job picks its real download, never partial conversion output or 
   assert.equal(await findStagedFile('job_ab'), null)
 })
 
+test('a new download replaces an earlier staged file instead of keeping whichever is larger', async t => {
+  const staging = await profile(t, 'sonic-protect-replace-')
+  await fsp.writeFile(path.join(staging, 'job_ab.webm'), 'x'.repeat(5000))
+  const acquire = loadSource('../src/main/services/acquire.ts', resolver({
+    '../lib/publicAddress': { assertPublicUrl: async () => {}, guardedYtDlpArgs: async () => [] },
+    'node:fs/promises': fsp,
+    'node:path': path,
+    '../lib/child': { run: async () => {
+      await fsp.writeFile(path.join(staging, 'job_ab.m4a'), 'new')
+      return { code: 0, aborted: false, stderr: '', stdout: '' }
+    } },
+    '../lib/fsx': fsx,
+    './engine': { engineService: { resolve: async () => ({ path: '/ytdlp' }) } },
+    './probe': { baseYtDlpArgs: async () => [], summariseYtDlpError: () => 'failed' },
+    './paths': { stagingDir: () => staging },
+    './settings': { settingsService: { get: () => ({ maxDurationSec: 0 }) } }
+  }, 'acquire-replace'))
+  const result = await acquire.acquireAudio('job_ab', 'https://cdn.example.com/beat.mp3', {
+    signal: new AbortController().signal,
+    onProgress() {}
+  })
+  assert.equal(result.filePath, path.join(staging, 'job_ab.m4a'))
+  assert.equal(await fsp.readFile(result.filePath, 'utf8'), 'new')
+  assert.equal(fs.existsSync(path.join(staging, 'job_ab.webm')), false)
+})
+
 test('the staging sweep removes only orphaned jobs and idle partial outputs', async t => {
   const staging = await profile(t, 'sonic-protect-sweep-')
   for (const name of ['job_aa.out.mp3', 'job_aa.webm', 'job_bb.webm', 'job_bb.out.wav', 'job_cc.out.mp3', 'ffmpeg.zip']) await fsp.writeFile(path.join(staging, name), 'x')

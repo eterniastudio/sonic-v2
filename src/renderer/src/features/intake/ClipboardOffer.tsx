@@ -25,8 +25,9 @@ export function ClipboardOffer(): ReactNode {
       if (reading.current) return
       reading.current = true
       void ipc.invoke('app:readClipboard').then((text) => {
-        const queued = useApp.getState().queue.jobs.map((job) => job.url)
-        const next = clipboardOffer(text, queued, answered.current)
+        const state = useApp.getState()
+        const queued = state.queue.jobs.map((job) => job.url)
+        const next = clipboardOffer(text, queued, answered.current, { allowOtherSites: state.settings.allowOtherSites === true })
         if (next) setOffer(next)
       }).catch(() => { /* The clipboard is optional; a failed read offers nothing. */ })
         .finally(() => { reading.current = false })
