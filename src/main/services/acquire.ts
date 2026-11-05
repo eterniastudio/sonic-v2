@@ -76,12 +76,17 @@ export async function acquireAudio(
   if (!parsed.ok || !parsed.normalized || isSoundCloudShareUrl(parsed.normalized)) {
     throw new Error(parsed.reason ?? 'Inspect the SoundCloud share link before downloading.')
   }
-  if (parsed.provider === 'direct' || parsed.provider === 'generic') await assertPublicUrl(parsed.normalized)
+  if (parsed.provider === 'direct' || parsed.provider === 'generic') await assertPublicUrl(parsed.normalized, options.signal)
   const ytdlp = await engineService.resolve('yt-dlp', false, options.signal)
   options.signal.throwIfAborted()
   if (!ytdlp.path) {
     throw new Error('yt-dlp is not installed. Run media engine setup from Settings.')
   }
+
+  // A crashed attempt leaves a finished-looking file behind, and the file picker
+  // keeps the largest match. Remove that attempt before this one writes anything.
+  await cleanStaging(jobId, true)
+  options.signal.throwIfAborted()
 
   const staging = stagingDir()
   await ensureDir(staging)

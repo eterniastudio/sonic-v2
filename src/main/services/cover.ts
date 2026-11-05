@@ -8,19 +8,46 @@ import { coverCacheDir } from './paths'
 const PARTIAL = '.part'
 /** A partial file this old belongs to no live download (downloads stall out far sooner). */
 const STALE_PARTIAL_MS = 60 * 60_000
+/** Embedded art is cosmetic. Anything larger is discarded instead of filling the disk. */
+const MAX_COVER_BYTES = 8 * 1024 * 1024
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const PNG_ENDING = Buffer.from([0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82])
 
-/** A cached cover is reusable only if it is non-empty and, when it is a JPEG, complete. */
+/**
+ * A complete JPEG, PNG, GIF or WebP. Other payloads (an HTML error page, a
+ * truncated image) are not embedded: ffmpeg would fail the whole export.
+ */
+function isCompleteImage(head: Buffer, tail: Buffer, size: number): boolean {
+  if (head.length >= 2 && head[0] === 0xff && head[1] === 0xd8) {
+    return tail.length >= 2 && tail[tail.length - 2] === 0xff && tail[tail.length - 1] === 0xd9
+  }
+  if (head.length >= 8 && head.subarray(0, 8).equals(PNG_SIGNATURE)) {
+    return tail.length >= 8 && tail.subarray(tail.length - 8).equals(PNG_ENDING)
+  }
+  if (head.length >= 6) {
+    const gif = head.subarray(0, 6).toString('ascii')
+    if (gif === 'GIF87a' || gif === 'GIF89a') return tail.length > 0 && tail[tail.length - 1] === 0x3b
+  }
+  if (head.length >= 12 && head.subarray(0, 4).toString('ascii') === 'RIFF' && head.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return head.readUInt32LE(4) === size - 8
+  }
+  return false
+}
+
+/** A cached cover is reusable only when it is a complete image within the size cap. */
 async function usableCover(file: string): Promise<boolean> {
   let handle
   try {
     handle = await open(file, 'r')
     const { size } = await handle.stat()
-    if (size < 4) return false
-    const head = Buffer.alloc(2), tail = Buffer.alloc(2)
-    await handle.read(head, 0, 2, 0)
-    await handle.read(tail, 0, 2, size - 2)
-    // JPEG data ends with an EOI marker; other provider formats are accepted as-is.
-    return !(head[0] === 0xff && head[1] === 0xd8) || (tail[0] === 0xff && tail[1] === 0xd9)
+    if (size < 4 || size > MAX_COVER_BYTES) return false
+    const headLen = Math.min(12, size)
+    const tailLen = Math.min(8, size)
+    const head = Buffer.alloc(headLen)
+    const tail = Buffer.alloc(tailLen)
+    await handle.read(head, 0, headLen, 0)
+    await handle.read(tail, 0, tailLen, size - tailLen)
+    return isCompleteImage(head, tail, size)
   } catch {
     return false
   } finally { await handle?.close() }
@@ -60,7 +87,7 @@ export async function fetchCover(
 
   const partial = path.join(directory, `${key}.${process.pid}.${randomUUID()}.jpg${PARTIAL}`)
   try {
-    await downloadToFile(url, partial, { signal, idleTimeoutMs: 20_000, publicOnly: true })
+    await downloadToFile(url, partial, { signal, idleTimeoutMs: 20_000, publicOnly: true, maxBytes: MAX_COVER_BYTES })
     if (!(await usableCover(partial))) throw new Error('Incomplete cover image.')
     await rename(partial, target)
     return target

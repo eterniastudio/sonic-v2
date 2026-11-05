@@ -69,6 +69,33 @@ test('downloads stream exact bytes and report completion after closing the outpu
   await unlink(f.destination) // A Windows handle left open would fail this operation.
 })
 
+test('a declared size over the caller limit is rejected before the destination is opened', async t => {
+  const f = await downloadFixture(t, (_request, response) => {
+    response.writeHead(200, { 'content-length': 50_000 })
+    response.end(Buffer.alloc(50_000))
+  })
+  await writeFile(f.destination, 'keep')
+  await assert.rejects(f.downloadToFile(f.url, f.destination, { maxBytes: 1024 }), /byte limit/)
+  assert.equal(await readFile(f.destination, 'utf8'), 'keep')
+})
+
+test('a stream that grows past the caller limit is cancelled and its partial file is removed', async t => {
+  const f = await downloadFixture(t, (_request, response) => {
+    response.writeHead(200)
+    response.end(Buffer.alloc(100, 1))
+  })
+  await assert.rejects(f.downloadToFile(f.url, f.destination, { maxBytes: 32 }), /byte limit/)
+  assert.equal(fs.existsSync(f.destination), false)
+})
+
+test('public-only downloads refuse non-https links and links with credentials or custom ports', async t => {
+  const f = await downloadFixture(t, (_request, response) => response.end('nope'))
+  await assert.rejects(f.downloadToFile(f.url, f.destination, { publicOnly: true }), /non-https/)
+  await assert.rejects(f.downloadToFile('https://user:pass@cdn.example.com/a.jpg', f.destination, { publicOnly: true }), /credentials or a custom port/)
+  await assert.rejects(f.downloadToFile('https://cdn.example.com:8443/a.jpg', f.destination, { publicOnly: true }), /credentials or a custom port/)
+  assert.equal(fs.existsSync(f.destination), false)
+})
+
 test('an already cancelled download makes no request and leaves the destination untouched', async t => {
   let requests = 0
   const f = await downloadFixture(t, (_request, response) => { requests++; response.end('unexpected') })

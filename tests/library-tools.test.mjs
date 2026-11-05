@@ -124,6 +124,8 @@ test('clipboard offer: supported links only, skips queued and answered clipboard
   const queued = ['https://www.youtube.com/watch?v=aaaaaaaaaaa']
   assert.equal(tools.clipboardOffer('just some text', queued, null), null)
   assert.equal(tools.clipboardOffer('https://example.com/song', queued, null), null)
+  assert.deepEqual(tools.clipboardOffer('https://example.com/song', [], null, { allowOtherSites: true }).urls, ['https://example.com/song'])
+  assert.deepEqual(tools.clipboardOffer('https://cdn.example.com/a.mp3', [], null).urls, ['https://cdn.example.com/a.mp3'])
   assert.equal(tools.clipboardOffer('https://youtu.be/aaaaaaaaaaa', queued, null), null)
   const offer = tools.clipboardOffer('https://youtu.be/bbbbbbbbbbb\nhttps://www.youtube.com/watch?v=bbbbbbbbbbb https://soundcloud.com/a/b', queued, null)
   assert.deepEqual(offer.urls, ['https://www.youtube.com/watch?v=bbbbbbbbbbb', 'https://soundcloud.com/a/b'])

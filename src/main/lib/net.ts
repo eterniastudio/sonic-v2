@@ -15,6 +15,8 @@ export interface DownloadOptions {
   idleTimeoutMs?: number
   /** Refuse the request, and every redirect hop, unless the host resolves to public addresses. */
   publicOnly?: boolean
+  /** Stop, and delete a partial file, once this many bytes have arrived. */
+  maxBytes?: number
 }
 
 const MAX_REDIRECTS = 5
@@ -29,6 +31,7 @@ async function fetchPublic(url: string, init: RequestInit): Promise<Response> {
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const target = new URL(current)
     if (target.protocol !== 'https:') throw new Error('Refused a non-https link.')
+    if (target.username || target.password || target.port) throw new Error('Refused a link with credentials or a custom port.')
     refuseLiteral(target.hostname)
     const response = await new Promise<IncomingMessage>((resolve, reject) => {
       const request = httpsRequest(target, {
@@ -43,6 +46,7 @@ async function fetchPublic(url: string, init: RequestInit): Promise<Response> {
     const status = response.statusCode ?? 502
     const location = response.headers.location
     if (status >= 300 && status < 400 && location) {
+      response.on('error', () => response.destroy())
       response.resume()
       current = new URL(location, current).href
       continue
@@ -110,6 +114,10 @@ export async function downloadToFile(
 
     const declaredLength = Number(response.headers.get('content-length'))
     const totalBytes = Number.isFinite(declaredLength) && declaredLength > 0 ? declaredLength : null
+    if (options.maxBytes != null && totalBytes != null && totalBytes > options.maxBytes) {
+      await response.body.cancel().catch(() => undefined)
+      throw new Error(`Download is larger than the ${options.maxBytes} byte limit.`)
+    }
 
     const file = createWriteStream(destination)
     file.once('open', () => { destinationOpened = true })
@@ -121,6 +129,10 @@ export async function downloadToFile(
         try {
           resetIdle()
           received += chunk.byteLength
+          if (options.maxBytes != null && received > options.maxBytes) {
+            callback(new Error(`Download is larger than the ${options.maxBytes} byte limit.`))
+            return
+          }
           // Throttle UI updates to roughly 20/s.
           const now = Date.now()
           if (options.onProgress && now - lastReport > 50) {

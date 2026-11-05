@@ -145,7 +145,7 @@ test('common link hygiene applies to every provider', () => {
 })
 
 test('direct media is refused for local and private network hosts', () => {
-  for (const host of ['localhost', '127.0.0.1', '10.0.0.5', '192.168.1.20', '172.16.0.1', '169.254.1.1', '[::1]', 'nas', 'printer.local', 'router.lan']) {
+  for (const host of ['localhost', '127.0.0.1', '127.1', '0x7f000001', '2130706433', '0177.0.0.1', '10.0.0.5', '192.168.1.20', '172.16.0.1', '169.254.1.1', '[::1]', 'nas', 'printer.local', 'router.lan']) {
     for (const options of [{}, { allowOtherSites: true }]) {
       assert.equal(urls.parseVideoUrl(`https://${host}/beat.mp3`, options).ok, false, `${host} ${JSON.stringify(options)}`)
     }
@@ -219,14 +219,21 @@ test('Bandcamp album entries are admitted only as Bandcamp tracks', () => {
     { url: 'https://artist.bandcamp.com/track/one', title: 'One' },
     { url: 'https://artist.bandcamp.com/track/one?x=1', title: 'One again' },
     { webpage_url: 'https://artist.bandcamp.com/track/two' },
+    { url: '1812978515', webpage_url: 'https://artist.bandcamp.com/track/three', title: 'Three' },
+    { url: '/track/four', title: 'Four' },
+    { url: 'https://evil.test/track/nope', webpage_url: 'https://artist.bandcamp.com/track/five', title: 'Five' },
+    { url: '//169.254.169.254/latest/meta-data', title: 'Metadata' },
     { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', title: 'Foreign' },
     { url: 'file:///C:/secret.mp3' }, { url: 'https://evil.test/track/x' }, { id: '123' }, null
-  ] }, 'bandcamp')
+  ] }, 'bandcamp', 'https://artist.bandcamp.com/album/first-album')
   assert.deepEqual(review.tracks, [
     { url: 'https://artist.bandcamp.com/track/one', title: 'One' },
-    { url: 'https://artist.bandcamp.com/track/two', title: 'https://artist.bandcamp.com/track/two' }
+    { url: 'https://artist.bandcamp.com/track/two', title: 'https://artist.bandcamp.com/track/two' },
+    { url: 'https://artist.bandcamp.com/track/three', title: 'Three' },
+    { url: 'https://artist.bandcamp.com/track/four', title: 'Four' },
+    { url: 'https://artist.bandcamp.com/track/five', title: 'Five' }
   ])
-  assert.equal(review.skipped, 6)
+  assert.equal(review.skipped, 7)
   assert.equal(playlist.readPlaylistInfo({ entries: [] }, 'bandcamp').title, 'Bandcamp collection')
   assert.throws(() => playlist.readPlaylistInfo({}, 'bandcamp'), /Bandcamp returned no playlist entries/)
 })

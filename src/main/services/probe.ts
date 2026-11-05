@@ -103,8 +103,11 @@ export async function probeUrl(url: string, signal?: AbortSignal): Promise<Probe
   }
 
   if (parsed.provider === 'direct' || parsed.provider === 'generic') {
-    try { await assertPublicUrl(parsed.normalized) }
-    catch (error) { return { ...empty, error: error instanceof Error && /private network/.test(error.message) ? error.message : "Could not resolve this link's host. Check the address and your connection." } }
+    try { await assertPublicUrl(parsed.normalized, signal) }
+    catch (error) {
+      if (signal?.aborted) return { ...empty, error: 'Cancelled' }
+      return { ...empty, error: error instanceof Error && /private network/.test(error.message) ? error.message : "Could not resolve this link's host. Check the address and your connection." }
+    }
   }
 
   if (signal?.aborted) return { ...empty, error: 'Cancelled' }

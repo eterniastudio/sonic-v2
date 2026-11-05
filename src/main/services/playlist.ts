@@ -13,8 +13,29 @@ export function stopPlaylists(): void { for (const controller of active.values()
  * Only canonical track identities from the extractor can enter the download
  * queue. YouTube entries are rebuilt from their video id; entries from other
  * providers must carry a link that parses as a track of that same provider.
+ * An absolute http(s) link is used as-is; a path is resolved against the collection.
  */
-export function readPlaylistInfo(raw: unknown, provider: ProviderId = 'youtube'): PlaylistReview {
+function absoluteEntryUrl(link: string, baseUrl?: string): string | null {
+  try { return (baseUrl ? new URL(link, baseUrl) : new URL(link)).href } catch { return null }
+}
+
+/**
+ * The first link on the entry that is a track of this provider.
+ * Flat extractors often put an id in `url` and the real page in `webpage_url`,
+ * or a path such as `/track/slug` that only makes sense against the album.
+ */
+function trackFromEntry(entry: Record<string, unknown>, provider: ProviderId, baseUrl?: string): ParsedVideoUrl | null {
+  for (const value of [entry.url, entry.webpage_url, entry.original_url]) {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 4096) continue
+    const absolute = absoluteEntryUrl(value, baseUrl)
+    if (!absolute) continue
+    const parsed = parseVideoUrl(absolute)
+    if (parsed.ok && parsed.provider === provider) return parsed
+  }
+  return null
+}
+
+export function readPlaylistInfo(raw: unknown, provider: ProviderId = 'youtube', baseUrl?: string): PlaylistReview {
   const name = providerById(provider)?.name ?? 'YouTube'
   if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { entries?: unknown }).entries)) throw new Error(`${name} returned no playlist entries.`)
   const info = raw as { title?: unknown; entries: unknown[]; playlist_count?: unknown }
@@ -30,9 +51,7 @@ export function readPlaylistInfo(raw: unknown, provider: ProviderId = 'youtube')
       id = typeof entry.id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(entry.id) ? entry.id : null
       parsed = id ? parseVideoUrl(`https://www.youtube.com/watch?v=${id}`) : null
     } else {
-      const link = [entry.url, entry.webpage_url].find((candidate): candidate is string => typeof candidate === 'string' && candidate.length <= 4096)
-      const candidate = link ? parseVideoUrl(link) : null
-      parsed = candidate?.ok && candidate.provider === provider ? candidate : null
+      parsed = trackFromEntry(entry, provider, baseUrl)
       id = parsed?.normalized ?? null
     }
     const unavailable = ['private', 'premium_only', 'subscriber_only', 'needs_auth'].includes(String(entry.availability)) ||
@@ -71,6 +90,6 @@ export async function inspectPlaylist(url: string, requestId: string): Promise<P
     let info: unknown
     try { info = JSON.parse(result.stdout.slice(result.stdout.indexOf('{'))) }
     catch { throw new Error('Could not read the playlist metadata. Please retry.') }
-    return readPlaylistInfo(info, provider)
+    return readPlaylistInfo(info, provider, normalized)
   } finally { clearTimeout(timer); active.delete(requestId) }
 }

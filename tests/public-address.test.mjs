@@ -31,15 +31,49 @@ test('private, loopback, link-local and mapped addresses are refused', async () 
     await assert.rejects(modules.assertPublicUrl('https://127.0.0.1/a.mp3'), /private network/)
     await assert.rejects(modules.assertPublicUrl('https://[::1]/a.mp3'), /private network/)
     await assert.rejects(modules.assertPublicUrl('https://localhost/a.mp3'), /private network/)
+    // Short, octal, hex and decimal spellings of loopback must not depend on the OS resolver.
+    for (const host of ['127.1', '0177.0.0.1', '0x7f000001', '2130706433']) {
+      assert.equal(modules.normalizeEndpointHost(host), '127.0.0.1', host)
+      assert.equal(modules.isPrivateAddress(modules.normalizeEndpointHost(host)), true, host)
+      await assert.rejects(modules.assertPublicUrl(`https://${host}/a.mp3`), /private network/)
+    }
+    assert.equal(modules.normalizeEndpointHost('cdn.example.com'), 'cdn.example.com')
+    assert.equal(modules.normalizeEndpointHost('2606:4700:4700::1111'), '2606:4700:4700::1111')
+    const cancelled = new AbortController()
+    cancelled.abort(new Error('Cancelled'))
+    await assert.rejects(modules.assertPublicUrl('https://example.com/a.mp3', cancelled.signal), /Cancelled/)
     await modules.assertPublicUrl('https://8.8.8.8/a.mp3')
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
 })
 
+function proxyAuthorization(proxyUrl) {
+  const proxy = new URL(proxyUrl)
+  return Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')
+}
+
+function proxyGet(proxyUrl, targetUrl) {
+  const proxy = new URL(proxyUrl)
+  return new Promise((resolve, reject) => {
+    const request = http.request({
+      host: proxy.hostname,
+      port: proxy.port,
+      method: 'GET',
+      path: targetUrl,
+      headers: { 'proxy-authorization': `Basic ${proxyAuthorization(proxyUrl)}` }
+    }, response => {
+      response.resume()
+      resolve(response.statusCode)
+    })
+    request.on('error', reject)
+    request.end()
+  })
+}
+
 function connectThrough(proxyUrl, authority, authorise = true) {
   const proxy = new URL(proxyUrl)
-  const auth = Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')
+  const auth = proxyAuthorization(proxyUrl)
   return new Promise((resolve, reject) => {
     const socket = net.connect(Number(proxy.port), proxy.hostname, () => {
       socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n${authorise ? `Proxy-Authorization: Basic ${auth}\r\n` : ''}\r\n`)
@@ -61,6 +95,11 @@ test('the yt-dlp proxy refuses private targets and unauthenticated clients', asy
     assert.match(await connectThrough(proxyUrl, `127.0.0.1:${port}`), /^HTTP\/1\.1 403/)
     assert.match(await connectThrough(proxyUrl, `[::1]:${port}`), /^HTTP\/1\.1 403/)
     assert.match(await connectThrough(proxyUrl, `localhost:${port}`), /^HTTP\/1\.1 403/)
+    for (const host of ['127.1', '0x7f000001', '2130706433', '0177.0.0.1']) {
+      assert.match(await connectThrough(proxyUrl, `${host}:${port}`), /^HTTP\/1\.1 403/, host)
+    }
+    assert.equal(await proxyGet(proxyUrl, 'http://127.1/secret'), 403)
+    assert.equal(await proxyGet(proxyUrl, 'http://0x7f000001/secret'), 403)
     assert.match(await connectThrough(proxyUrl, 'no-such-host.invalid:443'), /^HTTP\/1\.1 502/)
     assert.match(await connectThrough(proxyUrl, `127.0.0.1:${port}`, false), /^HTTP\/1\.1 407/)
     assert.deepEqual(await modules.guardedYtDlpArgs('youtube'), [])
