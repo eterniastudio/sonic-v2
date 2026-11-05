@@ -1,333 +1,276 @@
-# Sonic V2
+<p align="center">
+  <img src="build/icon.png" alt="" width="96" />
+</p>
 
-A local-first Windows desktop workstation for turning authorised YouTube and SoundCloud tracks
-into organised, tagged, producer-ready audio files.
+<h1 align="center">Sonic V2</h1>
 
-Built from the ground up as an Electron application — new architecture, new interface,
-no code or design language carried over from the original Tauri build.
+<p align="center">
+  <strong>From a track link to your next session.</strong><br />
+  Download, review, and organize audio for music production — on your Windows PC.
+</p>
 
-Read the [plain-language change history](docs/CHANGELOG.md) for the features,
-reliability fixes, and measured improvements delivered by the previous pull requests.
-The [October 14 improvement review](docs/IMPROVEMENTS-2026-10-14.md) explains the
-current changes, performance measurements, and verification limits.
+<p align="center">
+  <a href="https://github.com/eterniastudio/sonic-v2/releases/latest"><img src="https://img.shields.io/github/v/release/eterniastudio/sonic-v2?label=release&color=7c6ad8" alt="Latest release" /></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/Windows-10%20%2F%2011%20%C2%B7%20x64-0078D6" alt="Windows 10 and 11, 64-bit" /></a>
+  <a href="https://github.com/eterniastudio/sonic-v2/actions/workflows/verify.yml"><img src="https://img.shields.io/github/actions/workflow/status/eterniastudio/sonic-v2/verify.yml?branch=main&label=checks" alt="Verification status" /></a>
+</p>
 
-> **Use responsibly.** Sonic is for media you own or are authorised to download. It does
-> not bypass DRM, authentication, private-video access, or geographic restrictions, and
-> it is not affiliated with or endorsed by YouTube or SoundCloud.
+<p align="center">
+  <strong><a href="https://github.com/eterniastudio/sonic-v2/releases/latest">Download for Windows</a></strong> ·
+  <a href="#your-first-track">Quick start</a> ·
+  <a href="#building-from-source">Build from source</a> ·
+  <a href="docs/CHANGELOG.md">Changelog</a>
+</p>
 
----
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/ui-overhaul/library-light-1024.png" />
+    <img src="docs/assets/ui-overhaul/library-dark-1440.png" alt="Sonic Library with a track shortlist, BPM and key details, and a persistent waveform player" width="960" />
+  </picture>
+  <br />
+  <sub>Your shortlist, musical metadata, and player in one workspace. Screenshots use demo tracks.</sub>
+</p>
 
-## What it does
+Sonic brings YouTube tracks, SoundCloud tracks, and your own audio into one local library.
+Review tempo and key, correct the metadata, and export a file ready for your DAW.
+Your library lives on your machine; there is no Sonic account, analytics, or conversion server.
 
-| | |
+## Built for the work between finding a track and making music
+
+| What you need | What Sonic does |
 | --- | --- |
-| **Intake** | Paste one link or fifty. Sonic reads each one, shows you what it found, and queues it. |
-| **Parse** | Tempo, key, Camelot position, detune and producer are read from the title, description and container tags — every value traceable to the exact substring that produced it. |
-| **Review** | A four-layer metadata model (`declared → embedded → suggested → final`) keeps what the source said separate from what you decided. |
-| **Export** | Eight recipes, a naming template with live preview, embedded tags, cover art, a versioned sidecar, and no-clobber publication. |
-| **Library** | Import your own audio, audition a stable listening queue, save notes and collections, analyze or export a shortlist, and reconnect missing files. |
+| **Bring in a batch** | Paste multiple links, choose tracks from a YouTube playlist, or import local files and folders. |
+| **Know where the BPM came from** | Distinguish source text, embedded tags, and local audio estimates. Review disagreements and keep your own corrections in control. |
+| **Export for your session** | Choose from eight recipes, preview filenames, embed reviewed tags, and optionally normalize loudness. |
+| **Build a useful shortlist** | Search by title, producer, BPM, key, or Camelot notation. Save favorites, notes, tags, and manual or rule-based collections. Analyze or re-export a selection together. |
+| **Keep listening while you work** | Audition through a persistent waveform player. Playback continues across views; restarting restores your last track and position paused. Reconnect moved files without rebuilding your library. |
 
-Paste YouTube video links or SoundCloud track links into the same download box.
-YouTube playlist links open a review where you choose which tracks to queue.
-SoundCloud share links resolve before inspection; SoundCloud playlists and profiles
-are not supported. Both sources use the existing media engine, export formats,
-metadata review, and audio analysis. If an older share link has expired, paste the
-full `soundcloud.com/artist/track` URL instead.
+## Installation
 
-Use **Import audio** to add local files or folders without changing the originals.
-Your corrections, notes, tags, and collections stay in Sonic. Re-export a reviewed
-copy when you want a new file with updated tags. Playback continues across views;
-after restarting, the last track and saved position return paused. Missing files
-can be reconnected through **Locate file…** or **Find missing files…**.
+**Requires Windows 10 or 11, 64-bit.** Node.js and Python are not required to use the installer.
 
-Library cards show the credited producer when one is known, otherwise the saved
-source channel or artist. Track menus offer source links, source refresh, reveal,
-rename, and removal where available. Renaming or removing an imported original
-changes its library record only; Sonic-owned exports also offer guarded file
-operations. Source links, channel names, and artwork URLs are stored in the local
-`library.json` record; the sidecar carries the same source provenance when enabled.
-User profiles, downloads, and test artifacts are excluded from the source repository.
+1. Open the [latest release](https://github.com/eterniastudio/sonic-v2/releases/latest) and download the Windows `*-setup.exe` asset.
+2. Run the installer. Choose an installation folder and launch **Sonic V2**.
+3. Click **Set up now** in the media engine banner. Wait for setup to finish before adding your first download.
 
-Export filenames include every known BPM and key even when a custom naming template omits those tokens. Later manual corrections and accepted analysis rename Sonic-owned audio safely, with collision suffixes and a matching sidecar. A rename leaves existing audio tags unchanged; **re-export** to rewrite tags. FL Studio can read specific WAV tempo-sync metadata, but a BPM printed in a filename does not by itself set the FL Studio project tempo. Check the BPM badge and set or confirm the project tempo when importing; Sonic's acoustic estimate can be inconclusive or wrong.
+Sonic uses **yt-dlp** to acquire audio and **FFmpeg / ffprobe** to convert, tag, and inspect it.
+These tools are installed separately from the app. Setup can download them into Sonic's app-data
+folder or use tools already available on your machine. The yt-dlp download is verified against
+its publisher's SHA-256 manifest. You can select your own executables under
+**Settings → Media engine**.
 
-### Producer metadata Sonic understands
+## Your first track
 
-Sonic distinguishes **four independent ways** a tempo or key can arrive. They are never
-conflated, and each value in the interface says which one produced it.
+1. **Choose an output.** In **Download**, pick an **Export as** recipe. MP3 320 is the default. Turn off **Auto-start** if you want to review metadata before downloading.
+2. **Add a link.** Paste a supported track URL and select **Add to queue**, or press `Ctrl+Enter`. For a YouTube playlist, choose **Review playlists** and select the tracks you want.
+3. **Review the metadata.** Select a queued track to inspect its title, producer, BPM, and key. With Auto-start off, choose **Download all** when you're ready.
+4. **Open your audio.** Finished tracks appear in **Library** and in your Music folder's `Sonic V2` directory. Change the destination in **Settings → Export**. Open the export folder from `Ctrl+K` to bring files into your DAW.
 
-| | Capability | Where it comes from | Reliability |
-| --- | --- | --- | --- |
-| **A** | **Source text** | Parsed from the video title, description or filename (`144 BPM`, `F#m`, `prod. by …`) | Depends entirely on what the uploader wrote |
-| **B** | **Embedded tag** | Read back from the file's own container tags (`TBPM`, `TKEY`, `artist`) | Depends on whoever tagged the file |
-| **C** | **Audio estimate** | Measured from the decoded audio by the local analyser | Real signal analysis; reported with a quality indicator and can be inconclusive |
-| **D** | **Manual correction** | Typed, tapped, or adopted by the producer | Authoritative — never overwritten by A, B or C |
+Already have the files? Choose **Library → Import audio**. Sonic references imported audio
+in place and leaves the originals untouched. Re-export to create a separate copy with your
+reviewed tags.
 
-**A and B are not evidence that C works.** A track whose title and tags contain no tempo or
-key will show nothing at all until the audio itself is analysed — which is exactly the case
-Sonic V2 is built to handle.
+<details>
+<summary><strong>See the download workspace</strong></summary>
 
-#### Reconciliation rules
+<p align="center">
+  <img src="docs/assets/ui-overhaul/download-dark-1024.png" alt="Download workspace showing export format, queue controls, and editable track metadata" width="840" />
+</p>
 
-- Authority order is **manual → source text → embedded tag → audio estimate**.
-- Source text and tags are statements a human made about the track; an audio estimate is
-  inference. Inference **fills gaps and never overrides a statement**.
-- When they disagree, **both values are kept** and the disagreement is surfaced in the
-  metadata inspector under *Source vs audio*, with the option to adopt the measured value.
-- Uncertain results stay uncertain. Silence, noise, single-pitch material and very short
-  clips produce an explicit **inconclusive** result rather than a plausible-looking default.
-- Overrides are tracked **per field**. Editing a title no longer freezes the BPM and key
-  fields, so a later analysis can still fill them.
+</details>
 
-#### What the analyser does
+## Supported sources
 
-- Decodes bounded excerpts through ffmpeg to **22050 Hz mono** float PCM, sharing
-  overlapping tempo/key audio — no second download or upload. Analysis itself
-  needs no Python, native module, WASM, or additional DSP dependency.
-- **Tempo:** spectral-flux onset envelope → autocorrelation *and* a comb filter, combined
-  with an Ellis-2007 log-Gaussian tempo prior, then octave-aware peak picking. Half- and
-  double-time readings are reported as alternatives rather than collapsed away.
-- **Key:** interpolated spectral peaks → tuning-corrected pitch-class profiles →
-  correlation against all 24 published Shaath major/minor profiles. Complete
-  tonic-chord observations can support close relative-key decisions; unresolved
-  evidence remains inconclusive. Tuning and alternative keys stay available for
-  review. See the [algorithm, sources, and measured limits](docs/IMPROVEMENTS-2026-10-14.md).
-- Runs on a **worker thread**, so a multi-second analysis never blocks the UI, with bounded
-  concurrency, cancellation, timeouts and scratch-file cleanup.
-- Results are cached by **input hash + engine version**, and the stage order is
-  download → tags → **analyze** → cover → convert → tag readback → publish, so accepted
-  estimates reach the file name, the embedded tags and the sidecar.
-
-The current analyzer is `sonic-dsp/3`. The Library's **Analyze** count includes
-missing results and tracks last measured by an older engine. Reanalysis preserves your manual
-corrections; use the inspector to review the new estimate or choose a suggested
-alternative. Confidence is an evidence indicator, not a probability of correctness.
-
-#### Text declarations Sonic parses (capability A)
-
-| Source text | Interpreted as |
+| Source | Accepted input |
 | --- | --- |
-| `144 BPM`, `BPM: 144`, `bpm 144` | `144` |
-| `72 / 144 BPM` | `144` with a `72` half-time alternate |
-| `F# minor`, `F#m`, `Key: F# minor` | `F# minor` / Camelot `11A` |
-| `11A`, `Camelot: 11A` | `F# minor` / Camelot `11A` |
-| `detuned -18 cents`, `-0.25 st` | `-18 ¢` / `-25 ¢` |
-| `Tuning: A=432Hz` | `-31.8 ¢` |
-| `prod. by NAME`, `prod NAME`, `beat by NAME` | producer credit |
-| `"Quoted Beat Name" Type Beat` | clean title |
-| `Trap`, `Drill`, `Jersey Club`, … | genre hint |
+| **YouTube** | Individual videos, Shorts, embeds, and live-replay links. Playlists open a track selection review. |
+| **SoundCloud** | Individual tracks, private share URLs containing an `s-…` token, and `on.soundcloud.com` share links. Playlists and profiles are unsupported. |
+| **Local audio** | Files or folders added through **Import audio**. Originals stay in their existing location. |
 
-### Export recipes
+YouTube playlist reviews read up to the first **500 entries per playlist** and skip unavailable
+or duplicate entries. Other websites and direct-file URLs are not accepted by this version.
+If a SoundCloud short link has expired, use the full track URL instead.
 
-`MP3 320` · `MP3 V0` · `M4A AAC 256` · `FLAC` · `WAV 44.1/24` · `WAV 48/24` · `Opus 192` ·
-`Original stream`
+Browser cookies are off by default. If an authorized source needs a signed-in session, choose
+**Settings → Media engine → Use cookies from a browser**. Availability still depends on the
+source and yt-dlp's support for it.
 
-Processed recipes can preserve channels or force stereo/mono, optionally normalise to a
-LUFS target, and embed the reviewed metadata.
+> **Use responsibly.** Download only media you own or have permission to download.
+> Sonic does not bypass DRM or access restrictions and is not affiliated with YouTube or SoundCloud.
 
----
+## Tempo and key you can inspect
 
-## Architecture
+A BPM or key is useful only if you know how it was obtained. Sonic keeps four sources of
+metadata separate and shows their origin in the inspector.
 
-```
-src/
-├─ main/                    Electron main process — owns every privileged operation
-│  ├─ index.ts              Bootstrap, CSP, lifecycle, single-instance lock
-│  ├─ window.ts             Frameless window, state persistence, navigation policy
-│  ├─ protocol.ts           Privileged `sonic-media:` scheme for local audio
-│  ├─ ipc.ts                Typed IPC handlers
-│  ├─ smoke.ts              Headless self-check (see Verification)
-│  ├─ lib/                  JSON store, child-process runner, downloads, hashing
-│  └─ services/             Engine, probe, acquire, transcode, publish, library, queue
-├─ preload/index.ts         The only bridge into the renderer (contextBridge)
-├─ shared/                  Types + pure logic used by both processes
-│  ├─ domain.ts             Domain model
-│  ├─ ipc.ts                Typed channel contract
-│  ├─ metadata.ts           Declared-metadata parser
-│  ├─ music.ts              Key / mode / Camelot wheel
-│  ├─ presets.ts            ffmpeg argument builders
-│  └─ template.ts           Naming templates + Windows-safe sanitisation
-└─ renderer/src/
-   ├─ styles/               Design tokens + vendored transitions.dev motion system
-   ├─ components/ui/        Primitives
-   ├─ components/motion/    transitions.dev state machines
-   ├─ components/obsidian/  Ported ObsidianUI components
-   ├─ components/aceternity/ Ported Aceternity UI components
-   ├─ features/             download · library · settings
-   └─ store/               Zustand store
+| Source | What it means |
+| --- | --- |
+| **Source text** | A declaration parsed from a title, description, or filename, such as `144 BPM` or `F# minor`. |
+| **Embedded tags** | Metadata already written into the audio container. |
+| **Audio estimate** | Tempo or key measured from decoded audio by Sonic's local analyzer. |
+| **Your correction** | A value you type, tap, or explicitly adopt. It takes precedence. |
+
+Automatic reconciliation follows **manual correction → source text → embedded tag → audio estimate**.
+Audio estimates fill gaps; they do not silently replace declared values. When sources disagree,
+the inspector keeps the evidence so you can choose. Reanalysis preserves manual corrections.
+
+The analyzer can report alternatives or **inconclusive** results. Its confidence indicator is
+not a probability of correctness. Confirm the tempo and key before relying on them in a session;
+a BPM in a filename does not set your DAW's project tempo.
+
+For the algorithms, test fixtures, and measured limits, read the
+[audio analysis review](docs/IMPROVEMENTS-2026-10-14.md).
+
+## Export formats
+
+| Recipes | Output | Useful for |
+| --- | --- | --- |
+| **MP3 320 · MP3 V0** | Constant 320 kbps or high-quality variable-bitrate MP3 | Sharing and broad player compatibility |
+| **M4A AAC 256 · Opus 192** | AAC at 256 kbps or Opus at 192 kbps | Compact listening copies |
+| **FLAC** | Lossless compression | Keeping decoded audio without another lossy encode |
+| **WAV 44.1 / 24 · WAV 48 / 24** | 24-bit PCM at 44.1 or 48 kHz | DAW sessions and editing |
+| **Original stream** | Acquired audio without re-encoding | Preserving the downloaded stream |
+
+Converting a lossy source to WAV or FLAC does not restore lost detail. Choose the format
+your workflow needs.
+
+Processed exports can preserve channels or force stereo or mono, optionally normalize to a
+LUFS target, and embed reviewed metadata. Cover embedding depends on the output format.
+Original stream skips re-encoding and loudness normalization.
+
+Set a naming template in **Settings → Export** and check its live preview. For example:
+
+```text
+{producer} - {title} [{bpm} BPM] [{key}]
+Aster - Midnight Transit [140 BPM] [A minor].wav
 ```
 
-### Trust boundary
+Known BPM and key values are included even when a custom template omits their tokens.
+Later corrections can safely rename Sonic-owned exports; they do not rewrite existing audio
+tags. **Re-export** when you want the corrected tags in a new file. Optional JSON sidecars
+preserve metadata and source provenance alongside your exports.
 
-The renderer cannot execute processes or touch arbitrary files. It talks to the main
-process through one typed, allow-listed `contextBridge` surface (`window.sonic`), running
-with `sandbox: true`, `contextIsolation: true`, and `nodeIntegration: false`.
+## Everyday controls
 
-- Local audio reaches the renderer only through `sonic-media://beat/<library-id>`, which
-  the main process resolves against the library. The renderer never handles a file path.
-- Tools are spawned with an argv array, never a shell string.
-- The Content-Security-Policy is strict (`script-src 'self'`) for every build; only a real
-  Vite dev server gets the relaxed policy that HMR needs.
-- Camera, microphone, geolocation and notification permissions are denied outright.
-- Sidecars record the file *name*, not the local path, so they stay safe to share.
-
----
-
-## Getting started
-
-**Requirements:** Windows 10/11 x64, Node.js 22+, pnpm.
-
-```bash
-pnpm install
-pnpm dev            # Vite dev server + Electron with HMR
-```
-
-`yt-dlp` is not bundled. On first run Sonic shows a **Media engine setup** banner and
-downloads it into its own app-data folder, verifying the download against the publisher's
-`SHA2-256SUMS` manifest. FFmpeg is used from the managed folder or your `PATH`; if it is
-missing on Windows, Sonic can fetch a static build for you.
-
-### Scripts
-
-| Script | Purpose |
+| Task | Where to find it |
 | --- | --- |
-| `pnpm dev` | Dev server + Electron with hot reload |
-| `pnpm build` | Build main, preload and renderer into `out/` |
-| `pnpm preview` | Preview the production build |
-| `pnpm typecheck` | Typecheck the Node and web projects |
-| `pnpm test:unit` | Run the complete isolated unit regression suite |
-| `pnpm test:key` | Check all 24 keys across tuning, voicing, and sample-rate fixtures |
-| `pnpm benchmark:analysis` | Measure decode/PCM-load time and scratch bytes on generated audio |
-| `pnpm test:ui` | Build the current application and component harness, then run the Windows UI suite |
-| `pnpm test:ui:hidden` | Build and test the UI with Electron windows hidden; skip native window and OS pointer checks |
-| `pnpm smoke` | Headless boot self-check (DOM, theme, parser, templates) |
-| `pnpm reset:state -- --yes [--library] [--settings] [--all]` | Clear runtime state during development; never touches the engine or your exports |
-| `pnpm package` | Unpacked Windows build in `release/` |
-| `pnpm dist` | NSIS installer in `release/` |
+| Search tracks, navigate, or run an action | `Ctrl+K` opens the command palette. |
+| Add the links you've pasted | `Ctrl+Enter` in the link field. |
+| Listen to a shortlist | **Play selected** or **Play results** in Library. |
+| Reconnect moved audio | **Locate file…** for one track or **Find missing files…** for a batch. |
+| Retry a download | **Retry** on the failed queue item. |
 
-### Verification
+## Privacy and local storage
 
-Use `npm run test:ui:hidden` for routine UI testing without opening Sonic windows on your
-desktop. Playwright still drives the real renderer, preload bridge and main process;
-background throttling is disabled during this mode so hidden windows keep rendering.
-Pass filters normally, for example `npm run test:ui:hidden -- --grep=Play.selected`.
-Native window controls and OS pointer tests require a visible desktop and remain available
-through `npm run test:ui`. Hidden mode applies to development test builds only; unset
-`SONIC_PACKAGED_EXE` before using it.
+Analysis, conversion, playback, and library storage run on your computer. Network access is
+used for inspecting or downloading links, installing the media engine, and fetching artwork.
+Optional browser-cookie access is handled by yt-dlp using the browser you select.
 
-`pnpm smoke` boots the real application — window, preload bridge, IPC, services — drives
-the actual UI, and writes a JSON report, exiting non-zero on any failure. It fails on
-**any** console error or warning, not just exceptions. The groups:
+Application state lives in `%APPDATA%\Sonic V2\`. Open it through
+**Settings → Advanced → Open app data folder**.
 
-| Check | What it proves |
+| Files or folders | Contents |
 | --- | --- |
-| `boot` | The window renders, the preload bridge exists, no console errors or load failures |
-| `metadataParser` | Five producer-title conventions parse to the exact expected tempo, key, Camelot, detune and producer |
-| `namingTemplates` | Token rendering, including that empty tokens leave no orphaned `[BPM]` group |
-| `pipeline` | A real YouTube download through acquire → convert → tag → publish → sidecar → fingerprint → library |
-| `themes` | Dark → light → dark via a settings push, with distinct backgrounds and transitions.dev colour tokens at each step |
-| `mediaProtocol` | The published file streams back through `sonic-media:` with the exact expected byte length |
-| `previewTransport` | The UI is driven to open the Library, select the beat, and the decoder reaches `ready`, reports the correct duration, and paints its waveform canvases |
-| `rendererIpc` | Real `window.sonic.invoke` calls: metadata edits bump the revision, a key edit derives Camelot, the naming preview renders, a library record is corrected, and an unknown channel is rejected by the preload allow-list |
-| `deletionSafety` | A file tampered with after export is refused, the file survives, and record-only removal still works |
+| `settings.json` · `playback-session.json` | Preferences, last track, volume, and saved listening positions |
+| `library.json` · `organization.json` | Track records, source links, artwork URLs, notes, tags, and collections |
+| `queue.json` · `analysis-cache.json` | Saved queue and audio analysis cached by file content and analyzer version |
+| `engine\` · `covers\` | Managed media tools and cached artwork |
+| `staging\` · `analysis\` | Temporary downloads, conversions, and decoded analysis audio |
 
-To include the download-dependent groups, point it at a source you are authorised to use:
+The queue is saved after a short debounce; interrupted jobs become resumable on the next
+launch. Finished audio lives in your chosen export folder, and imported originals stay where
+you put them. A backup needs both the app-data folder and the audio folders it references.
+
+## Troubleshooting
+
+| Problem | Try this |
+| --- | --- |
+| Media engine is missing or setup failed | Open **Settings → Media engine → Set up / repair engine**. Use **Browse** to select an installed tool if needed. |
+| A download needs sign-in | For a source you are allowed to access, select **Use cookies from a browser** in Media engine settings, then retry the job. |
+| A track is marked missing | Use **Locate file…** or **Find missing files…** to reconnect it while keeping its library details. |
+| BPM or key looks wrong | Inspect the source and audio evidence, then enter or adopt a correction. Re-export if the file's tags need updating. |
+
+Still stuck? [Open an issue](https://github.com/eterniastudio/sonic-v2/issues) with your Sonic
+version, Windows version, the exact error, and steps to reproduce. Remove private links and
+personal file paths before sharing diagnostics.
+
+## Building from source
+
+Use **Windows x64, [Node.js 24](https://nodejs.org/), and npm** to match CI.
+The repository uses `package-lock.json`.
 
 ```powershell
-$env:SONIC_SMOKE_URL = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ'
-pnpm smoke
+git clone https://github.com/eterniastudio/sonic-v2.git
+cd sonic-v2
+npm ci
+npm run dev
 ```
 
-The report lands at `%APPDATA%\Sonic V2\smoke-report.json`, and each group is reported as
-`pass`, `fail` or `skipped`. Without `SONIC_SMOKE_URL` the five download-dependent groups
-report as `skipped` and the rest still run, so it doubles as a fast offline build gate.
-`pnpm reset:state -- --yes --library --settings` clears the records it creates.
-
----
-
-## Where your data lives
-
-Everything stays on your machine. There is no account, no analytics and no conversion
-backend.
-
-| Path | Contents |
+| Command | Result |
 | --- | --- |
-| `%APPDATA%\Sonic V2\settings.json` | Preferences |
-| `%APPDATA%\Sonic V2\library.json` | Beat library records |
-| `%APPDATA%\Sonic V2\organization.json` | Notes, tags, collections, and saved Library view preferences |
-| `%APPDATA%\Sonic V2\playback-session.json` | Last track, volume, and saved listening positions |
-| `%APPDATA%\Sonic V2\analysis-cache.json` | Audio analysis cached by file content and analyzer version |
-| `%APPDATA%\Sonic V2\queue.json` | Queue state, used for crash recovery |
-| `%APPDATA%\Sonic V2\engine\` | Managed yt-dlp / FFmpeg binaries |
-| `%APPDATA%\Sonic V2\staging\` | In-flight downloads and conversions |
-| Your chosen export folder | Published audio, plus `.json/` sidecars |
+| `npm run dev` | Electron and the Vite development server with hot reload |
+| `npm run build` | Compiled main, preload, and renderer in `out/` |
+| `npm run package` | Unpacked Windows x64 app in `release/` |
+| `npm run dist` | Windows x64 NSIS installer in `release/` |
 
-The queue is mirrored to disk on a short debounce and every interrupted job is returned to
-the queue on the next launch, so a hard exit loses at most a moment of progress.
+The app version comes from [`package.json`](package.json). Installer configuration and naming
+live in [`electron-builder.yml`](electron-builder.yml). This checkout targets Windows x64;
+macOS and Linux desktop builds are not supported.
 
----
+### Checks and contributing
 
-## Design system
+Create a branch from `main`, make your change, and run the same checks as the
+[Windows verification workflow](.github/workflows/verify.yml):
 
-**Dark is the default; light is a full peer.** Both themes are driven by one set of
-semantic CSS custom properties (`--sonic-*`) exposed to Tailwind v4 through `@theme inline`,
-so components are written theme-agnostically. Five accent hues are available.
+```powershell
+npm run typecheck
+npm run test:unit
+npm run test:key
+npm run build
+```
 
-### transitions.dev
+For interface changes, `npm run test:ui:hidden` drives the real app with its windows hidden.
+Native window and OS pointer checks require a visible Windows desktop and `npm run test:ui`.
+These UI suites run separately from the verification workflow.
 
-`npx transitions-dev add --free` pulls the library's reference set into `transitions/`
-(32 recipes). Fifteen of those, plus the universal motion-token scale
-(`--duration-*`, `--ease-*`, `--distance-*`, `--scale-*`, `--blur-*`), are vendored into
-`renderer/src/styles/transitions.css`, and fourteen are wired into the interface — each
-keeping its original `t-*` selectors and its `prefers-reduced-motion` guard:
+In your pull request, explain the user-visible change and how you verified it. Reports and
+fixes for download reliability, metadata, accessibility, and library workflows are welcome.
 
-| Transition | Used for |
+<details>
+<summary><strong>Codebase map</strong></summary>
+
+Sonic V2 is an Electron application built with React and TypeScript, with no code carried
+over from the earlier Tauri application.
+
+| Directory | Responsibility |
 | --- | --- |
-| `menu-dropdown` | Format pickers, sort menus, cookie source |
-| `modal` | Confirmations, delete flows |
-| `tabs-sliding` | Segmented controls everywhere |
-| `toggle` | Every switch in Settings |
-| `toast` | Notification stack |
-| `success-check` | Export confirmations, success toasts |
-| `skeleton-reveal` | Library artwork and preview loading |
-| `accordion` | Evidence, conflicts, token help |
-| `icon-swap` | Theme toggle |
-| `tooltip` | Icon hints |
-| `number-pop-in` | Library counters |
-| `card-tilt` | Library grid cards |
-| `error-state-shake` | Rejected links |
-| `text-states-swap` | Status labels |
+| [`src/main`](src/main) | Electron lifecycle, file access, media tools, queue, library, and audio analysis |
+| [`src/preload`](src/preload) | Typed, allow-listed bridge between the renderer and main process |
+| [`src/shared`](src/shared) | Domain types, URL validation, metadata parsing, music notation, export recipes, and naming |
+| [`src/renderer/src`](src/renderer/src) | React interface, playback, settings, and Zustand state |
+| [`tests`](tests) · [`scripts`](scripts) | Regression tests, analysis fixtures, benchmarks, and app verification tools |
 
-`panel-reveal` is vendored and available, but no surface currently needs it — the
-collapsible regions in Sonic all want height collapse, which `accordion` does and
-`panel-reveal` does not.
+The renderer runs sandboxed with context isolation and no Node integration. Privileged
+operations belong to the main process. Local playback uses the `sonic-media:` protocol,
+which resolves library IDs to files.
 
-The snippets ship light-mode colour tokens only, so Sonic restates them per theme in
-`styles/index.css`. Geometry tokens are left untouched — except `--toggle-travel`, which is
-set inline on the switch to match its own dimensions.
+</details>
 
-`components/motion/usePresence.ts` implements the two-class open/close state machine those
-snippets require, reading real durations from the tokens rather than hardcoding them.
+## Project notes
 
-### ObsidianUI
-
-Ported and adapted to Sonic's tokens: **Apple Spotlight** (⌘K command palette and beat
-search), **Arrow Fill Button**, **Jelly Loader**, **Folder Preview** (export destination),
-**Draggable Marquee** (format strip), **Flip Text**, **Glowing Scroll Indicator**.
-
-### Aceternity UI
-
-Ported and adapted: **Stateful Button** (idle → loading → success CTA), **Multi Step
-Loader** (engine setup and export pipeline), **Ambient Background** (aurora + sparkles +
-grid compositions), **Card Spotlight**, **Animated Tooltip** (list-row previews), **Bento
-Grid** (library statistics).
-
----
-
-## Local-first, not offline
-
-Network access happens only when you inspect or download a link, when the media engine is
-being installed, or when a thumbnail is fetched. Nothing else leaves the machine.
+| Read more | What it covers |
+| --- | --- |
+| [Changelog](docs/CHANGELOG.md) | Features, fixes, and links to earlier verification work |
+| [Audio analysis](docs/IMPROVEMENTS-2026-10-14.md) | Tempo and key detection, benchmarks, and known limits |
+| [Library performance](docs/PERFORMANCE-REVIEW-2026-10-04.md) | Search, playback updates, and measured behavior |
+| [Local imports](docs/LOCAL-IMPORT-VERIFICATION-2026-09-23.md) | How imported originals are protected |
+| [File recovery](docs/RECOVERY-VERIFICATION-2026-10-04.md) | Reconnecting moved audio and preserving library records |
 
 ## License
 
-Source-available. See `LICENSE`.
+No project `LICENSE` file is included in this checkout, although `package.json` refers to one.
+The source does not currently include a license granting permission to reuse, modify, or
+redistribute it; contact the copyright holder, **Eternia Studios**, for permission.
+
+The bundled Inter font is covered separately by the
+[SIL Open Font License](src/renderer/public/licenses/Inter-OFL.txt).
